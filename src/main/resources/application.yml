@@ -1,0 +1,9 @@
+spring:
+  application:
+    name: quick-delivery
+
+server:
+  port: 8080
+
+# 인프라(DB/Redis/S3 등)는 아직 연결하지 않음.
+# 도메인 구현 단계에서 datasource, jpa, redis 설정을 여기에 추가한다.
