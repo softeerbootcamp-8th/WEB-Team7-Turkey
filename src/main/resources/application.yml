@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: quick-delivery
+
+  # --- DB 연결 (URL 미정: DB 확정 후 채운다) ---
+  # datasource:
+  #   url: jdbc:mysql://localhost:3306/quick   # TODO: 확정 후 입력
+  #   username:
+  #   password:
+
+  # --- Flyway: 스키마 버전 관리 ---
+  # datasource 가 채워지면 앱 기동 시 db/migration 의 마이그레이션이 자동 실행된다.
+  # (지금은 datasource 가 비어 있어 Flyway 도 동작하지 않음 — 배선만 된 상태)
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  # --- JPA: 스키마는 Flyway가 만들고, JPA는 검증만 한다 ---
+  # (JPA를 도입할 경우 아래를 사용. ddl-auto 는 반드시 validate/none 으로 둔다)
+  # jpa:
+  #   hibernate:
+  #     ddl-auto: validate
+  #   properties:
+  #     hibernate:
+  #       format_sql: true
+
+server:
+  port: 8080
