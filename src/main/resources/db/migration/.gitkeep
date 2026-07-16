@@ -1,0 +1,3 @@
+Flyway 마이그레이션 SQL을 이 디렉토리에 둔다.
+파일명 규칙: V{버전}__{설명}.sql  (예: V1__create_order_table.sql)
+앱 기동 시 버전 순서대로 자동 적용된다.
