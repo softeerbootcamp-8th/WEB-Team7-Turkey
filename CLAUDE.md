@@ -51,7 +51,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - Backend: Java 21, Spring Boot 3.4.x, Gradle, Lombok, JUnit + AssertJ, SSE, Flyway
 - Data: MySQL 8.4, Redis
 - Infra: AWS EC2(백엔드), S3(프론트 빌드 산출물), CloudFront(CDN), GitHub Actions
-- 데이터 접근 기술은 **미확정**(JDBC Template / Spring Data JDBC / JPA / QueryDSL 중 팀 결정 후 반영)
+- 데이터 접근 기술은 jpa
 
 ## 도메인 상태값
 
@@ -104,12 +104,11 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 
 ## 확인이 필요한 항목
 
-- 최종 데이터 접근 기술(JDBC Template / Spring Data JDBC / JPA / QueryDSL), 그에 따른 테이블 매핑 전략
 - 배차 동시성 제어 방식(DB 락 vs 조건부 업데이트)
 - 동일 요청 재전송에 대한 API 멱등성 정책(요청 식별값 기준)
-- 예상 요금과 최종 요금의 차이 허용 여부
+- 예상 요금과 최종 요금의 차이 허용 >> 허용하기로 했음
 - 포인트 차감·환불 시점, 포인트 동시성 처리 방식(선차감 vs 결제 승인 모킹 포함)
-- 라이더 위치 이력의 MySQL 저장 기준(시간/이동거리/상태변화), 파티셔닝·인덱스 전략
+- 라이더 위치 이력의 MySQL 저장 기준(시간/이동거리/상태변화)
 - SSE 타임아웃·재연결·heartbeat·중복 연결 정책
 - 배송 완료 인증 데이터 구조(단건/다건, 사진·수령인 확인·인증코드 중 채택 범위)
 - 정산 생성 시점과 실패 처리 방식
