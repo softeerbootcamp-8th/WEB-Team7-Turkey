@@ -2,11 +2,12 @@ spring:
   application:
     name: quick-delivery
 
-  # --- DB 연결 (URL 미정: DB 확정 후 채운다) ---
-  # datasource:
-  #   url: jdbc:mysql://localhost:3306/quick   # TODO: 확정 후 입력
-  #   username:
-  #   password:
+  # --- DB 연결 (MySQL 8.4 / 스키마명 turkey) ---
+  # 접속 정보는 환경 변수로 주입한다(비밀정보 커밋 금지).
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/turkey}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
 
   # --- Flyway: 스키마 버전 관리 ---
   # datasource 가 채워지면 앱 기동 시 db/migration 의 마이그레이션이 자동 실행된다.
@@ -17,13 +18,13 @@ spring:
     baseline-on-migrate: true
 
   # --- JPA: 스키마는 Flyway가 만들고, JPA는 검증만 한다 ---
-  # (JPA를 도입할 경우 아래를 사용. ddl-auto 는 반드시 validate/none 으로 둔다)
-  # jpa:
-  #   hibernate:
-  #     ddl-auto: validate
-  #   properties:
-  #     hibernate:
-  #       format_sql: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
 
 server:
   port: 8080

@@ -1,0 +1,16 @@
+# 로컬 개발 프로파일.
+# 실제 MySQL을 띄우지 않고, 파일 기반 H2를 MySQL 호환 모드로 사용한다.
+# (인메모리가 아니라 파일 모드라서 앱을 재시작해도 데이터가 유지된다.)
+# SQL 방언은 MySQLDialect 로 고정해 배포 환경(MySQL)과 동일한 SQL이 생성되게 한다.
+spring:
+  datasource:
+    url: jdbc:h2:file:./data/turkey-local;MODE=MySQL;DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    database-platform: org.hibernate.dialect.MySQLDialect
+
+  flyway:
+    enabled: true
