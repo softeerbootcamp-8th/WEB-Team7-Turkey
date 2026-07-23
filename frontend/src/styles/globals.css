@@ -1,0 +1,211 @@
+/* Efficient Motion System - Global Brand Styles */
+
+:root {
+    /* Brand Colors */
+    --color-primary: #fee500; /* Signature Kakao Yellow */
+    --color-on-primary: #000000;
+
+    /* Surface Colors */
+    --color-surface: #f9f9f9;
+    --color-surface-dim: #dadada;
+    --color-surface-bright: #f9f9f9;
+    --color-surface-container-lowest: #ffffff;
+    --color-surface-container-low: #f3f3f3;
+    --color-surface-container: #eeeeee;
+    --color-surface-container-high: #e8e8e8;
+    --color-surface-container-highest: #e2e2e2;
+
+    /* On Surface Colors */
+    --color-on-surface: #1d1b20;
+    --color-on-surface-variant: #49454f;
+    --color-outline: #79747e;
+    --color-outline-variant: #cac4d0;
+
+    /* Typography */
+    --font-family: 'Be Vietnam Pro', sans-serif;
+
+    /* Shape */
+    --radius-small: 4px;
+    --radius-medium: 8px; /* ROUND_EIGHT */
+    --radius-large: 12px;
+    --radius-full: 9999px;
+
+    /* Elevation / Shadows */
+    --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+/* Dark Mode Overrides (Optional) */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --color-surface: #121212;
+        --color-on-surface: #e6e1e5;
+        --color-surface-container: #1e1e1e;
+        /* Add further dark mode mappings as needed */
+    }
+}
+
+/* Base Utility Classes */
+.bg-primary { background-color: var(--color-primary); }
+.text-primary { color: var(--color-primary); }
+.text-on-primary { color: var(--color-on-primary); }
+
+.bg-surface { background-color: var(--color-surface); }
+.text-on-surface { color: var(--color-on-surface); }
+
+.rounded-brand { border-radius: var(--radius-medium); }
+
+body {
+    font-family: var(--font-family);
+    background-color: var(--color-surface);
+    color: var(--color-on-surface);
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Customer Home Screen (routes/customer/index.tsx) */
+.customer-home {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+.customer-home__header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 64px;
+    padding: 0 20px;
+    background-color: var(--color-surface);
+    flex-shrink: 0;
+}
+
+.customer-home__title {
+    margin: 0;
+    font-size: 24px;
+    line-height: 32px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+
+.customer-home__icon-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: none;
+    background: transparent;
+    color: var(--color-on-surface-variant);
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    transition: background-color .15s;
+}
+
+.customer-home__icon-button:hover {
+    background-color: var(--color-surface-container);
+}
+
+.customer-home__main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 20px;
+}
+
+.customer-home__content {
+    width: 100%;
+    max-width: 340px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.customer-home__greeting {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 24px;
+}
+
+.customer-home__greeting h2 {
+    margin: 0;
+    font-size: 20px;
+    line-height: 28px;
+    font-weight: 700;
+}
+
+.customer-home__greeting p {
+    margin: 0;
+    font-size: 16px;
+    line-height: 24px;
+    color: var(--color-on-surface-variant);
+}
+
+.customer-home__hero {
+    width: 100%;
+    max-width: 280px;
+    height: 192px;
+    margin-bottom: 32px;
+    border-radius: var(--radius-large);
+    background-color: var(--color-surface-container-highest);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-on-surface-variant);
+    font-size: 14px;
+    overflow: hidden;
+}
+
+.customer-home__actions {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.btn {
+    width: 100%;
+    border: none;
+    border-radius: var(--radius-large);
+    font-family: inherit;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background-color .15s;
+}
+
+.btn--primary {
+    height: 64px;
+    background-color: var(--color-primary);
+    color: var(--color-on-primary);
+    font-size: 18px;
+    line-height: 26px;
+}
+
+.btn--primary:hover {
+    background-color: color-mix(in srgb, var(--color-primary) 92%, black);
+}
+
+.btn--secondary {
+    height: 52px;
+    border: 1px solid var(--color-surface-container);
+    background-color: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
+    font-size: 14px;
+    line-height: 20px;
+}
+
+.btn--secondary:hover {
+    background-color: var(--color-surface-bright);
+}
