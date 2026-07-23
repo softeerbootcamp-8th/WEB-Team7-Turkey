@@ -1,7 +1,7 @@
 ---
 title: Turkey 프로젝트 지침
 status: active
-updated_at: 2026-07-22
+updated_at: 2026-07-23
 owner: WEB-Team7-Turkey
 source_of_truth: true
 ---
@@ -10,6 +10,16 @@ source_of_truth: true
 
 Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지켜야 하는 규칙 문서다.
 배경·설계 근거·의사결정 상세는 GitHub Wiki(ADR)와 `docs/`를 정본으로 하고, 이 문서는 **작업 시 즉시 참조할 규칙과 확정 사실**만 담는다.
+
+## 프로젝트 문서
+
+- [프로젝트 컨텍스트](docs/00-project-context.md) — 목적, 아키텍처, 기술 스택 개요 (정본)
+- [기능 명세](docs/01-functional-spec.pdf) — 기능별 사전조건·처리흐름·성공조건·예외처리·우선순위
+- [도메인 정책](docs/02-domain-policy.md) — 상태 전이, 배차·취소·포인트·정산·SSE 정책
+- [ERD](docs/03-erd.md) — 핵심 엔터티, 관계, 애플리케이션-DB 제약 역할 분담
+- [로깅 공통 규칙](docs/logging-guidelines.md) — Filter+MDC / Service / 선택적 AOP 규칙
+
+문서 간 내용이 충돌하면 ADR → ERD/DDL → 도메인 정책 → 기능 명세 → 프로젝트 컨텍스트 순으로 판단한다.
 
 ## 작업 원칙
 
@@ -35,7 +45,6 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - `common` 하위: `config`, `exception`, `response`
 - DB 스키마는 Flyway(`src/main/resources/db/migration`)로 관리하며 앱 기동 시 자동 실행된다.
 - CI/CD는 경로 필터로 프론트엔드 배포와 백엔드 배포를 분리한다(`.github/workflows`).
-- 로깅 규칙(Filter+MDC / Service / 선택적 AOP, 이벤트 명명, 로그 레벨, 기록 금지 정보)은 `docs/logging-guidelines.md`를 정본으로 한다.
 
 ## 기술 스택
 
@@ -54,9 +63,21 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 
 원자적으로 처리해야 하는 전이(하나의 트랜잭션):
 
-- 배차 확정: 배송 `WAITING→ASSIGNED` + 라이더 `AVAILABLE→BUSY`
+- 배차 확정: 배송 `WAITING→ASSIGNED` + 라이더 `AVAILABLE→BUSY` + 배차 관계 생성
 - 배송 완료: 배송 `DELIVERING→COMPLETED` + 라이더 `BUSY→AVAILABLE` + 정산 내역 생성
 - 고객 일반 취소는 배차 전에만 허용: 배송 `WAITING→CANCELED`
+
+**동시성 보장 조건** (배차):
+
+- 하나의 배송요청에는 최대 한 명의 라이더만 배정된다.
+- 하나의 라이더는 동시에 최대 한 건의 진행 중 배송만 담당한다.
+- 경쟁에서 실패한 수락 요청은 명확한 실패 결과를 받는다(부분 성공 없음).
+- 구체적 구현 방식(DB 락 vs 조건부 업데이트)은 ADR에서 결정한다.
+
+**진행 중 배송요청 제한**:
+
+- 고객은 동시에 진행 중 배송요청(`WAITING`~`DELIVERING`)을 최대 1건만 가진다. `COMPLETED`/`CANCELED` 주문만 있는 고객만 새 배송요청을 생성할 수 있다.
+- 배차 이후(`ASSIGNED` 이상) 취소는 MVP 범위에서 제외한다(라이더 배차 포기 기능도 MVP 범위 밖).
 
 ## 확정된 결정
 
@@ -72,6 +93,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - 프론트 빌드 산출물은 S3에 배포하고 CloudFront로 제공. 정적 요청은 CloudFront·S3, API·SSE는 EC2 Spring Boot가 처리.
 - 결제는 MVP에서 포인트 기반 또는 모킹 흐름 우선(실 PG 연동 아님).
 - 용어: "퀵 신청" 대신 **"배송요청"**을 사용한다.
+- 핵심 테이블(ERD 확정): `member`, `customer`, `rider`, `delivery_order`, `delivery_assignment`, `point_account`, `point_transaction`, `settlement`, `delivery_proof`, `rider_location_history`. 세부 컬럼·제약은 `docs/03-erd.md`와 최종 DDL을 따른다.
 
 ## 협업
 
@@ -82,15 +104,17 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 
 ## 확인이 필요한 항목
 
-- 최종 데이터 접근 기술
+- 최종 데이터 접근 기술(JDBC Template / Spring Data JDBC / JPA / QueryDSL), 그에 따른 테이블 매핑 전략
 - 배차 동시성 제어 방식(DB 락 vs 조건부 업데이트)
-- 라이더 배차 포기 기능 지원 여부
+- 동일 요청 재전송에 대한 API 멱등성 정책(요청 식별값 기준)
 - 예상 요금과 최종 요금의 차이 허용 여부
-- 포인트 차감·환불 시점, 포인트 동시성 처리 방식
-- 라이더 위치 이력의 MySQL 저장 기준
-- SSE 타임아웃·재연결·heartbeat 정책
-- 배송 완료 인증 데이터 구조
+- 포인트 차감·환불 시점, 포인트 동시성 처리 방식(선차감 vs 결제 승인 모킹 포함)
+- 라이더 위치 이력의 MySQL 저장 기준(시간/이동거리/상태변화), 파티셔닝·인덱스 전략
+- SSE 타임아웃·재연결·heartbeat·중복 연결 정책
+- 배송 완료 인증 데이터 구조(단건/다건, 사진·수령인 확인·인증코드 중 채택 범위)
 - 정산 생성 시점과 실패 처리 방식
+- 주소·좌표 컬럼 구조, 배차 결과를 별도 테이블로 둘지 주문 FK로 단순화할지
+- 포인트 잔액 캐시 컬럼 유지 여부, 논리 삭제 사용 범위
 - EC2 구성 및 MySQL·Redis 배치 방식
 - S3·CloudFront·도메인·인증서 구성, 캐시/invalidation 정책
 - 프론트 Origin과 API Origin 분리 시 CORS·쿠키 설정
