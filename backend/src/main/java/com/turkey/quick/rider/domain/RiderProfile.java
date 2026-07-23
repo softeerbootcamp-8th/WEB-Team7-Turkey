@@ -13,7 +13,6 @@ import jakarta.persistence.OneToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
-import jakarta.persistence.Version;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import lombok.AccessLevel;
@@ -26,6 +25,12 @@ import lombok.NoArgsConstructor;
  *
  * 상태 변경은 setter 로 덮어쓰지 않고 행위 메서드(goOnline/goOffline/assign/release)로만 수행하며,
  * 허용되지 않은 전이는 예외로 거부한다. operating_status 가 바뀔 때 status_changed_at 을 함께 갱신한다.
+ *
+ * 동시성: 낙관적 락(@Version)을 두지 않는다. "한 라이더는 동시에 최대 한 건의 진행 중 배송만
+ * 담당한다"는 배차 정합성은 배차 확정 트랜잭션의 조건부 UPDATE(operating_status='AVAILABLE' 인
+ * 행만 갱신, 영향 행 수로 성공/실패 판정)와, delivery_order.uk_delivery_active_rider 유니크
+ * 제약(진행 중 배송당 라이더 1명)이 함께 지킨다. read-modify-write 사이 창이 생기는 낙관적 락보다
+ * 원자적 UPDATE 한 방이 배차 경쟁 시나리오에 더 맞기 때문이다.
  */
 @Entity
 @Table(name = "rider_profile")
@@ -60,16 +65,6 @@ public class RiderProfile {
 
     @Column(name = "status_changed_at", nullable = false)
     private LocalDateTime statusChangedAt;
-
-    /**
-     * @Version: 낙관적 락. UPDATE 시 WHERE 절에 version 을 포함하고 값을 +1 한다.
-     *   두 트랜잭션이 같은 프로필을 동시에 수정하면 나중 커밋이
-     *   OptimisticLockException 으로 실패한다 — "한 라이더는 동시에 한 건의 배송만"이라는
-     *   불변식을 락 없이(비관적 락 대신) 지키는 1차 방어선이다.
-     */
-    @Version
-    @Column(name = "version", nullable = false)
-    private Long version;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
