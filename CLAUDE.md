@@ -35,6 +35,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - `common` 하위: `config`, `exception`, `response`
 - DB 스키마는 Flyway(`src/main/resources/db/migration`)로 관리하며 앱 기동 시 자동 실행된다.
 - CI/CD는 경로 필터로 프론트엔드 배포와 백엔드 배포를 분리한다(`.github/workflows`).
+- 로깅 규칙(Filter+MDC / Service / 선택적 AOP, 이벤트 명명, 로그 레벨, 기록 금지 정보)은 `docs/logging-guidelines.md`를 정본으로 한다.
 
 ## 기술 스택
 
