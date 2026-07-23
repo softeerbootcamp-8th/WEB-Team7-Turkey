@@ -31,3 +31,6 @@ out/
 
 ### OS ###
 .DS_Store
+
+### 로컬 개발용 H2 파일 DB ###
+backend/data/

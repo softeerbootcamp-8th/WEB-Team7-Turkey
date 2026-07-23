@@ -34,6 +34,9 @@ dependencies {
     implementation 'org.flywaydb:flyway-mysql'
 
     runtimeOnly 'com.mysql:mysql-connector-j'
+    // 로컬 개발 전용: 실제 MySQL 없이 뜨기 위한 파일 기반 H2(MySQL 호환 모드).
+    // application-local.yml 에서만 사용되고, 배포 프로파일은 여전히 mysql-connector-j 를 쓴다.
+    runtimeOnly 'com.h2database:h2'
 
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
