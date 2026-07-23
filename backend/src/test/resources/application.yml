@@ -1,0 +1,8 @@
+# 단위 테스트용 설정: DB 없이 컨텍스트를 띄운다.
+# DB가 필요한 통합 테스트는 별도 프로파일/설정으로 real MySQL 에 붙인다(Docker 금지 정책).
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+      - org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration
