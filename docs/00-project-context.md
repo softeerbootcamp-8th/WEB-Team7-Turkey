@@ -1,7 +1,7 @@
 ---
 title: Turkey 프로젝트 컨텍스트
 status: draft
-updated_at: 2026-07-23
+updated_at: 2026-07-24
 owner: WEB-Team7-Turkey
 source_of_truth: true
 ---
@@ -77,6 +77,17 @@ Spring Boot WAS
 - Redis Pub/Sub과 Redis Streams는 사용하지 않는다.
 - 위치 요청을 처리한 WAS가 기존 `SseEmitter`에 직접 이벤트를 전달한다.
 
+### 4.1 프론트엔드 라우트 구조 (ADR-0002, 결정일 2026-07-23)
+
+라우트는 액터(고객/라이더) 기준으로 구성한다.
+
+- 라우트 폴더는 ERD 엔터티에 맞춰 `customer/` · `rider/`를 사용하고, 동적 세그먼트는 `$deliveryId`로 통일한다.
+- 인증 라우트는 가드 요구에 따라 분리한다: `auth/`(로그인 전, 비인증 가드) vs `account/`(로그인 후, 인증 가드 — 회원정보·계정 관리·알림함은 고객/라이더 공용).
+- 인가는 프론트 라우트 가드가 1차, 서버가 2차다(Spring Security 미사용).
+- 라이더 상태(`UNAVAILABLE`/`AVAILABLE`/`BUSY`)는 화면과 매핑된다: 홈(`rider/index`) → 콜 목록(`rider/requests`, 위치 저빈도 전송) → 진행 배송(`rider/delivery`, 위치 고빈도 전송, id 없는 고정 경로). 상태 전이는 각 화면의 버튼으로 일어나며 별도 상태변경 화면은 없다.
+- 위치 전송은 라우트가 아니라 공용 훅(`shared/hooks/useLocationSender`)으로 구현하며, 웹 클라이언트의 위치 수집은 포그라운드 실행을 전제로 한다(§5 정책과 일치).
+- 고객의 실시간 위치 구독은 별도 훅(`shared/hooks/useTrackingStream`)으로 SSE 연결·재연결·종료를 처리한다.
+
 ## 5. 확정된 핵심 정책
 
 - 계정은 `CUSTOMER` 또는 `RIDER` 역할 하나만 가진다.
@@ -101,6 +112,15 @@ Spring Boot WAS
 - JUnit
 - AssertJ
 - SSE
+
+### Frontend
+
+- React
+- TanStack Router (파일 기반 라우팅, `routeTree.gen.ts` 자동 생성)
+- TanStack Query
+- Orval (OpenAPI 기반 API 클라이언트 자동 생성, `src/api/generated/` 수정 금지)
+- axios
+- shadcn/ui
 
 ### Data
 
@@ -137,3 +157,4 @@ Spring Boot WAS
 - [ERD](./03-erd.md)
 - [API 명세](./04-api-spec.md)
 - [ADR 목록](./adr/README.md)
+  - ADR-0002: 프론트엔드 라우트 구조·위치 전송 훅 설계 (Wiki)
