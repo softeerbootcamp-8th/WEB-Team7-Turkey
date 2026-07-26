@@ -254,7 +254,7 @@ External Map API
 
 * [서비스 기획서](링크를-입력해주세요)
 * [Frontend README](./frontend/README.md)
-* [Backend README](./backend/README.md)
+* [Backend README](frontend/README.md)
 * [API 명세](링크를-입력해주세요)
 * [ERD](링크를-입력해주세요)
 * [시스템 아키텍처](./docs/architecture.md)

@@ -34,3 +34,6 @@ out/
 
 ### 로컬 개발용 H2 파일 DB ###
 backend/data/
+
+# Local Claude Code hook scripts (personal, not shared)
+frontend/.claude/hooks/
