@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* Efficient Motion System - Global Brand Styles */
 
 :root {
@@ -208,4 +212,18 @@ body {
 
 .btn--secondary:hover {
     background-color: var(--color-surface-bright);
+}
+
+/* 이용기록 등에서 개인정보(주소/연락처) 블러 처리 */
+.text-blurred {
+    color: transparent;
+    text-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+}
+
+/* 주소 검색 출발/도착 연결선(점선) */
+.dotted-line {
+    background-image: linear-gradient(to bottom, #d1d5db 40%, rgba(255, 255, 255, 0) 0%);
+    background-position: left center;
+    background-size: 2px 6px;
+    background-repeat: repeat-y;
 }

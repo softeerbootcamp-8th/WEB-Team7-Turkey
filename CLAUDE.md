@@ -49,7 +49,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 
 ## 기술 스택
 
-- Backend: Java 21, Spring Boot 3.4.x, Gradle, Lombok, JUnit + AssertJ, SSE, Flyway
+- Backend: Java 21, Spring ruBoot 3.4.x, Gradle, Lombok, JUnit + AssertJ, SSE, Flyway
 - Data: MySQL 8.4, Redis
 - Infra: AWS EC2(백엔드), S3(프론트 빌드 산출물), CloudFront(CDN), GitHub Actions
 - 데이터 접근 기술은 jpa

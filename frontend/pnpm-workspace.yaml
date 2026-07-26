@@ -1,0 +1,4 @@
+# pnpm 11: 빌드 스크립트 실행 허용 여부 (Vite 구동에 esbuild 바이너리 필요)
+allowBuilds:
+  '@scarf/scarf': false
+  esbuild: true
