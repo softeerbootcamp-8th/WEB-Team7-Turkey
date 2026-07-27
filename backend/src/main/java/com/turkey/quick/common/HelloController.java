@@ -22,6 +22,7 @@ public class HelloController {
         systemInfo.put("os.name", System.getProperty("os.name"));
         systemInfo.put("user.dir", System.getProperty("user.dir")); // 현재 실행 디렉토리 파악 가능;;
         systemInfo.put("java.version", System.getProperty("java.version"));
+        systemInfo.put("java.home", System.getProperty("java.home"));
 
         return ApiResponse.ok(systemInfo);
     }
