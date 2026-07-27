@@ -20,7 +20,8 @@ public class HelloController {
 
         // 2. 자바 및 서버 시스템 프로퍼티 노출
         systemInfo.put("os.name", System.getProperty("os.name"));
-        systemInfo.put("user.dir", System.getProperty("user.dir")); // 현재 실행 디렉토리 파악 가능
+        systemInfo.put("user.dir", System.getProperty("user.dir")); // 현재 실행 디렉토리 파악 가능;;
+        systemInfo.put("java.version", System.getProperty("java.version"));
 
         return ApiResponse.ok(systemInfo);
     }
