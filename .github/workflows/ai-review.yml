@@ -1,44 +1,32 @@
 name: Gemini AI Code Reviewer
 
 on:
-  issue_comment:
-    types: [created]
+  pull_request:
+    types: [opened, synchronize]
 
 permissions: write-all
 
 jobs:
   gemini-code-review:
     runs-on: ubuntu-latest
-    if: |
-      github.event.issue.pull_request &&
-      contains(github.event.comment.body, '/gemini-review')
     steps:
       - name: PR Info
         run: |
-          echo "Comment: ${{ github.event.comment.body }}"
-          echo "Issue Number: ${{ github.event.issue.number }}"
+          echo "PR Number: ${{ github.event.pull_request.number }}"
           echo "Repository: ${{ github.repository }}"
+          echo "Action Type: ${{ github.event.action }}"
 
       - name: Checkout Repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Get PR Details
-        id: pr
-        run: |
-          PR_JSON=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.issue.number }})
-          echo "head_sha=$(echo $PR_JSON | jq -r .head.sha)" >> $GITHUB_OUTPUT
-          echo "base_sha=$(echo $PR_JSON | jq -r .base.sha)" >> $GITHUB_OUTPUT
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Gemini AI Review
         uses: truongnh1992/gemini-ai-code-reviewer@main
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: gemini-1.5-flash # 속도가 빠르고 비용 효율적입니다. 더 정교한 분석은 gemini-1.5-pro로 변경 가능
+          GEMINI_MODEL: gemini-1.5-flash # 속도가 빠르고 비용 효율적입니다. 심층 분석 필요 시 gemini-1.5-pro 변경 가능
           EXCLUDE: "*.md,*.txt,package-lock.json,yarn.lock,*.yml,*.yaml,dist/*"
           PROMPT: |
             당신은 시니어 풀스택 개발자입니다.
