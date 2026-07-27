@@ -3,6 +3,8 @@ name: Gemini PR Review
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_target:
+    types: [ opened, synchronize, reopened, ready_for_review ]
 
 permissions:
   contents: read
@@ -62,15 +64,14 @@ jobs:
 
           [출력 JSON 구조]
           {
-            "verdict": "APPROVE | COMMENT | REQUEST_CHANGES 중 하나",
-            "summary": "전체적인 코드 리뷰 요약 (한국어)",
+            "summary": "PR 변경 사항에 대한 시니어 관점의 한 줄 총평 및 요약",
             "findings": [
               {
                 "file": "수정된 파일 경로 (예: src/index.ts)",
-                "line": 수정된 코드의 새 라인 번호 (숫자, 파일 전체 지적시 null),
+                "line": 수정된 코드의 새 라인 번호 (숫자, 특정 라인이 아니면 null),
                 "severity": "CRITICAL | WARNING | INFO 중 하나",
-                "title": "지적 사항 요약 제목",
-                "body": "상세한 피드백 및 개선안 설명"
+                "title": "피드백 제목",
+                "body": "상세 설명 및 개선안"
               }
             ]
           }
@@ -100,7 +101,7 @@ jobs:
               }
             }')
 
-          RESPONSE=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent" \
+          RESPONSE=$(curl -s -X POST "[https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent](https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent)" \
             -H "Content-Type: application/json" \
             -H "X-goog-api-key: ${GEMINI_API_KEY}" \
             -d "$PAYLOAD")
@@ -125,31 +126,44 @@ jobs:
             }
 
             const findings = Array.isArray(review.findings) ? review.findings : [];
-            const findingLines = findings.map((finding) => {
-              const location = finding.line ? `${finding.file}:${finding.line}` : finding.file;
-              return `- **[${finding.severity}]** \`${location}\` - ${finding.title}\n  ${finding.body}`;
-            });
+            
+            // 심각도별 이모지 매핑
+            const severityEmoji = {
+              CRITICAL: "🚨",
+              WARNING: "⚠️",
+              INFO: "💡"
+            };
 
+            // 전체 요약 본문 항목 생성
+            const findingListText = findings.map((finding) => {
+              const emoji = severityEmoji[finding.severity] || "📌";
+              const location = finding.file ? (finding.line ? `\`${finding.file}:${finding.line}\`` : `\`${finding.file}\``) : "일반";
+              return `#### ${emoji} [${finding.severity || "INFO"}] ${finding.title}\n- **위치:** ${location}\n- **내용:** ${finding.body}`;
+            }).join("\n\n");
+
+            // 표준 PR 리뷰 템플릿 구조
             const body = [
-              "## 🤖 Gemini PR Review",
+              "## 🤖 Gemini AI Code Review",
               "",
-              `**Verdict:** ${review.verdict || "COMMENT"}`,
+              "### 📝 Summary",
+              review.summary || "이번 PR에 대한 전반적인 변경 사항을 검토했습니다.",
               "",
-              review.summary || "리뷰 요약이 제공되지 않았습니다.",
-              "",
-              "### 🔍 Findings",
-              findingLines.length ? findingLines.join("\n\n") : "No findings."
+              "### 🔍 Detailed Findings",
+              findings.length ? findingListText : "특별히 지적할 버그나 개선사항이 발견되지 않았습니다. Good Job! 👍"
             ].join("\n");
 
-            // 인라인 코멘트 데이터 생성
+            // 특정 라인별 인라인 댓글 생성
             const comments = findings
               .filter((finding) => finding.file && Number.isInteger(finding.line))
-              .map((finding) => ({
-                path: finding.file,
-                line: finding.line,
-                side: "RIGHT",
-                body: `**[${finding.severity}] ${finding.title}**\n\n${finding.body}`
-              }));
+              .map((finding) => {
+                const emoji = severityEmoji[finding.severity] || "📌";
+                return {
+                  path: finding.file,
+                  line: finding.line,
+                  side: "RIGHT",
+                  body: `${emoji} **[${finding.severity || "INFO"}] ${finding.title}**\n\n${finding.body}`
+                };
+              });
 
             try {
               await github.rest.pulls.createReview({
