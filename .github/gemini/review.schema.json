@@ -1,0 +1,47 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["pass", "fail"],
+      "description": "P0 또는 P1 finding이 있으면 fail, 그 외에는 pass"
+    },
+    "summary": {
+      "type": "string",
+      "description": "PR 변경 사항에 대한 간결한 한국어 총평"
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 7,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["P0", "P1", "P2", "P3"]
+          },
+          "file": {
+            "type": "string",
+            "description": "저장소 루트 기준 변경 파일 경로"
+          },
+          "line": {
+            "type": ["integer", "null"],
+            "description": "변경 후 파일의 추가 또는 수정된 라인 번호"
+          },
+          "title": {
+            "type": "string",
+            "description": "문제의 결과가 드러나는 간결한 한국어 제목"
+          },
+          "body": {
+            "type": "string",
+            "description": "위반 사항, 구체적 발생 조건, 영향을 3문장 이내로 설명"
+          }
+        },
+        "required": ["severity", "file", "line", "title", "body"]
+      }
+    }
+  },
+  "required": ["verdict", "summary", "findings"]
+}
