@@ -44,7 +44,9 @@ jobs:
       - name: Deploy jar and restart service
         run: |
           mkdir -p /home/ubuntu/app
-          cp ./deploy/*.jar /home/ubuntu/app/app.jar
+          JAR=$(ls ./deploy/*.jar | grep -v -- '-plain' | head -n 1)
+          echo "Deploying: $JAR"
+          cp "$JAR" /home/ubuntu/app/app.jar
           sudo systemctl restart myapp.service
 
       - name: Verify service is running
