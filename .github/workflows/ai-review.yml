@@ -1,8 +1,8 @@
 name: Gemini PR Review
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
@@ -11,7 +11,14 @@ permissions:
 jobs:
   gemini-review:
     name: Gemini PR Review
-    if: github.event.pull_request.draft == false
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.comment.body == '/gemini-review' &&
+      (
+        github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'COLLABORATOR'
+      )
     runs-on: ubuntu-latest
 
     steps:
@@ -29,7 +36,7 @@ jobs:
             const response = await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: context.payload.pull_request.number,
+              pull_number: context.payload.issue.number,
               headers: {
                 accept: "application/vnd.github.v3.diff"
               }
@@ -134,36 +141,54 @@ jobs:
             const review = JSON.parse(fs.readFileSync("gemini-review.json", "utf8"));
             const findings = review.findings;
 
+            const severityLabel = {
+              P0: "P0(반드시 확인)",
+              P1: "P1(꼭 확인)",
+              P2: "P2(확인 요청)",
+              P3: "P3(의견)"
+            };
+
             const findingLines = findings.map((finding) => {
               const location = finding.line ? `${finding.file}:${finding.line}` : finding.file;
-              return `- **${finding.severity}** \`${location}\` - ${finding.title}\n  ${finding.body}`;
+              const label = severityLabel[finding.severity] || "💬 의견";
+              return [
+                `#### ${label} · ${finding.title}`,
+                "",
+                `**위치:** \`${location}\``,
+                "",
+                finding.body
+              ].join("\n");
             });
 
             const body = [
-              "## 🤖 Gemini PR Review",
+              "## 코드 리뷰",
               "",
-              `**Verdict:** ${review.verdict}`,
+              "### 리뷰 요약",
               "",
               review.summary,
               "",
-              "### Findings",
-              findingLines.length ? findingLines.join("\n") : "No findings."
+              "### 리뷰 의견",
+              "",
+              findingLines.length ? findingLines.join("\n\n") : "별도로 남길 리뷰 의견은 없습니다."
             ].join("\n");
 
             const comments = findings
               .filter((finding) => finding.file && Number.isInteger(finding.line))
-              .map((finding) => ({
-                path: finding.file,
-                line: finding.line,
-                side: "RIGHT",
-                body: `**${finding.severity}: ${finding.title}**\n\n${finding.body}`
-              }));
+              .map((finding) => {
+                const label = severityLabel[finding.severity] || "💬 의견";
+                return {
+                  path: finding.file,
+                  line: finding.line,
+                  side: "RIGHT",
+                  body: `**${label} · ${finding.title}**\n\n${finding.body}`
+                };
+              });
 
             try {
               await github.rest.pulls.createReview({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                pull_number: context.payload.pull_request.number,
+                pull_number: context.payload.issue.number,
                 event: "COMMENT",
                 body,
                 comments
@@ -173,7 +198,7 @@ jobs:
               await github.rest.pulls.createReview({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                pull_number: context.payload.pull_request.number,
+                pull_number: context.payload.issue.number,
                 event: "COMMENT",
                 body
               });
