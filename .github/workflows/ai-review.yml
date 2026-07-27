@@ -86,7 +86,6 @@ jobs:
           PROMPT_TEXT=$(cat gemini-review-prompt.md)
           DIFF_TEXT=$(cat gemini-pr-diff.patch)
 
-          # jq로 프롬프트와 diff를 결합한 JSON Payload 생성
           PAYLOAD=$(jq -n \
             --arg prompt "$PROMPT_TEXT" \
             --arg diff "$DIFF_TEXT" \
@@ -101,17 +100,13 @@ jobs:
               }
             }')
 
-          # 보내주신 헤더 인증(X-goog-api-key) 방식 cURL 호출
-          RESPONSE=$(curl -s "[https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent](https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent)" \
-            -H 'Content-Type: application/json' \
+          RESPONSE=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent" \
+            -H "Content-Type: application/json" \
             -H "X-goog-api-key: ${GEMINI_API_KEY}" \
-            -X POST \
             -d "$PAYLOAD")
 
-          # 결과 JSON 추출
           RAW_JSON=$(echo "$RESPONSE" | jq -r '.candidates[0].content.parts[0].text // "{}"')
 
-          # 파일로 저장 (github-script에서 읽어옴)
           echo "$RAW_JSON" > gemini-review.json
 
       - name: Create PR review
