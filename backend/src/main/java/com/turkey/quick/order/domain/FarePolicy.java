@@ -159,11 +159,22 @@ public class FarePolicy {
         this.status = FarePolicyStatus.ACTIVE;
     }
 
-    /** 정책 비활성화: ACTIVE → INACTIVE. 적용 종료 시각을 남긴다. */
+    /**
+     * 정책 비활성화: ACTIVE → INACTIVE. 적용 종료 시각을 남긴다.
+     * effectiveFrom 은 호출자가 지정한 값을 그대로 신뢰하므로, 계산된 effectiveTo 가
+     * effectiveFrom 보다 뒤가 아니면(예: effectiveFrom 이 시스템 로컬 타임존 기준으로
+     * 미래에 있는 경우) DB 제약 위반 대신 명확한 도메인 예외로 실패시킨다.
+     */
     public void deactivate() {
         requireStatus(FarePolicyStatus.ACTIVE, "비활성화");
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        if (!now.isAfter(this.effectiveFrom)) {
+            throw new IllegalStateException(
+                    "적용 종료 시각이 적용 시작 시각보다 뒤여야 합니다. effectiveFrom="
+                            + effectiveFrom + ", 계산된 effectiveTo=" + now);
+        }
         this.status = FarePolicyStatus.INACTIVE;
-        this.effectiveTo = LocalDateTime.now(ZoneOffset.UTC);
+        this.effectiveTo = now;
     }
 
     private void requireStatus(FarePolicyStatus required, String action) {
