@@ -110,6 +110,26 @@ public class FarePolicy {
                 maxDeliveryDistanceMeters, effectiveFrom);
     }
 
+    /**
+     * 물품 종류별 할증 추가. 같은 itemType 은 중복 등록할 수 없다 —
+     * DB uk_item_surcharge_policy_type 과 동일한 조합을 앱에서도 먼저 막아
+     * 제약 위반 예외 대신 명확한 도메인 예외로 실패시킨다.
+     */
+    public void addSurcharge(ItemType itemType, long surchargeAmount) {
+        if (surchargeAmount < 0) {
+            throw new IllegalArgumentException(
+                    "할증 금액은 음수일 수 없습니다. surchargeAmount=" + surchargeAmount);
+        }
+        boolean duplicate = this.surcharges.stream()
+                .anyMatch(surcharge -> surcharge.getItemType() == itemType);
+        if (duplicate) {
+            throw new IllegalStateException(
+                    "이미 등록된 물품 종류입니다: " + itemType
+                            + " (policyVersion=" + policyVersion + ")");
+        }
+        this.surcharges.add(ItemTypeSurcharge.create(this, itemType, surchargeAmount));
+    }
+
     /** 정책 활성화: INACTIVE → ACTIVE. */
     public void activate() {
         requireStatus(FarePolicyStatus.INACTIVE, "활성화");

@@ -83,4 +83,33 @@ class FarePolicyTest {
 
         assertThatThrownBy(policy::deactivate).isInstanceOf(IllegalStateException.class);
     }
+
+    @Test
+    void 물품종류_할증을_추가할수_있다() {
+        FarePolicy policy = policy();
+
+        policy.addSurcharge(ItemType.FOOD, 1_000L);
+
+        assertThat(policy.getSurcharges()).hasSize(1);
+        assertThat(policy.getSurcharges().get(0).getItemType()).isEqualTo(ItemType.FOOD);
+        assertThat(policy.getSurcharges().get(0).getSurchargeAmount()).isEqualTo(1_000L);
+        assertThat(policy.getSurcharges().get(0).getFarePolicy()).isSameAs(policy);
+    }
+
+    @Test
+    void 같은_물품종류를_중복_추가할수_없다() {
+        FarePolicy policy = policy();
+        policy.addSurcharge(ItemType.FOOD, 1_000L);
+
+        assertThatThrownBy(() -> policy.addSurcharge(ItemType.FOOD, 500L))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void 할증금액은_음수일수_없다() {
+        FarePolicy policy = policy();
+
+        assertThatThrownBy(() -> policy.addSurcharge(ItemType.FOOD, -1L))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 }
