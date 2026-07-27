@@ -18,6 +18,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Build
+        working-directory: ./backend
         run: ./gradlew clean build -x test
 
       - name: Restart service
