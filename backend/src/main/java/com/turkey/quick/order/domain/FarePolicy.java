@@ -28,6 +28,9 @@ import lombok.NoArgsConstructor;
  * 이 엔터티는 전이 자체의 유효성만 검증하고, 기존 활성 정책을 먼저 비활성화하는 오케스트레이션은
  * 서비스 계층 책임이다.
  *
+ * 한 번 비활성화(deactivate)된 정책 버전은 재활성화할 수 없다 — 새 요금은 새 policy_version
+ * 행으로 만든다. effectiveTo 는 해당 버전이 적용을 멈춘 시각의 영구 기록이다.
+ *
  * item_type_surcharge 는 특정 정책 버전 없이는 존재 의미가 없는 하위 구성요소이므로,
  * 이 루트의 addSurcharge() 를 통해서만 생성된다.
  */
@@ -141,9 +144,18 @@ public class FarePolicy {
         this.surcharges.add(ItemTypeSurcharge.create(this, itemType, surchargeAmount));
     }
 
-    /** 정책 활성화: INACTIVE → ACTIVE. */
+    /**
+     * 정책 활성화: INACTIVE → ACTIVE.
+     * 이미 한 번 비활성화된(effectiveTo 가 기록된) 정책 버전은 재활성화할 수 없다 —
+     * 새 요금은 새 policy_version 행으로 만든다.
+     */
     public void activate() {
         requireStatus(FarePolicyStatus.INACTIVE, "활성화");
+        if (this.effectiveTo != null) {
+            throw new IllegalStateException(
+                    "이미 비활성화된 정책 버전은 다시 활성화할 수 없습니다. 새 정책 버전을 만드세요. "
+                            + "policyVersion=" + policyVersion + ", effectiveTo=" + effectiveTo);
+        }
         this.status = FarePolicyStatus.ACTIVE;
     }
 

@@ -115,6 +115,15 @@ class FarePolicyTest {
     }
 
     @Test
+    void 한번_비활성화된_정책은_재활성화할수_없다() {
+        FarePolicy policy = policy();
+        policy.activate();
+        policy.deactivate();
+
+        assertThatThrownBy(policy::activate).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
     void 물품종류_할증을_추가할수_있다() {
         FarePolicy policy = policy();
 
