@@ -25,6 +25,7 @@ class MemberTermAgreementTest {
         MemberTermAgreement agreement = MemberTermAgreement.create(member, term, true);
 
         assertThat(agreement.getMember()).isSameAs(member);
+
         assertThat(agreement.getTerm()).isSameAs(term);
     }
 
