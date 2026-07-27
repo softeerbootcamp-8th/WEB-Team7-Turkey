@@ -50,6 +50,36 @@ class FarePolicyTest {
     }
 
     @Test
+    void 정책버전은_null일수_없다() {
+        assertThatThrownBy(() ->
+                FarePolicy.create(null, 3_000L, 1_000, 500L, 10_000, LocalDateTime.now()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void 정책버전은_공백일수_없다() {
+        assertThatThrownBy(() ->
+                FarePolicy.create("   ", 3_000L, 1_000, 500L, 10_000, LocalDateTime.now()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void 정책버전은_30자를_초과할수_없다() {
+        String tooLong = "v".repeat(31);
+
+        assertThatThrownBy(() ->
+                FarePolicy.create(tooLong, 3_000L, 1_000, 500L, 10_000, LocalDateTime.now()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void 적용시작시각은_null일수_없다() {
+        assertThatThrownBy(() ->
+                FarePolicy.create("v1", 3_000L, 1_000, 500L, 10_000, null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void activate하면_ACTIVE로_전이한다() {
         FarePolicy policy = policy();
 

@@ -77,6 +77,17 @@ public class FarePolicy {
     private FarePolicy(String policyVersion, long baseFare, int distanceUnitMeters,
                        long distanceUnitFare, int maxDeliveryDistanceMeters,
                        LocalDateTime effectiveFrom) {
+        if (policyVersion == null || policyVersion.isBlank()) {
+            throw new IllegalArgumentException(
+                    "정책 버전은 비어 있을 수 없습니다. policyVersion=" + policyVersion);
+        }
+        if (policyVersion.length() > 30) {
+            throw new IllegalArgumentException(
+                    "정책 버전은 30자를 초과할 수 없습니다. policyVersion=" + policyVersion);
+        }
+        if (effectiveFrom == null) {
+            throw new IllegalArgumentException("적용 시작 시각은 필수입니다. effectiveFrom=null");
+        }
         if (baseFare <= 0) {
             throw new IllegalArgumentException("기본요금은 양수여야 합니다. baseFare=" + baseFare);
         }
