@@ -18,6 +18,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - [도메인 정책](docs/02-domain-policy.md) — 상태 전이, 배차·취소·포인트·정산·SSE 정책
 - [ERD](docs/03-erd.md) — 핵심 엔터티, 관계, 애플리케이션-DB 제약 역할 분담
 - [로깅 공통 규칙](docs/logging-guidelines.md) — Filter+MDC / Service / 선택적 AOP 규칙
+- [로컬 개발 환경(DB)](docs/05-local-dev.md) — Docker MySQL 기동·초기화·트러블슈팅
 
 문서 간 내용이 충돌하면 ADR → ERD/DDL → 도메인 정책 → 기능 명세 → 프로젝트 컨텍스트 순으로 판단한다.
 
@@ -35,7 +36,8 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 
 ## 금지 사항
 
-- **Spring Security, Spring Batch, Spring AI, Docker 사용 금지**
+- **Spring Security, Spring Batch, Spring AI 사용 금지**
+- **Docker: 로컬 개발 DB 실행 용도로만 허용**(`backend/docker-compose.yml`). 애플리케이션 컨테이너화, 배포 파이프라인, 테스트 인프라(Testcontainers 등)에는 사용하지 않는다 — 필요하면 ADR 로 별도 논의한다.
 - **Redis Pub/Sub, Redis Streams 사용 금지**
 
 ## 저장소 구조
