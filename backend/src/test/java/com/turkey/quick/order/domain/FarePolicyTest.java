@@ -172,4 +172,15 @@ class FarePolicyTest {
         assertThatThrownBy(() -> policy.addSurcharge(ItemType.FOOD, -1L))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void getSurcharges는_수정불가능한_리스트를_반환한다() {
+        FarePolicy policy = policy();
+        policy.addSurcharge(ItemType.FOOD, 1_000L);
+
+        assertThatThrownBy(() -> policy.getSurcharges().clear())
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> policy.getSurcharges().add(null))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
 }

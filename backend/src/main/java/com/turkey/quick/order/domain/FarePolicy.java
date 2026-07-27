@@ -15,6 +15,7 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -175,6 +176,16 @@ public class FarePolicy {
         }
         this.status = FarePolicyStatus.INACTIVE;
         this.effectiveTo = now;
+    }
+
+    /**
+     * 할증 목록 조회. 수정 불가능한 뷰를 반환한다 — 이 연관관계는 orphanRemoval=true 이므로,
+     * 살아있는 리스트를 그대로 노출하면 호출자의 clear()/remove() 가 플러시 시점에 자식 행을
+     * 삭제하고, addSurcharge() 의 중복 검증을 우회한 add() 도 가능해진다.
+     * Hibernate 는 필드 접근을 사용하므로(@Id 가 필드에 있음) 이 게터를 감싸도 안전하다.
+     */
+    public List<ItemTypeSurcharge> getSurcharges() {
+        return Collections.unmodifiableList(surcharges);
     }
 
     private void requireStatus(FarePolicyStatus required, String action) {
