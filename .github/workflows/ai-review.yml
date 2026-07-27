@@ -14,15 +14,13 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      - name: ChatGTP Code Review
-        uses: anc95/ChatGPT-CodeReview@main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-
-          LANGUAGE: Korean
-          MODEL: gpt-4o-mini
-          PROMPT: |
+      - name: Gemini Code Review
+        uses: google-gemini/gemini-github-action@v1
+        with:
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          model: 'gemini-1.5-flash'
+          prompt: |
             당신은 시니어 풀스택 개발자입니다.
             PR의 변경 사항을 리뷰하고 버그, 성능 개선점, 가독성을 중심으로 피드백을 제공해 주세요.
             반드시 한국어로 답변해 주세요.
