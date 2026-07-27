@@ -86,20 +86,26 @@ jobs:
           PROMPT_TEXT=$(cat gemini-review-prompt.md)
           DIFF_TEXT=$(cat gemini-pr-diff.patch)
 
-          # 전체 프롬프트 결합
-          FULL_PROMPT="${PROMPT_TEXT}\n\n[PR Diff]\n${DIFF_TEXT}"
+          # jq로 프롬프트와 diff를 결합한 JSON Payload 생성
+          PAYLOAD=$(jq -n \
+            --arg prompt "$PROMPT_TEXT" \
+            --arg diff "$DIFF_TEXT" \
+            '{
+              contents: [{
+                parts: [{
+                  text: ($prompt + "\n\n[PR Diff]\n" + $diff)
+                }]
+              }],
+              generationConfig: {
+                responseMimeType: "application/json"
+              }
+            }')
 
-          # JSON 파싱용 이스케이프 처리
-          PAYLOAD=$(jq -n --arg prompt "$FULL_PROMPT" '{
-            contents: [{ parts: [{ text: $prompt }] }],
-            generationConfig: {
-              responseMimeType: "application/json"
-            }
-          }')
-
-          # Gemini API 호출 (gemini-1.5-flash)
-          RESPONSE=$(curl -s -X POST "[https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$](https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$){GEMINI_API_KEY}" \
-            -H "Content-Type: application/json" \
+          # 보내주신 헤더 인증(X-goog-api-key) 방식 cURL 호출
+          RESPONSE=$(curl -s "[https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent](https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent)" \
+            -H 'Content-Type: application/json' \
+            -H "X-goog-api-key: ${GEMINI_API_KEY}" \
+            -X POST \
             -d "$PAYLOAD")
 
           # 결과 JSON 추출
@@ -140,7 +146,7 @@ jobs:
               findingLines.length ? findingLines.join("\n\n") : "No findings."
             ].join("\n");
 
-            // 코드 특정 라인 인라인 코멘트 생성
+            // 인라인 코멘트 데이터 생성
             const comments = findings
               .filter((finding) => finding.file && Number.isInteger(finding.line))
               .map((finding) => ({
@@ -163,4 +169,9 @@ jobs:
               core.warning(`Inline review comments failed, creating summary review only: ${error.message}`);
               await github.rest.pulls.createReview({
                 owner: context.repo.owner,
-                repo: context.
+                repo: context.repo.repo,
+                pull_number: context.payload.pull_request.number,
+                event: "COMMENT",
+                body
+              });
+            }
