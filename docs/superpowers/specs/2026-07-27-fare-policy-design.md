@@ -10,9 +10,13 @@
 
 이 단계를 가장 먼저 진행하는 이유:
 - 다른 신규 엔터티에 의존하지 않는 독립 테이블
-- `active_policy_marker` VIRTUAL 생성 컬럼의 H2(MySQL 모드) 호환성을,
-  2단계 `DeliveryOrder`가 쓸 VIRTUAL 컬럼 2개(`active_customer_id`/`active_rider_id`)보다
-  먼저 작고 리스크가 낮은 곳에서 검증
+- `active_policy_marker` 생성 컬럼의 H2(MySQL 모드) 호환성을,
+  2단계 `DeliveryOrder`가 쓸 생성 컬럼 2개(`active_customer_id`/`active_rider_id`)보다
+  먼저 작고 리스크가 낮은 곳에서 검증 — 실증 결과 H2 2.3.232(MySQL 호환 모드)는
+  `GENERATED ALWAYS AS (...) VIRTUAL`의 `VIRTUAL` 키워드를 파싱하지 못했다. MySQL 은
+  생성 컬럼 기본값이 VIRTUAL 이므로, 키워드를 생략해도 운영(MySQL)·로컬(H2) 양쪽에서
+  동일한 스키마가 만들어진다. 이 저장소는 `VIRTUAL` 키워드를 생략하는 방식을 채택했고,
+  #143 도 동일하게 따른다.
 
 범위는 **엔터티 + Flyway 마이그레이션 + 도메인 TDD**까지다. 요금 계산 서비스 로직,
 정책 활성화 시 기존 활성 정책을 자동으로 비활성화하는 흐름 등은 이 이슈 범위 밖이며,
@@ -70,7 +74,8 @@ public enum ItemType { DOCUMENT, SMALL_PARCEL, MEDIUM_PARCEL, LARGE_PARCEL, FOOD
   서비스 계층 책임(범위 밖).
 - `deactivate()` — `ACTIVE → INACTIVE`만 허용, `effectiveTo = now(UTC)`로 세팅해 적용 종료 시각을 남긴다.
 
-`active_policy_marker` VIRTUAL 컬럼은 JPA 필드로 매핑하지 않는다(DB 전용 제약 목적).
+`active_policy_marker` 생성 컬럼(`VIRTUAL` 키워드 생략, MySQL 기본값과 동일한 동작)은 JPA 필드로
+매핑하지 않는다(DB 전용 제약 목적).
 
 ### ItemTypeSurcharge
 
@@ -97,7 +102,8 @@ DDL(Wiki "데이터베이스 물리적 설계" §5 및 사용자 제공 상세 D
 - `addSurcharge()`: 정상 추가 / 중복 `itemType` 예외 / 음수 금액 예외
 
 이후 로컬 H2(MySQL 모드) 부팅으로 Flyway V1~V9 적용 + Hibernate `validate` 통과를 실증한다
-(`active_policy_marker` VIRTUAL 컬럼 호환성 검증이 핵심 목표).
+(`active_policy_marker` 생성 컬럼 호환성 검증이 핵심 목표 — 결과: `VIRTUAL` 키워드가 있으면 H2가
+파싱하지 못해 실패하므로, 키워드를 생략해 MySQL과 동일한 기본 동작을 유지하면서 H2 호환성을 확보했다).
 
 ## 완료 조건
 

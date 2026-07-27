@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 요금 정책(`fare_policy`) 및 물품 종류별 할증(`item_type_surcharge`) 도메인 엔터티와 Flyway 마이그레이션을 추가하고, `active_policy_marker` VIRTUAL 생성 컬럼이 H2(MySQL 모드)에서 동작함을 실증한다.
+**Goal:** 요금 정책(`fare_policy`) 및 물품 종류별 할증(`item_type_surcharge`) 도메인 엔터티와 Flyway 마이그레이션을 추가하고, `active_policy_marker` 생성 컬럼이 H2(MySQL 모드)에서 동작함을 실증한다. (실증 결과: H2 2.3.232 MySQL 호환 모드는 `GENERATED ALWAYS AS (...) VIRTUAL`의 `VIRTUAL` 키워드를 파싱하지 못한다. MySQL 은 생성 컬럼 기본값이 VIRTUAL 이므로, 키워드를 생략해도 MySQL·H2 양쪽에서 동일한 스키마가 만들어진다 — 실제 마이그레이션은 `VIRTUAL` 키워드 없이 작성했다.)
 
 **Architecture:** `FarePolicy`를 애그리거트 루트로 두고 `ItemTypeSurcharge`를 `@OneToMany(cascade = ALL, orphanRemoval = true)`로 소유한다. 상태 전이는 setter가 아닌 행위 메서드(`activate`/`deactivate`)로만 수행하고, 허용되지 않은 전이는 `IllegalStateException`으로 거부한다. 스키마는 Flyway가 만들고 JPA는 `validate`로 검증만 한다.
 
@@ -173,7 +173,8 @@ import lombok.NoArgsConstructor;
  * 거리 단위당 요금을 직접 저장하는 요금 정책. 거리 구간별 규칙을 별도 행으로 관리하지 않는다.
  *
  * 정책은 policy_version 단위로 관리되며, 동시에 활성(ACTIVE)일 수 있는 정책은 최대 1개다 —
- * DB 의 active_policy_marker(VIRTUAL) + uk_fare_policy_active UNIQUE 가 이를 강제한다.
+ * DB 의 active_policy_marker(생성 컬럼, MySQL 기본값인 VIRTUAL) + uk_fare_policy_active UNIQUE 가
+ * 이를 강제한다.
  * 이 엔터티는 전이 자체의 유효성만 검증하고, 기존 활성 정책을 먼저 비활성화하는 오케스트레이션은
  * 서비스 계층 책임이다.
  *
@@ -562,6 +563,10 @@ Create `backend/src/main/resources/db/migration/V8__create_fare_policy.sql`:
 -- active_policy_marker 는 status='ACTIVE' 일 때만 1, 그 외에는 NULL 인 생성 컬럼이다.
 -- MySQL UNIQUE 는 NULL 을 다건 허용하므로, 이 컬럼의 UNIQUE 가 곧
 -- "활성 요금 정책은 최대 1건" 제약이 된다.
+--
+-- VIRTUAL 키워드를 붙이지 않는 이유: MySQL 생성 컬럼의 기본값이 VIRTUAL 이라 동작이
+-- 동일한 반면, 로컬 개발용 H2(MySQL 호환 모드)는 이 키워드를 파싱하지 못해 마이그레이션이
+-- 실패한다. 키워드를 생략하면 운영(MySQL)과 로컬(H2) 양쪽에서 같은 스키마가 만들어진다.
 
 CREATE TABLE fare_policy (
     fare_policy_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -578,7 +583,7 @@ CREATE TABLE fare_policy (
     active_policy_marker TINYINT
         GENERATED ALWAYS AS (
             CASE WHEN status = 'ACTIVE' THEN 1 ELSE NULL END
-        ) VIRTUAL,
+        ),
 
     CONSTRAINT pk_fare_policy PRIMARY KEY (fare_policy_id),
     CONSTRAINT uk_fare_policy_version UNIQUE (policy_version),
@@ -644,9 +649,14 @@ Expected 로그:
 
 기동 확인 후 Ctrl+C 로 종료한다.
 
-**만약 `active_policy_marker` 생성 컬럼에서 실패한다면** (H2 MySQL 호환 모드가 `GENERATED ALWAYS AS ... VIRTUAL` 문법이나 생성 컬럼의 UNIQUE 를 지원하지 않는 경우):
-- 마이그레이션 SQL 을 우회 수정하지 말 것. MySQL 이 정본이고 이 컬럼은 활성 정책 1건 제약의 핵심이다.
-- 실패한 정확한 예외 메시지와 H2 버전을 이슈 #142 에 코멘트로 남기고, 2단계(#143 `DeliveryOrder`, VIRTUAL 컬럼 2개 사용) 착수 전에 팀과 로컬 검증 방식을 합의한다.
+**실증 결과 (2026-07-27)**: H2 2.3.232 MySQL 호환 모드는 `GENERATED ALWAYS AS (...) VIRTUAL`의
+`VIRTUAL` 키워드를 파싱하지 못하고 마이그레이션이 실패했다(`org.h2.jdbc.JdbcSQLSyntaxErrorException`,
+V8의 `active_policy_marker` 정의에서 `VIRTUAL` 토큰을 만나는 지점). 마이그레이션 SQL 을 우회 수정하지
+말라는 원래 방침과 달리, 검토 후 **`VIRTUAL` 키워드를 생략하는 방향으로 SQL 을 수정**했다 — MySQL 은
+생성 컬럼의 기본값이 VIRTUAL 이므로 키워드를 생략해도 운영(MySQL)과 로컬(H2) 양쪽에서 동일한 스키마가
+만들어지고, 컬럼의 의미(활성 정책 1건 제약)도 그대로 유지된다. 이 변경은 사용자 승인을 거쳤다.
+이후 이 실증을 다시 반복할 필요는 없다 — `VIRTUAL` 키워드 없이 생성 컬럼을 작성하는 것이 이 저장소의
+확정된 방식이다(#143 도 동일하게 따른다).
 
 - [ ] **Step 5: 전체 테스트 실행**
 
@@ -675,11 +685,11 @@ git push -u origin feature/142-fare-policy-entities
 - [ ] **Step 2: PR 생성**
 
 PR 본문에는 팀 규칙에 따라 변경 내용·선택 이유·테스트 결과·집중 리뷰 영역을 포함하고, 본문에 `Closes #142`를 넣는다. 집중 리뷰 영역으로는 최소한 다음을 명시한다:
-- `active_policy_marker` VIRTUAL 컬럼 + UNIQUE 로 "활성 정책 1건"을 강제하는 방식이 적절한지
+- `active_policy_marker` 생성 컬럼(`VIRTUAL` 키워드 생략) + UNIQUE 로 "활성 정책 1건"을 강제하는 방식이 적절한지
 - `FarePolicy`를 애그리거트 루트로 두고 `ItemTypeSurcharge` 생성을 package-private 으로 제한한 설계
 
 ---
 
 ## 다음 단계 예고
 
-이 계획이 끝나면 [#143](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/issues/143) `DeliveryOrder`가 이어진다. 마이그레이션 번호는 V10부터 시작하고, 이 계획의 Task 4에서 검증한 VIRTUAL 생성 컬럼 결과를 전제로 `active_customer_id`/`active_rider_id`를 도입한다.
+이 계획이 끝나면 [#143](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/issues/143) `DeliveryOrder`가 이어진다. 마이그레이션 번호는 V10부터 시작하고, 이 계획의 Task 4에서 검증한 대로 생성 컬럼(`active_customer_id`/`active_rider_id`)을 **`VIRTUAL` 키워드 없이** 작성한다 — MySQL 기본값이 VIRTUAL 이라 의미는 동일하며, H2(MySQL 호환 모드)가 `VIRTUAL` 키워드를 파싱하지 못하는 문제를 피할 수 있다.

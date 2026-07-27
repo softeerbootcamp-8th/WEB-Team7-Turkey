@@ -25,9 +25,9 @@ import lombok.NoArgsConstructor;
  * 거리 단위당 요금을 직접 저장하는 요금 정책. 거리 구간별 규칙을 별도 행으로 관리하지 않는다.
  *
  * 정책은 policy_version 단위로 관리되며, 동시에 활성(ACTIVE)일 수 있는 정책은 최대 1개다 —
- * DB 의 active_policy_marker(VIRTUAL) + uk_fare_policy_active UNIQUE 가 이를 강제한다.
- * 이 엔터티는 전이 자체의 유효성만 검증하고, 기존 활성 정책을 먼저 비활성화하는 오케스트레이션은
- * 서비스 계층 책임이다.
+ * DB 의 active_policy_marker(생성 컬럼, MySQL 기본값인 VIRTUAL) + uk_fare_policy_active UNIQUE 가
+ * 이를 강제한다. 이 엔터티는 전이 자체의 유효성만 검증하고, 기존 활성 정책을 먼저 비활성화하는
+ * 오케스트레이션은 서비스 계층 책임이다.
  *
  * 한 번 비활성화(deactivate)된 정책 버전은 재활성화할 수 없다 — 새 요금은 새 policy_version
  * 행으로 만든다. effectiveTo 는 해당 버전이 적용을 멈춘 시각의 영구 기록이다.
