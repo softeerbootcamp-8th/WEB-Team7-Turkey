@@ -15,27 +15,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Comment when target branch is main
-        if: github.event.pull_request.base.ref == 'main'
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-              body: "main 브랜치에는 직접 머지할 수 없습니다."
-            });
-
       - name: Checkout trusted workflow files
-        if: github.event.pull_request.base.ref != 'main' && github.event.pull_request.draft == false
+        if: github.event.pull_request.draft == false
         uses: actions/checkout@v4
         with:
           persist-credentials: false
 
       - name: Fetch PR diff
-        if: github.event.pull_request.base.ref != 'main' && github.event.pull_request.draft == false
+        if: github.event.pull_request.draft == false
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -53,7 +40,7 @@ jobs:
             fs.writeFileSync("gemini-pr-diff.patch", response.data, "utf8");
 
       - name: Build Gemini review prompt
-        if: github.event.pull_request.base.ref != 'main' && github.event.pull_request.draft == false
+        if: github.event.pull_request.draft == false
         run: |
           {
             if [ -f .github/gemini/prompts/review.md ]; then
@@ -91,7 +78,7 @@ jobs:
           } > gemini-review-prompt.md
 
       - name: Run Gemini review
-        if: github.event.pull_request.base.ref != 'main' && github.event.pull_request.draft == false
+        if: github.event.pull_request.draft == false
         id: gemini
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -110,7 +97,7 @@ jobs:
             }
           }')
 
-          # Gemini API 호출 (gemini-1.5-flash 또는 gemini-1.5-pro)
+          # Gemini API 호출 (gemini-1.5-flash)
           RESPONSE=$(curl -s -X POST "[https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$](https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$){GEMINI_API_KEY}" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD")
@@ -122,7 +109,7 @@ jobs:
           echo "$RAW_JSON" > gemini-review.json
 
       - name: Create PR review
-        if: github.event.pull_request.base.ref != 'main' && github.event.pull_request.draft == false
+        if: github.event.pull_request.draft == false
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -176,9 +163,4 @@ jobs:
               core.warning(`Inline review comments failed, creating summary review only: ${error.message}`);
               await github.rest.pulls.createReview({
                 owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: context.payload.pull_request.number,
-                event: "COMMENT",
-                body
-              });
-            }
+                repo: context.
