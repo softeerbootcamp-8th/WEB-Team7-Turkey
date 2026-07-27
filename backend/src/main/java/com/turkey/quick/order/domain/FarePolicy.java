@@ -110,6 +110,26 @@ public class FarePolicy {
                 maxDeliveryDistanceMeters, effectiveFrom);
     }
 
+    /** 정책 활성화: INACTIVE → ACTIVE. */
+    public void activate() {
+        requireStatus(FarePolicyStatus.INACTIVE, "활성화");
+        this.status = FarePolicyStatus.ACTIVE;
+    }
+
+    /** 정책 비활성화: ACTIVE → INACTIVE. 적용 종료 시각을 남긴다. */
+    public void deactivate() {
+        requireStatus(FarePolicyStatus.ACTIVE, "비활성화");
+        this.status = FarePolicyStatus.INACTIVE;
+        this.effectiveTo = LocalDateTime.now(ZoneOffset.UTC);
+    }
+
+    private void requireStatus(FarePolicyStatus required, String action) {
+        if (this.status != required) {
+            throw new IllegalStateException(
+                    action + " 불가: 현재 상태 " + status + " (요구 상태 " + required + ")");
+        }
+    }
+
     @PrePersist
     void onCreate() {
         this.createdAt = LocalDateTime.now(ZoneOffset.UTC);

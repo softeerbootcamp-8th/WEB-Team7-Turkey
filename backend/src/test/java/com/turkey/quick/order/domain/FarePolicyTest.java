@@ -48,4 +48,39 @@ class FarePolicyTest {
                 FarePolicy.create("v1", 3_000L, 1_000, 500L, 0, LocalDateTime.now()))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void activate하면_ACTIVE로_전이한다() {
+        FarePolicy policy = policy();
+
+        policy.activate();
+
+        assertThat(policy.getStatus()).isEqualTo(FarePolicyStatus.ACTIVE);
+    }
+
+    @Test
+    void 이미_ACTIVE인_정책은_다시_activate할수_없다() {
+        FarePolicy policy = policy();
+        policy.activate();
+
+        assertThatThrownBy(policy::activate).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void deactivate하면_INACTIVE로_전이하고_적용종료시각이_기록된다() {
+        FarePolicy policy = policy();
+        policy.activate();
+
+        policy.deactivate();
+
+        assertThat(policy.getStatus()).isEqualTo(FarePolicyStatus.INACTIVE);
+        assertThat(policy.getEffectiveTo()).isNotNull();
+    }
+
+    @Test
+    void INACTIVE_상태는_deactivate할수_없다() {
+        FarePolicy policy = policy();
+
+        assertThatThrownBy(policy::deactivate).isInstanceOf(IllegalStateException.class);
+    }
 }
