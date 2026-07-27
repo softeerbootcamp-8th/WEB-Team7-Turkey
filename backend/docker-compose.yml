@@ -1,0 +1,38 @@
+# 로컬 개발용 MySQL.
+# 배포(EC2)와 같은 8.4 / utf8mb4 / UTC 로 맞춰, 로컬에서만 통과하고 배포에서 깨지는
+# 스키마·타입 문제를 로컬에서 잡는 것이 목적이다(H2 사용 시 TINYINT(1) 처리 차이로
+# 실제 배포 장애가 있었다).
+#
+# 사용법은 docs/05-local-dev.md 참고.
+# 여기의 계정/비밀번호는 로컬 컨테이너 전용이며 배포 접속 정보와 무관하다.
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: turkey-mysql-local
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: local
+      MYSQL_DATABASE: turkey
+      MYSQL_USER: turkey
+      MYSQL_PASSWORD: local
+      TZ: UTC
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      # 마이그레이션의 DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) 와
+      # 애플리케이션의 LocalDateTime.now(ZoneOffset.UTC) 기준을 일치시킨다.
+      - --default-time-zone=+00:00
+    volumes:
+      - turkey-mysql-data:/var/lib/mysql
+    healthcheck:
+      # 컨테이너가 떴어도 초기화 중에는 접속이 안 되므로, ping 이 통해야 healthy 로 본다.
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-plocal", "--silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
+
+volumes:
+  turkey-mysql-data:
