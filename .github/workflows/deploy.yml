@@ -1,0 +1,24 @@
+# .github/workflows/deploy.yml
+name: Deploy to WAS
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Build
+        run: ./gradlew clean build -x test
+
+      - name: Restart service
+        run: sudo systemctl restart myapp.service
