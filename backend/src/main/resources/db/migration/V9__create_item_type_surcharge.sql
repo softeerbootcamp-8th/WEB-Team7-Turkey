@@ -12,7 +12,11 @@ CREATE TABLE item_type_surcharge (
     CONSTRAINT uk_item_surcharge_policy_type
         UNIQUE (fare_policy_id, item_type),
     CONSTRAINT fk_item_surcharge_policy
-        FOREIGN KEY (fare_policy_id) REFERENCES fare_policy (fare_policy_id)
+        FOREIGN KEY (fare_policy_id) REFERENCES fare_policy (fare_policy_id),
+    CONSTRAINT ck_item_surcharge_item_type
+        CHECK (item_type IN (
+            'DOCUMENT', 'SMALL_PARCEL', 'MEDIUM_PARCEL', 'LARGE_PARCEL', 'FOOD'
+        ))
 ) ENGINE = InnoDB
   DEFAULT CHARACTER SET = utf8mb4
   COLLATE = utf8mb4_0900_ai_ci
