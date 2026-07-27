@@ -76,12 +76,8 @@ jobs:
                 }]
               }],
               generationConfig: {
-                responseFormat: {
-                  text: {
-                    mimeType: "application/json",
-                    schema: $schema[0]
-                  }
-                }
+                responseMimeType: "application/json",
+                responseJsonSchema: $schema[0]
               }
             }' > gemini-api-request.json
 
@@ -89,7 +85,7 @@ jobs:
             --output gemini-api-response.json \
             --write-out "%{http_code}" \
             --request POST \
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent" \
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent" \
             --header "Content-Type: application/json" \
             --header "X-goog-api-key: ${GEMINI_API_KEY}" \
             --data-binary @gemini-api-request.json)
