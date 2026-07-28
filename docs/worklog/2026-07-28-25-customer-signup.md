@@ -83,6 +83,28 @@ ERD에 있는 `customer` 테이블은 만들지 않기로 결정했다(「사람
   (`PhoneVerificationController`, `LoginIdController`)가 전부 `ApiResponse<T>`를 그대로 반환해 암묵적으로
   200을 쓰는 관례라 거기 맞췄다.
 
+## 리뷰 반영 (PR #181, Codex 자동 리뷰)
+
+PR을 올린 뒤 Codex 자동 리뷰가 지적한 4건을 코드로 재현 확인하고 모두 반영했다.
+
+- **P1 — 약관 유효기간 미필터링**: `TermRepository.findByActiveTrueAndTargetRoleIn`이 `is_active`만
+  보고 `effective_from`/`effective_to`를 보지 않아서, 아직 발효 전인 필수 약관이 있으면 모든 가입이
+  400으로 막히고, 반대로 이미 종료된 약관은 여전히 필수로 취급됐다. `Term.isEffectiveAt(now)`로
+  한 번 더 걸러 "활성 + 현재 유효기간 내"인 약관만 검증 대상으로 삼도록 고쳤다.
+- **P2 — 인증 토큰을 약관 검증보다 먼저 소비**: `verifyPhoneVerification`(Redis GETDEL, 되돌릴 수 없음)이
+  `resolveAgreedTerms`(순수 검증)보다 먼저 실행돼서, 약관 미동의로 400을 받은 사용자가 약관만 고쳐
+  재시도하면 토큰이 이미 사라져 인증부터 다시 받아야 했다. 부작용 없는 검증을 전부 끝낸 뒤 토큰을
+  소비하도록 순서를 바꿨다.
+- **P2 — 길이 초과가 409(중복)로 오인됨**: `loginId`/`name`이 컬럼 길이(50자)를 넘으면 저장 시
+  `DataIntegrityViolationException`이 나는데, catch 블록이 이유를 구분하지 않고 전부 "중복"으로 응답했다.
+  `CustomerSignupRequest`에 `@Size(max = 50)`을 추가해 형식 오류를 요청 단계에서 400으로 걸러내
+  DB까지 가지 않게 했다.
+- **P2 — `agreedTermIds`에 null이 있으면 500**: 리스트 자체의 `@NotNull`은 원소 안의 null까지는 막지
+  못해 `Set.copyOf`가 `NullPointerException`을 던졌다. `List<@NotNull Long> agreedTermIds`로 원소
+  단위 검증을 추가해 400으로 거부되게 했다.
+
+4건 모두 `CustomerSignupServiceTest`/`CustomerSignupE2ETest`에 재현 테스트를 추가해 확인했다.
+
 ## 일부러 하지 않은 것
 
 - **Customer 전용 프로필 테이블**: 「사람이 고른 선택 1」에서 뺐다. 후속: 미등록(실제로 고객 전용 컬럼이
@@ -100,8 +122,8 @@ ERD에 있는 `customer` 테이블은 만들지 않기로 결정했다(「사람
 
 | 층 | 파일 | 검증한 것 |
 |---|---|---|
-| 단위 | `customer/service/CustomerSignupServiceTest.java` | 정상 가입(비밀번호 해시·약관 동의 저장), 비밀번호 불일치, 아이디·전화번호 중복, 인증 토큰 없음/1회성 소비/목적 불일치/전화번호 불일치, 필수 약관 미동의, 존재하지 않는 약관 ID, DB 유니크 위반 시 409 변환 |
-| E2E | `customer/controller/CustomerSignupE2ETest.java` | 실제 인증요청→확인→가입 전 경로, 필수 약관 미동의 400, 필수 약관 동의 시 가입 성공, 아이디 중복 409, 미인증 상태 400, 비밀번호 불일치 400 |
+| 단위 | `customer/service/CustomerSignupServiceTest.java` | 정상 가입(비밀번호 해시·약관 동의 저장), 비밀번호 불일치, 아이디·전화번호 중복, 인증 토큰 없음/1회성 소비/목적 불일치/전화번호 불일치, 필수 약관 미동의, 발효 전·종료된 필수 약관은 검증 제외, 약관 검증 실패 시 토큰 미소비, 존재하지 않는 약관 ID, DB 유니크 위반 시 409 변환 |
+| E2E | `customer/controller/CustomerSignupE2ETest.java` | 실제 인증요청→확인→가입 전 경로, 필수 약관 미동의 400, 필수 약관 동의 시 가입 성공, 아이디 중복 409, 미인증 상태 400, 비밀번호 불일치 400, 로그인ID 길이 초과 400, 약관ID에 null 포함 시 400 |
 
 통합 계층은 별도 파일을 추가하지 않았다 — `existsByLoginId`/`existsByPhoneNumber`는 기존
 `MemberRepositoryIntegrationTest`(`#24`)가 이미 덮고, `TermRepository`/`MemberTermAgreementRepository`는
@@ -112,7 +134,7 @@ E2E 테스트가 실제 H2(Flyway 마이그레이션 포함)로 왕복 검증한
 ```text
 cd backend && ./gradlew test
 BUILD SUCCESSFUL
-128 tests completed, 0 failed, 0 errors (전체 스위트, #20/#21/#24 포함)
+133 tests completed, 0 failed, 0 errors (전체 스위트, #20/#21/#24 포함, 리뷰 반영 후 재실행)
 ```
 
 (중간에 `java.net.SocketException: Bad address: listen`으로 2회 실패했으나 재시도 시 정상 통과했다 —

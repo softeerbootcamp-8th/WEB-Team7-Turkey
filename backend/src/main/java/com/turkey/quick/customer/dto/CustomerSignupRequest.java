@@ -4,12 +4,14 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import java.util.List;
 
 public record CustomerSignupRequest(
 
         @Schema(description = "로그인 ID", example = "quick_user01")
         @NotBlank(message = "로그인 ID는 필수입니다.")
+        @Size(max = 50, message = "로그인 ID는 50자를 넘을 수 없습니다.")
         String loginId,
 
         @Schema(description = "비밀번호", example = "p@ssw0rd")
@@ -22,6 +24,7 @@ public record CustomerSignupRequest(
 
         @Schema(description = "이름", example = "홍길동")
         @NotBlank(message = "이름은 필수입니다.")
+        @Size(max = 50, message = "이름은 50자를 넘을 수 없습니다.")
         String name,
 
         @Schema(description = "휴대전화 번호(하이픈 선택)", example = "010-1234-5678")
@@ -35,6 +38,6 @@ public record CustomerSignupRequest(
 
         @Schema(description = "동의한 약관 ID 목록(필수 약관을 모두 포함해야 한다)", example = "[1, 2]")
         @NotNull(message = "약관 동의 정보는 필수입니다.")
-        List<Long> agreedTermIds
+        List<@NotNull(message = "약관 ID에는 null을 포함할 수 없습니다.") Long> agreedTermIds
 ) {
 }

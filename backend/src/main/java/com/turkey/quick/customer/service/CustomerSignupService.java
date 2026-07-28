@@ -12,6 +12,8 @@ import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.member.repository.MemberTermAgreementRepository;
 import com.turkey.quick.member.repository.TermRepository;
 import com.turkey.quick.member.service.VerificationCodeStore;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -58,11 +60,18 @@ public class CustomerSignupService {
             throw new BusinessException(HttpStatus.CONFLICT, "이미 가입된 휴대전화 번호입니다.");
         }
 
-        verifyPhoneVerification(request.phoneVerificationToken(), phoneNumber);
+        // 결정적 검증(약관)을 먼저 끝내고, 되돌릴 수 없는 토큰 소비(Redis GETDEL)는 마지막에 한다.
+        // 순서가 반대면 약관 미동의로 400을 받은 사용자가 약관만 고쳐 재시도할 때 토큰이 이미
+        // 사라져 있어 인증부터 다시 받아야 한다.
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        List<Term> effectiveTerms = termRepository.findByActiveTrueAndTargetRoleIn(
+                        List.of(TermTargetRole.COMMON, TermTargetRole.CUSTOMER))
+                .stream()
+                .filter(term -> term.isEffectiveAt(now))
+                .toList();
+        List<Term> agreedTerms = resolveAgreedTerms(effectiveTerms, request.agreedTermIds());
 
-        List<Term> activeTerms = termRepository.findByActiveTrueAndTargetRoleIn(
-                List.of(TermTargetRole.COMMON, TermTargetRole.CUSTOMER));
-        List<Term> agreedTerms = resolveAgreedTerms(activeTerms, request.agreedTermIds());
+        verifyPhoneVerification(request.phoneVerificationToken(), phoneNumber);
 
         Member member = Member.create(
                 loginId, passwordEncoder.encode(request.password()), request.name(), phoneNumber, MemberRole.CUSTOMER);

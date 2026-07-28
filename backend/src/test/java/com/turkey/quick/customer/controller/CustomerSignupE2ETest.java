@@ -214,4 +214,43 @@ class CustomerSignupE2ETest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
+
+    @Test
+    void 로그인_ID가_50자를_초과하면_409가_아니라_400을_반환한다() {
+        String phoneNumber = "01088889999";
+        String token = issueVerifiedToken(phoneNumber);
+
+        var signupRequest = Map.of(
+                "loginId", "a".repeat(51),
+                "password", "aaa",
+                "passwordConfirm", "aaa",
+                "name", "테스터7",
+                "phoneNumber", phoneNumber,
+                "phoneVerificationToken", token,
+                "agreedTermIds", List.of());
+
+        var response = rest.postForEntity(SIGNUP_ENDPOINT, signupRequest, ApiResponse.class);
+
+        // 길이 초과는 형식 오류(400)여야 한다. DB 제약 위반으로 새어나가 409(중복)로 오인되면 안 된다.
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void 약관_ID_목록에_null이_섞이면_500이_아니라_400을_반환한다() {
+        String phoneNumber = "01022223333";
+        String token = issueVerifiedToken(phoneNumber);
+
+        var signupRequest = new java.util.HashMap<String, Object>();
+        signupRequest.put("loginId", "e2e_user08");
+        signupRequest.put("password", "aaa");
+        signupRequest.put("passwordConfirm", "aaa");
+        signupRequest.put("name", "테스터8");
+        signupRequest.put("phoneNumber", phoneNumber);
+        signupRequest.put("phoneVerificationToken", token);
+        signupRequest.put("agreedTermIds", java.util.Arrays.asList((Long) null));
+
+        var response = rest.postForEntity(SIGNUP_ENDPOINT, signupRequest, ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
 }

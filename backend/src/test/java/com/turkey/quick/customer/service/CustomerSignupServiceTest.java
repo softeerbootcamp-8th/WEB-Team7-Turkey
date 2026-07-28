@@ -22,6 +22,7 @@ import com.turkey.quick.member.service.InMemoryVerificationCodeStore;
 import java.lang.reflect.Field;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -67,8 +68,12 @@ class CustomerSignupServiceTest {
 
     /** Term은 JPA로 영속돼야 id가 생기므로, 순수 단위 테스트에서는 리플렉션으로 id를 채운 픽스처를 쓴다. */
     private Term term(Long id, boolean required) {
+        return term(id, required, LocalDateTime.of(2026, 1, 1, 0, 0), null);
+    }
+
+    private Term term(Long id, boolean required, LocalDateTime effectiveFrom, LocalDateTime effectiveTo) {
         Term term = Term.create("SERVICE", TermTargetRole.COMMON, "약관", "본문", "1.0",
-                required, LocalDateTime.of(2026, 1, 1, 0, 0), null);
+                required, effectiveFrom, effectiveTo);
         try {
             Field field = Term.class.getDeclaredField("id");
             field.setAccessible(true);
@@ -195,6 +200,41 @@ class CustomerSignupServiceTest {
                 .isEqualTo(HttpStatus.BAD_REQUEST);
 
         verify(memberRepository, never()).save(any());
+    }
+
+    @Test
+    void 아직_발효되지_않은_필수_약관은_동의하지_않아도_가입할_수_있다() {
+        issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
+        Term notYetEffective = term(1L, true, LocalDateTime.now(ZoneOffset.UTC).plusDays(1), null);
+        when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of(notYetEffective));
+
+        CustomerSignupResult result = customerSignupService.signup(request(List.of()));
+
+        assertThat(result.loginId()).isEqualTo(LOGIN_ID);
+    }
+
+    @Test
+    void 이미_종료된_필수_약관은_동의하지_않아도_가입할_수_있다() {
+        issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
+        LocalDateTime yesterday = LocalDateTime.now(ZoneOffset.UTC).minusDays(1);
+        Term expired = term(1L, true, yesterday.minusDays(1), yesterday);
+        when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of(expired));
+
+        CustomerSignupResult result = customerSignupService.signup(request(List.of()));
+
+        assertThat(result.loginId()).isEqualTo(LOGIN_ID);
+    }
+
+    @Test
+    void 약관_검증에_실패하면_인증_토큰을_소비하지_않는다() {
+        issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
+        when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of(term(1L, true)));
+
+        assertThatThrownBy(() -> customerSignupService.signup(request(List.of())))
+                .isInstanceOf(BusinessException.class);
+
+        // 토큰이 아직 살아 있어야 사용자가 약관만 고쳐서 재시도할 수 있다.
+        assertThat(verificationCodeStore.verifiedTokenValue(TOKEN)).isNotNull();
     }
 
     @Test
