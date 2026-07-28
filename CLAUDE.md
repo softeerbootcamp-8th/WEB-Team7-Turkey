@@ -118,6 +118,10 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - 하나의 계정은 `CUSTOMER` 또는 `RIDER` 중 하나의 역할만 가진다(동시 지원 안 함).
 - 인증은 **쿠키 기반 서버 세션** 방식. 세션은 Redis에 저장하고, 쿠키에는 세션 식별자만 담는다.
   - Spring Security 없이 필터/인터셉터로 세션 확인·역할 검증·만료·로그아웃을 직접 구현한다.
+  - **인증이 선언적으로 자동 적용되지 않는다(Spring Security의 SecurityFilterChain과 다른 점).**
+    보호할 API마다 해당 인터셉터의 `addPathPatterns`에 경로를 직접 등록해야 인증이 걸린다.
+    (고객 예시: `customer/config/CustomerWebMvcConfig`, #27) 새 고객/라이더 전용 API를 추가할 때
+    이 등록을 빠뜨리면 그 API는 인증 없이 열린 채로 배포된다 — 리뷰 시 반드시 확인할 것.
 - Redis 용도는 4가지로 한정: **세션 저장 / 라이더 최신 위치 / GEO 위치 검색 / 휴대전화 인증번호(TTL)**. 영속 원본 저장소로 쓰지 않는다(#20 작업 중 확장, `docs/worklog/2026-07-28-20-phone-verification-request.md` 참고).
 - 영속성·트랜잭션 정합성이 필요한 데이터는 MySQL이 정본(사용자·배송요청·배차·상태·포인트 원장·정산·위치 이력).
 - 실시간 라이더 위치 전달은 **SSE** 사용(Polling 아님). 위치가 실제로 변경됐을 때만 이벤트 전송.
@@ -161,7 +165,14 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - GitHub Actions의 AWS 인증 방식(OIDC + 최소 권한 IAM Role 권장)과 배포 권한 범위
 - Redis 장애 시 세션·위치 기능 대응 방식
 - CSRF 대응 정책 (`SameSite=Lax`가 어느 정도 기본 방어가 되지만 별도 토큰 방식 여부는 미결)
-- 세션 슬라이딩 갱신(활동 중 TTL 연장) 여부 — 로그인(#26)은 고정 TTL(2시간)만 정함, 세션 검증(#27)에서 결정
+- 세션 슬라이딩 갱신(활동 중 TTL 연장) 여부 >> **#27에서 "안 함"으로 결정함**(로그인 시점 2시간
+  고정 TTL 유지, `SessionStore.findMemberId()`는 조회만 하고 TTL을 건드리지 않음). 프론트가 세션
+  확인 API를 자주 호출하는 흐름이 붙으면서 "너무 자주 로그아웃된다"는 문제가 실제로 생기면
+  재검토.
+- 고객 세션 인증 인터셉터(`customer/auth/CustomerSessionInterceptor`, #27)가 라이더 쪽에는 아직
+  없음 — 라이더 로그인 상태 확인(`#49~#52` 대응) 구현 시 거의 동일한 코드가 `rider/auth`에 또
+  생길 가능성이 높다. 그때 실제 중복이 확인되면 `common/auth`로 공용 추출할지 재검토(지금은
+  소비자가 고객 하나뿐이라 일반화하지 않음).
 - 계정 정지(SUSPENDED) 기능 자체가 아직 없음(관리자 기능 미구현) — `member.status`는 정의돼 있지만 정지시키는 코드 경로가 없음
 - 통합/E2E 테스트가 Redis를 인메모리 대체(`InMemoryVerificationCodeStore`)로만 검증함 — 실제 Redis TTL 만료 동작은 아직 검증되지 않음(#20)
 - 외부 SMS 발송 연동(현재는 로그만 남기는 모킹) — 실제 벤더 선정 시 `SmsSender` 구현체 교체 필요(#20)
