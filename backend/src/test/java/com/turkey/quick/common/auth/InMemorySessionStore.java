@@ -27,12 +27,12 @@ public class InMemorySessionStore implements SessionStore {
         return Optional.of(Long.valueOf(session.get("memberId")));
     }
 
-    public Map<String, String> get(String sessionId) {
-        return sessions.get(sessionId);
+    @Override
+    public void delete(String sessionId) {
+        sessions.remove(sessionId);
     }
 
-    /** 세션 만료를 흉내낸다(#27 "존재하지 않는 세션" 테스트용). */
-    public void remove(String sessionId) {
-        sessions.remove(sessionId);
+    public Map<String, String> get(String sessionId) {
+        return sessions.get(sessionId);
     }
 }

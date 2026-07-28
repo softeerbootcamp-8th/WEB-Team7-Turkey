@@ -6,7 +6,6 @@ import com.turkey.quick.common.exception.BusinessException;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
 import com.turkey.quick.member.repository.MemberRepository;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpStatus;
@@ -40,7 +39,7 @@ public class CustomerSessionInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
-        String sessionId = extractSessionId(request);
+        String sessionId = SessionCookie.extractSessionId(request);
         if (sessionId == null) {
             throw new BusinessException(HttpStatus.UNAUTHORIZED, AUTH_FAILURE_MESSAGE);
         }
@@ -57,18 +56,5 @@ public class CustomerSessionInterceptor implements HandlerInterceptor {
 
         request.setAttribute(CURRENT_CUSTOMER_ATTRIBUTE, AuthenticatedCustomer.from(member));
         return true;
-    }
-
-    private String extractSessionId(HttpServletRequest request) {
-        Cookie[] cookies = request.getCookies();
-        if (cookies == null) {
-            return null;
-        }
-        for (Cookie cookie : cookies) {
-            if (SessionCookie.NAME.equals(cookie.getName())) {
-                return cookie.getValue();
-            }
-        }
-        return null;
     }
 }

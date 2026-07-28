@@ -1,5 +1,7 @@
 package com.turkey.quick.common.auth;
 
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
 import org.springframework.http.ResponseCookie;
 
@@ -27,5 +29,30 @@ public final class SessionCookie {
                 .path("/")
                 .maxAge(ttl)
                 .build();
+    }
+
+    /** 로그아웃 응답용 — 브라우저가 즉시 삭제하도록 maxAge=0으로 발급한다(#28). */
+    public static ResponseCookie expired(boolean secure) {
+        return ResponseCookie.from(NAME, "")
+                .httpOnly(true)
+                .secure(secure)
+                .sameSite("Lax")
+                .path("/")
+                .maxAge(0)
+                .build();
+    }
+
+    /** 요청 쿠키에서 세션 ID를 꺼낸다. 쿠키가 없거나 이 이름이 없으면 null. */
+    public static String extractSessionId(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) {
+            return null;
+        }
+        for (Cookie cookie : cookies) {
+            if (NAME.equals(cookie.getName())) {
+                return cookie.getValue();
+            }
+        }
+        return null;
     }
 }

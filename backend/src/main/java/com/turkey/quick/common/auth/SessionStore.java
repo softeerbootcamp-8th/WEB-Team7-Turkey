@@ -22,4 +22,7 @@ public interface SessionStore {
      * 세션 생성 이후 계정이 탈퇴됐을 수 있어 Redis에 캐시된 값만으로는 알 수 없기 때문이다.
      */
     Optional<Long> findMemberId(String sessionId);
+
+    /** 세션을 삭제한다(로그아웃, #28). 존재하지 않는 세션 ID를 넘겨도 조용히 무시한다(멱등). */
+    void delete(String sessionId);
 }
