@@ -161,7 +161,14 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - GitHub Actions의 AWS 인증 방식(OIDC + 최소 권한 IAM Role 권장)과 배포 권한 범위
 - Redis 장애 시 세션·위치 기능 대응 방식
 - CSRF 대응 정책 (`SameSite=Lax`가 어느 정도 기본 방어가 되지만 별도 토큰 방식 여부는 미결)
-- 세션 슬라이딩 갱신(활동 중 TTL 연장) 여부 — 로그인(#26)은 고정 TTL(2시간)만 정함, 세션 검증(#27)에서 결정
+- 세션 슬라이딩 갱신(활동 중 TTL 연장) 여부 >> **#27에서 "안 함"으로 결정함**(로그인 시점 2시간
+  고정 TTL 유지, `SessionStore.findMemberId()`는 조회만 하고 TTL을 건드리지 않음). 프론트가 세션
+  확인 API를 자주 호출하는 흐름이 붙으면서 "너무 자주 로그아웃된다"는 문제가 실제로 생기면
+  재검토.
+- 고객 세션 인증 인터셉터(`customer/auth/CustomerSessionInterceptor`, #27)가 라이더 쪽에는 아직
+  없음 — 라이더 로그인 상태 확인(`#49~#52` 대응) 구현 시 거의 동일한 코드가 `rider/auth`에 또
+  생길 가능성이 높다. 그때 실제 중복이 확인되면 `common/auth`로 공용 추출할지 재검토(지금은
+  소비자가 고객 하나뿐이라 일반화하지 않음).
 - 계정 정지(SUSPENDED) 기능 자체가 아직 없음(관리자 기능 미구현) — `member.status`는 정의돼 있지만 정지시키는 코드 경로가 없음
 - 통합/E2E 테스트가 Redis를 인메모리 대체(`InMemoryVerificationCodeStore`)로만 검증함 — 실제 Redis TTL 만료 동작은 아직 검증되지 않음(#20)
 - 외부 SMS 발송 연동(현재는 로그만 남기는 모킹) — 실제 벤더 선정 시 `SmsSender` 구현체 교체 필요(#20)
