@@ -81,6 +81,23 @@ Redis 의존성 자체도 이번에 처음 배선했다.
   중복 확인이 무의미해지므로, 서비스 진입점에서 하이픈을 제거해 이후 로직(중복 확인, Redis 키, SMS 발송)에
   일관되게 쓰이는 값 하나로 통일했다.
 
+## 리뷰 반영 (PR #174, Codex 자동 리뷰)
+
+PR을 올린 뒤 Codex 자동 리뷰가 지적한 3건을 코드로 재현 확인하고 모두 반영했다(커밋 `63f8295`).
+
+- **P1 — 쿨다운 확인과 저장 사이 경쟁 조건**: `isInCooldown()` 확인 후 `save()`하는 두 단계 사이에 원자성이
+  없어, 동시 요청(더블클릭·재시도) 둘 다 쿨다운을 통과한 뒤 서로 다른 코드를 만들어 나중 저장이 앞의 코드를
+  덮어쓸 수 있었다. `VerificationCodeStore`를 `reserveCooldown()`(Redis `SET NX EX`, 인메모리는
+  `Set.add()`의 원자성 이용) + `saveCode()` + `release()`로 나눠, 쿨다운 선점 자체를 원자적 단일 연산으로
+  만들었다. 동시 10건 요청 중 1건만 성공하는 단위 테스트로 확인.
+- **P2 — `phoneNumber` null 허용**: Bean Validation의 `@Pattern`은 null을 통과시켜서, `phoneNumber`가
+  없는 요청이 서비스까지 들어가 `NullPointerException`(→ 500)이 났다. `@NotBlank`를 추가해 400으로
+  거부되게 했다.
+- **P2 — 발송 실패 시 Redis 정리 안 됨**: `saveCode()`가 `smsSender.sendVerificationCode()`보다 먼저
+  실행돼서, 발송이 실패해도 코드·쿨다운 키가 남아 재시도가 429로 막혔다. 발송 실패 시
+  `verificationCodeStore.release()`로 두 키를 모두 지우도록 했다. 실패 후 즉시 재시도가 200을 받는
+  E2E 테스트로 확인.
+
 ## 일부러 하지 않은 것
 
 - **인증번호 확인(검증) 로직**: #21의 범위. 이번엔 Redis에 코드를 저장하는 데까지만 하고, 읽어서 비교하는
@@ -99,16 +116,16 @@ Redis 의존성 자체도 이번에 처음 배선했다.
 
 | 층 | 파일 | 검증한 것 |
 |---|---|---|
-| 단위 | `member/service/PhoneVerificationServiceTest.java` | 정상 발급, SIGNUP 중복 거부(409), FIND_ID는 중복확인 생략, 쿨다운 거부(429), SMS 실패 변환(502) |
+| 단위 | `member/service/PhoneVerificationServiceTest.java` | 정상 발급, SIGNUP 중복 거부(409), FIND_ID는 중복확인 생략, 쿨다운 거부(429), SMS 실패 변환(502), 실패 후 재시도 허용, 동시 요청 10건 중 1건만 성공(경쟁 조건) |
 | 통합 | `member/repository/MemberRepositoryIntegrationTest.java` | `existsByPhoneNumber`가 실제 JPA/H2(MySQL 모드)에서 가입·미가입을 정확히 구분 |
-| E2E | `member/controller/PhoneVerificationE2ETest.java` | 실제 HTTP로 200/409/400/429 흐름, `ApiResponse` 래핑까지 확인 |
+| E2E | `member/controller/PhoneVerificationE2ETest.java` | 실제 HTTP로 200/409/400/429/502 흐름, `phoneNumber` 누락 400, 발송 실패 후 재시도 200, `ApiResponse` 래핑까지 확인 |
 
 실행 결과:
 
 ```text
 cd backend && ./gradlew test
 BUILD SUCCESSFUL
-91 tests completed, 0 failed, 0 errors (전체 스위트, QuickApplicationTests 포함)
+95 tests completed, 0 failed, 0 errors (전체 스위트, QuickApplicationTests 포함, 리뷰 반영 후 재실행)
 ```
 
 ### 검증하지 못한 것
