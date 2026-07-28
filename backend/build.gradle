@@ -28,6 +28,9 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 
+    // 세션 저장 / 라이더 위치 / GEO 검색 / 휴대전화 인증번호(TTL) 등 휘발성 데이터 저장.
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
     // OpenAPI 문서 자동 생성. /v3/api-docs 의 스펙을 프론트 Orval 이 그대로 읽어
     // API 클라이언트를 생성하므로, 컨트롤러 어노테이션이 곧 프론트 계약이 된다.
     // 버전 고정 이유: 2.8.17 은 이 조합(Boot 3.4.1 / Spring 6.2)에서 swagger-ui 리소스 핸들러가
@@ -49,6 +52,9 @@ dependencies {
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    // 통합 테스트: MySQL 호환 모드로 띄워 Flyway 마이그레이션을 실제 실행한다(Docker 금지 정책).
+    testRuntimeOnly 'com.h2database:h2'
 }
 
 tasks.named('test') {

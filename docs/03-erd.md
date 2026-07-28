@@ -84,9 +84,19 @@ Rider GEO
 key: riders:geo
 member: riderId
 coordinate: longitude, latitude
+
+Phone Verification Code
+key: phone-verification:code:{purpose}:{phoneNumber}
+value: code
+TTL: 5분
+
+Phone Verification Cooldown
+key: phone-verification:cooldown:{purpose}:{phoneNumber}
+value: "1"
+TTL: 60초
 ```
 
-키 이름과 TTL은 구현 시 확정한다.
+키 이름과 TTL은 구현 시 확정한다. (Phone Verification 두 키는 #20에서 확정, `docs/worklog/2026-07-28-20-phone-verification-request.md` 참고)
 
 ## 6. 최종화 필요 항목
 

@@ -118,7 +118,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - 하나의 계정은 `CUSTOMER` 또는 `RIDER` 중 하나의 역할만 가진다(동시 지원 안 함).
 - 인증은 **쿠키 기반 서버 세션** 방식. 세션은 Redis에 저장하고, 쿠키에는 세션 식별자만 담는다.
   - Spring Security 없이 필터/인터셉터로 세션 확인·역할 검증·만료·로그아웃을 직접 구현한다.
-- Redis 용도는 3가지로 한정: **세션 저장 / 라이더 최신 위치 / GEO 위치 검색**. 영속 원본 저장소로 쓰지 않는다.
+- Redis 용도는 4가지로 한정: **세션 저장 / 라이더 최신 위치 / GEO 위치 검색 / 휴대전화 인증번호(TTL)**. 영속 원본 저장소로 쓰지 않는다(#20 작업 중 확장, `docs/worklog/2026-07-28-20-phone-verification-request.md` 참고).
 - 영속성·트랜잭션 정합성이 필요한 데이터는 MySQL이 정본(사용자·배송요청·배차·상태·포인트 원장·정산·위치 이력).
 - 실시간 라이더 위치 전달은 **SSE** 사용(Polling 아님). 위치가 실제로 변경됐을 때만 이벤트 전송.
   - 초기엔 단일 WAS이므로 Redis를 이벤트 브로커로 쓰지 않고, 위치 갱신을 처리한 앱이 기존 SSE 연결로 직접 전달한다.
@@ -155,3 +155,5 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - GitHub Actions의 AWS 인증 방식(OIDC + 최소 권한 IAM Role 권장)과 배포 권한 범위
 - Redis 장애 시 세션·위치 기능 대응 방식
 - 쿠키 보안 속성(`Secure`/`HttpOnly`/`SameSite`/`Domain`)과 CSRF 대응 정책
+- 통합/E2E 테스트가 Redis를 인메모리 대체(`InMemoryVerificationCodeStore`)로만 검증함 — 실제 Redis TTL 만료 동작은 아직 검증되지 않음(#20)
+- 외부 SMS 발송 연동(현재는 로그만 남기는 모킹) — 실제 벤더 선정 시 `SmsSender` 구현체 교체 필요(#20)
