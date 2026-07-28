@@ -119,7 +119,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - 프론트 빌드 산출물은 S3에 배포하고 CloudFront로 제공. 정적 요청은 CloudFront·S3, API·SSE는 EC2 Spring Boot가 처리.
 - 결제는 MVP에서 포인트 기반 또는 모킹 흐름 우선(실 PG 연동 아님).
 - 용어: "퀵 신청" 대신 **"배송요청"**을 사용한다.
-- 핵심 테이블(ERD 확정): `member`, `customer`, `rider`, `delivery_order`, `delivery_assignment`, `point_account`, `point_transaction`, `settlement`, `delivery_proof`, `rider_location_history`. 세부 컬럼·제약은 `docs/03-erd.md`와 최종 DDL을 따른다.
+- 핵심 테이블(ERD 확정): `member`, `rider_profile`, `rider_payout_account`, `term`, `member_term_agreement`, `delivery_order`, `order_status_history`, `fare_policy`, `item_type_surcharge`, `order_fare_snapshot`, `delivery_proof`, `rider_location_history`, `point_wallet`, `point_charge`, `point_transaction`, `rider_settlement`, `rider_withdrawal`. 고객/라이더는 별도 테이블 없이 `member.role`로 구분하며, 배차는 별도 테이블 없이 `delivery_order.assigned_rider_id` FK로 처리한다. `member_notification`은 2·3차 MVP 이후 구현 예정이라 아직 없다. 세부 컬럼·제약은 `docs/03-erd.md`와 최종 DDL을 따른다.
 
 ## 협업
 
