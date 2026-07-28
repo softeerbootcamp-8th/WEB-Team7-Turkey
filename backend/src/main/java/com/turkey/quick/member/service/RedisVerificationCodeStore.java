@@ -18,14 +18,22 @@ public class RedisVerificationCodeStore implements VerificationCodeStore {
     }
 
     @Override
-    public boolean isInCooldown(VerificationPurpose purpose, String phoneNumber) {
-        return Boolean.TRUE.equals(redisTemplate.hasKey(cooldownKey(purpose, phoneNumber)));
+    public boolean reserveCooldown(VerificationPurpose purpose, String phoneNumber, Duration cooldownTtl) {
+        // SET NX EX: 키가 없을 때만 원자적으로 생성한다. 동시 요청 중 하나만 true를 받는다.
+        Boolean reserved = redisTemplate.opsForValue()
+                .setIfAbsent(cooldownKey(purpose, phoneNumber), "1", cooldownTtl);
+        return Boolean.TRUE.equals(reserved);
     }
 
     @Override
-    public void save(VerificationPurpose purpose, String phoneNumber, String code, Duration codeTtl, Duration cooldownTtl) {
+    public void saveCode(VerificationPurpose purpose, String phoneNumber, String code, Duration codeTtl) {
         redisTemplate.opsForValue().set(codeKey(purpose, phoneNumber), code, codeTtl);
-        redisTemplate.opsForValue().set(cooldownKey(purpose, phoneNumber), "1", cooldownTtl);
+    }
+
+    @Override
+    public void release(VerificationPurpose purpose, String phoneNumber) {
+        redisTemplate.delete(codeKey(purpose, phoneNumber));
+        redisTemplate.delete(cooldownKey(purpose, phoneNumber));
     }
 
     private String codeKey(VerificationPurpose purpose, String phoneNumber) {

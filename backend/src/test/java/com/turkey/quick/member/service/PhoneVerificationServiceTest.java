@@ -8,6 +8,10 @@ import static org.mockito.Mockito.when;
 import com.turkey.quick.common.exception.BusinessException;
 import com.turkey.quick.member.domain.VerificationPurpose;
 import com.turkey.quick.member.repository.MemberRepository;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -82,5 +86,53 @@ class PhoneVerificationServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getStatus())
                 .isEqualTo(HttpStatus.BAD_GATEWAY);
+    }
+
+    @Test
+    void 문자_발송에_실패하면_저장된_코드와_쿨다운을_지워_즉시_재시도할_수_있다() {
+        when(memberRepository.existsByPhoneNumber(PHONE_NUMBER)).thenReturn(false);
+        smsSender.failNext();
+
+        assertThatThrownBy(() -> phoneVerificationService.request(PHONE_NUMBER, VerificationPurpose.SIGNUP))
+                .isInstanceOf(BusinessException.class);
+
+        assertThat(verificationCodeStore.savedCode(VerificationPurpose.SIGNUP, PHONE_NUMBER)).isNull();
+
+        // 쿨다운이 남아 있었다면 여기서 429 로 막혔을 것이다.
+        PhoneVerificationResult retry = phoneVerificationService.request(PHONE_NUMBER, VerificationPurpose.SIGNUP);
+        assertThat(retry.code()).isNotNull();
+    }
+
+    @Test
+    void 동시에_같은_번호로_요청하면_한_건만_성공한다() throws InterruptedException {
+        when(memberRepository.existsByPhoneNumber(PHONE_NUMBER)).thenReturn(false);
+
+        int 시도수 = 10;
+        var 시작 = new CountDownLatch(1);
+        var 완료 = new CountDownLatch(시도수);
+        var 성공 = new AtomicInteger();
+        var 실패 = new AtomicInteger();
+
+        try (var pool = Executors.newFixedThreadPool(시도수)) {
+            for (int i = 0; i < 시도수; i++) {
+                pool.submit(() -> {
+                    try {
+                        시작.await();
+                        phoneVerificationService.request(PHONE_NUMBER, VerificationPurpose.SIGNUP);
+                        성공.incrementAndGet();
+                    } catch (BusinessException e) {
+                        실패.incrementAndGet(); // 쿨다운 선점 실패 = 정상적인 경쟁 패배
+                    } catch (Exception ignored) {
+                    } finally {
+                        완료.countDown();
+                    }
+                });
+            }
+            시작.countDown();
+            완료.await(5, TimeUnit.SECONDS);
+        }
+
+        assertThat(성공.get()).isEqualTo(1);
+        assertThat(실패.get()).isEqualTo(시도수 - 1);
     }
 }

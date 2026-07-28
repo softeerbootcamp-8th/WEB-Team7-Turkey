@@ -36,6 +36,9 @@ class PhoneVerificationE2ETest {
     @Autowired
     private MemberRepository memberRepository;
 
+    @Autowired
+    private FakeSmsSender smsSender;
+
     @TestConfiguration
     static class FakeInfraConfig {
 
@@ -85,6 +88,15 @@ class PhoneVerificationE2ETest {
     }
 
     @Test
+    void 휴대전화_번호가_없으면_400을_반환한다() {
+        var request = Map.of("purpose", VerificationPurpose.SIGNUP);
+
+        var response = rest.postForEntity(ENDPOINT, request, ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
     void 쿨다운_중_재요청하면_429를_반환한다() {
         var request = Map.of("phoneNumber", "010-6666-7777", "purpose", VerificationPurpose.FIND_ID);
 
@@ -92,5 +104,17 @@ class PhoneVerificationE2ETest {
         var second = rest.postForEntity(ENDPOINT, request, ApiResponse.class);
 
         assertThat(second.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    @Test
+    void 문자_발송에_실패해도_재시도는_쿨다운에_막히지_않는다() {
+        smsSender.failNext();
+        var request = Map.of("phoneNumber", "010-1111-9999", "purpose", VerificationPurpose.FIND_ID);
+
+        var first = rest.postForEntity(ENDPOINT, request, ApiResponse.class);
+        assertThat(first.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
+
+        var retry = rest.postForEntity(ENDPOINT, request, ApiResponse.class);
+        assertThat(retry.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 }

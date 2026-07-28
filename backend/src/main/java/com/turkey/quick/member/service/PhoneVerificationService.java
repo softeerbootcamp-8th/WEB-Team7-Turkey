@@ -37,19 +37,22 @@ public class PhoneVerificationService {
             throw new BusinessException(HttpStatus.CONFLICT, "이미 가입된 휴대전화 번호입니다.");
         }
 
-        if (verificationCodeStore.isInCooldown(purpose, phoneNumber)) {
+        // 쿨다운 선점을 원자적으로 해서, 동시 요청 중 하나만 통과시킨다(코드 생성 전에 승자를 가린다).
+        if (!verificationCodeStore.reserveCooldown(purpose, phoneNumber, RESEND_COOLDOWN)) {
             throw new BusinessException(HttpStatus.TOO_MANY_REQUESTS, "잠시 후 다시 시도해 주세요.");
         }
 
         String code = generateCode();
         LocalDateTime expiresAt = LocalDateTime.now(ZoneOffset.UTC).plus(CODE_TTL);
 
-        verificationCodeStore.save(purpose, phoneNumber, code, CODE_TTL, RESEND_COOLDOWN);
+        verificationCodeStore.saveCode(purpose, phoneNumber, code, CODE_TTL);
 
         try {
             smsSender.sendVerificationCode(phoneNumber, code);
         } catch (SmsSendFailedException e) {
             log.warn("인증번호 발송 실패 purpose={}", purpose, e);
+            // 전달되지 않은 코드와 쿨다운을 모두 지워, 재시도가 429로 막히지 않게 한다.
+            verificationCodeStore.release(purpose, phoneNumber);
             throw new BusinessException(HttpStatus.BAD_GATEWAY, "인증번호 발송에 실패했습니다.");
         }
 

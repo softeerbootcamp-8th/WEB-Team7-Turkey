@@ -10,9 +10,15 @@ import java.time.Duration;
  */
 public interface VerificationCodeStore {
 
-    /** 쿨다운 키가 아직 살아 있으면 재전송을 막아야 한다. */
-    boolean isInCooldown(VerificationPurpose purpose, String phoneNumber);
+    /**
+     * 쿨다운 키를 원자적으로 선점한다(Redis SET NX와 동등). 동시 요청 중 하나만 true를 받는다.
+     * 이미 쿨다운 중이면 false — 호출자는 코드를 생성·저장하지 않고 곧바로 거부해야 한다.
+     */
+    boolean reserveCooldown(VerificationPurpose purpose, String phoneNumber, Duration cooldownTtl);
 
-    /** 인증번호(codeTtl 만료)와 재전송 쿨다운(cooldownTtl 만료)을 함께 기록한다. */
-    void save(VerificationPurpose purpose, String phoneNumber, String code, Duration codeTtl, Duration cooldownTtl);
+    /** 쿨다운 선점에 성공한 요청만 호출한다. 인증번호를 codeTtl 만료로 저장한다. */
+    void saveCode(VerificationPurpose purpose, String phoneNumber, String code, Duration codeTtl);
+
+    /** 문자 발송 실패 시 롤백용. 저장된 코드와 쿨다운을 모두 지워 즉시 재시도할 수 있게 한다. */
+    void release(VerificationPurpose purpose, String phoneNumber);
 }

@@ -15,14 +15,20 @@ public class InMemoryVerificationCodeStore implements VerificationCodeStore {
     private final ConcurrentHashMap<String, String> codes = new ConcurrentHashMap<>();
 
     @Override
-    public boolean isInCooldown(VerificationPurpose purpose, String phoneNumber) {
-        return cooldownKeys.contains(key(purpose, phoneNumber));
+    public boolean reserveCooldown(VerificationPurpose purpose, String phoneNumber, Duration cooldownTtl) {
+        // Set.add는 이미 있으면 false를 반환하므로 SET NX와 동등한 원자적 선점이 된다.
+        return cooldownKeys.add(key(purpose, phoneNumber));
     }
 
     @Override
-    public void save(VerificationPurpose purpose, String phoneNumber, String code, Duration codeTtl, Duration cooldownTtl) {
+    public void saveCode(VerificationPurpose purpose, String phoneNumber, String code, Duration codeTtl) {
         codes.put(key(purpose, phoneNumber), code);
-        cooldownKeys.add(key(purpose, phoneNumber));
+    }
+
+    @Override
+    public void release(VerificationPurpose purpose, String phoneNumber) {
+        codes.remove(key(purpose, phoneNumber));
+        cooldownKeys.remove(key(purpose, phoneNumber));
     }
 
     public String savedCode(VerificationPurpose purpose, String phoneNumber) {
