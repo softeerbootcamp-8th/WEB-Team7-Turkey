@@ -1,7 +1,7 @@
 ---
 title: Turkey ERD
 status: draft
-updated_at: 2026-07-23
+updated_at: 2026-07-28
 owner: WEB-Team7-Turkey
 ---
 

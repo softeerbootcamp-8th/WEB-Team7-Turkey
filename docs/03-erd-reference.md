@@ -50,8 +50,6 @@ DB 제약이 걸려 있지 않은 컬럼은 다음 하나뿐이다.
 - **1:N** — 기준 테이블 1행이 상대 테이블의 여러 행과 연결. 표에서는 "기준 테이블 → 상대 테이블" 방향을 1:N으로, 그 반대 방향(자식 테이블 기준)은 N:1로 적어 어느 쪽이 "여러 개를 가질 수 있는 쪽"인지 명확히 한다
 - **N:M** — 양쪽 모두 여러 개와 연결 가능. 이 스키마에서는 연결 테이블(`member_term_agreement`)이 있는 경우에만 나타난다
 
-member 테이블을 중심으로 한 관계는 아래 이미지로도 확인할 수 있다.
-
 아래 모든 테이블의 "예시 데이터"는 하나로 이어지는 시나리오다. 고객 김민준(member_id=1)과 이지은(member_id=3)이 라이더 박서준(member_id=2)에게 배송을 맡기는 상황을 처음부터 끝까지 따라가면서, 같은 `member_id`, `order_id` 등이 여러 테이블에 걸쳐 어떻게 이어지는지 확인할 수 있다.
 
 ---
@@ -95,8 +93,6 @@ member 테이블을 중심으로 한 관계는 아래 이미지로도 확인할 
 | order_status_history | actor_member_id | 1:N (NULL 허용) | 한 사람이 여러 상태변경 행위를 수행할 수 있고, 시스템이 자동으로 바꿀 땐 NULL |
 | member_term_agreement | member_id | 1:N | 한 회원이 여러 약관에 각각 동의하고, 약관이 새 버전으로 바뀔 때마다 그 버전에 대한 동의 행이 추가로 쌓임 |
 | point_charge | customer_id | 1:N | 한 고객이 여러 번 포인트를 충전 |
-
-> member 테이블 관계도는 위 이미지를 참고하십시오.
 
 ### 1.2 rider_profile
 
@@ -234,12 +230,12 @@ member 테이블을 중심으로 한 관계는 아래 이미지로도 확인할 
 | `request_key` (CHAR36) | 클라이언트 중복 주문 생성을 막는 idempotency key |
 | `item_type` | `DOCUMENT`/`SMALL_PARCEL`/`MEDIUM_PARCEL`/`LARGE_PARCEL`/`FOOD` 중 하나(`ck_delivery_item_type`). `item_type_surcharge`와 매칭되어 추가요금 결정 |
 | `straight_distance_meters` | 좌표 기반 직선거리, 요금 계산 기준으로 추정 |
-| `pickup_*`, `destination_*` (도로명주소/상세주소/우편번호/위경도) | 지도 표시, 라이더 내비게이션, 거리 기반 요금 계산에 사용. 상세주소는 없을 수 있어 NULL 허용 |
-| `sender_*`, `recipient_*` | 실제 물건을 보내는/받는 사람이 로그인한 고객과 다를 수 있어 별도 저장(대리 접수 대응) |
+| `pickup_*`, `destination_*` (도로명주소/상세주소/우편번호/위경도) | 지도 표시, 라이더 내비게이션, 거리 기반 요금 계산에 사용. 상세주소는 없을 수 있어 NULL 허용. 코드에서는 이 5개 컬럼 묶음을 "주소"라는 값 타입 하나로 재사용해 `pickup`/`destination` 양쪽에 그대로 적용한다 — 좌표 범위 검증(위도 -90~90, 경도 -180~180) 로직이 한 곳에만 있어 두 그룹이 항상 같은 규칙으로 검증된다 |
+| `sender_*`, `recipient_*` | 실제 물건을 보내는/받는 사람이 로그인한 고객과 다를 수 있어 별도 저장(대리 접수 대응). "주소"와 마찬가지로 "연락처"(이름+전화번호) 값 타입 하나를 `sender`/`recipient` 양쪽에 재사용한다 |
 | `requested_at` ~ `canceled_at` (단계별 타임스탬프) | 현재 주문의 마지막 상태 시각을 빠르게 조회하기 위한 비정규화. 전체 변경 이력은 `order_status_history`가 담당 |
 | `cancel_reason` | 취소 사유 |
 | `updated_at` | 감사 |
-| `active_customer_id`, `active_rider_id` (NULL 허용) | 배정된 주체(`customer_id`/`assigned_rider_id`)와 별도로, 현재 실시간으로 이 주문에 연결되어 있는 주체를 추적하기 위한 컬럼으로 추정(라이더 교체 등 시나리오 대응) |
+| `active_customer_id`, `active_rider_id` (NULL 허용) | 진행 중(`active_customer_id`는 WAITING~DELIVERING, `active_rider_id`는 ASSIGNED~DELIVERING)일 때만 각각 `customer_id`/`assigned_rider_id` 값을 갖고 그 외엔 NULL인 DB 생성 컬럼(`GENERATED ALWAYS AS`). MySQL UNIQUE는 NULL을 다건 허용하므로, 이 컬럼들의 UNIQUE가 곧 "고객당 진행 중 배송요청 최대 1건"/"라이더당 진행 중 배송 최대 1건" 제약이 된다. 코드(엔티티)에는 매핑되지 않아 애플리케이션이 직접 읽거나 쓰지 않는다 |
 
 낙관적 락(`version`)은 두지 않는다(팀 정책상 `@Version` 전면 폐기). 배차 확정의 동시성은 조건부 UPDATE(`WHERE status = 'WAITING'`)와 `active_customer_id`/`active_rider_id`의 UNIQUE 제약으로 보장한다.
 
@@ -279,7 +275,7 @@ member 테이블을 중심으로 한 관계는 아래 이미지로도 확인할 
 | `previous_status` (NULL 허용) | 최초 생성 시에는 이전 상태가 없음 |
 | `new_status` | 변경된 상태 |
 | `action` | 상태보다 더 세분화된 이벤트명(예: ASSIGN, CANCEL) |
-| `actor_member_id` (NULL 허용), `actor_type` | 시스템에 의한 자동 변경(NULL)과 사람에 의한 변경을 모두 표현 |
+| `actor_member_id` (NULL 허용), `actor_type` | 시스템에 의한 자동 변경(NULL)과 사람에 의한 변경을 모두 표현. `actor_type`은 `CUSTOMER`/`RIDER`/`SYSTEM` 중 하나이며, `SYSTEM`이면 `actor_member_id`는 반드시 NULL, `CUSTOMER`/`RIDER`면 반드시 NOT NULL이어야 한다(`ck_order_status_actor`) |
 | `reason` (NULL 허용) | 취소 등 사유 |
 | `request_key` | 상태변경 요청의 idempotency key |
 | `changed_at` | 변경 시각 |
@@ -303,7 +299,7 @@ member 테이블을 중심으로 한 관계는 아래 이미지로도 확인할 
 
 ### 2.3 fare_policy
 
-기본요금·거리요금을 버전 단위로 관리하는 정책 테이블.
+기본요금·거리요금을 버전 단위로 관리하는 정책 테이블. 한 번 비활성화(`effective_to` 기록)된 버전은 다시 `ACTIVE`로 되돌릴 수 없다 — 요금을 바꾸려면 항상 새 `policy_version`을 만든다.
 
 | 컬럼 | 존재 이유 |
 |---|---|
@@ -316,7 +312,7 @@ member 테이블을 중심으로 한 관계는 아래 이미지로도 확인할 
 | `status` | 정책 상태: `ACTIVE`/`INACTIVE` 2개뿐(`ck_fare_policy_status`). "초안/만료" 같은 별도 단계는 없다 |
 | `effective_from`/`effective_to` | 여러 버전이 시간에 따라 교체 |
 | `created_at` | 감사 |
-| `active_policy_marker` (NULL 허용) | `status='ACTIVE'`일 때만 값(1)을 갖는 생성 컬럼. MySQL UNIQUE는 NULL을 다건 허용하므로, 이 컬럼의 UNIQUE(`uk_fare_policy_active`)가 곧 "활성 정책은 최대 1개" 제약이 된다 |
+| `active_policy_marker` (NULL 허용) | `status='ACTIVE'`일 때만 값(1)을 갖는 DB 생성 컬럼. MySQL UNIQUE는 NULL을 다건 허용하므로, 이 컬럼의 UNIQUE(`uk_fare_policy_active`)가 곧 "활성 정책은 최대 1개" 제약이 된다. `active_customer_id`/`active_rider_id`와 마찬가지로 코드(엔티티)에는 매핑되지 않는 DB 전용 컬럼이다 |
 
 **예시 데이터**
 
@@ -493,8 +489,9 @@ order_id=1001은 ESTIMATE(예상 견적)와 FINAL(확정 금액)이 각각 스�
 | `customer_id` | FK(명시적) member |
 | `charge_request_key` | 중복 결제를 막는 idempotency key |
 | `payment_method`, `payment_provider`, `provider_payment_key`, `provider_refund_key` | 외부 PG사와의 매칭 식별자 |
-| `requested_amount`, `approved_amount`(NULL 허용), `refunded_amount`(기본 0) | 요청/승인/환불 금액을 각각 분리해 부분 승인·부분 환불 대응 |
+| `requested_amount`, `approved_amount`(NULL 허용), `refunded_amount`(기본 0) | 요청/승인/환불 금액을 각각 분리해 컬럼을 나눠뒀지만, 현재 구현은 승인 시 항상 `approved_amount = requested_amount`(전액 승인), 환불 시 항상 `refunded_amount = approved_amount`(전액 환불)만 수행한다. 부분 승인·부분 환불은 아직 없고 컬럼 분리는 향후 확장을 위한 여지에 가깝다 |
 | `status` (기본 PENDING) | 진행 상태: `PENDING`에서 시작해 `PAID`/`FAILED`/`CANCELED`로 갈리고, `PAID`는 `REFUNDED`(전액 환불)로만 전이. 상태별 필드 조합은 `ck_point_charge_state_values`가 강제 |
+| `payment_method` | `CARD`/`BANK_TRANSFER` 중 하나(`ck_point_charge_method`) |
 | `issuer_code`, `masked_payment_method` | 카드 발급사, 마스킹된 결제수단 표시 |
 | `failure_reason`, `refund_reason` | 실패/환불 사유 |
 | `requested_at`, `approved_at`, `refunded_at`, `updated_at` | 단계별 시각 |
@@ -596,7 +593,7 @@ order_id=1001은 ESTIMATE(예상 견적)와 FINAL(확정 금액)이 각각 스�
 
 ### 3.5 rider_withdrawal
 
-라이더의 정산 포인트 출금 신청.
+라이더의 정산 포인트 출금 신청. 선차감 모델이라 신청 시점에 이미 포인트가 차감되고, 실패하면 `points_restored` 플래그와 함께 같은 트랜잭션에서 포인트를 복구한다. 한 번 처리(`COMPLETED`/`FAILED`)된 출금은 재처리하지 않으며, 재시도가 필요하면 새 `request_key`로 별도 신청을 만든다.
 
 | 컬럼 | 존재 이유 |
 |---|---|
@@ -605,10 +602,10 @@ order_id=1001은 ESTIMATE(예상 견적)와 FINAL(확정 금액)이 각각 스�
 | `request_key` | 중복 출금신청 방지 |
 | `amount` | 출금 금액 |
 | `bank_code_snapshot`, `masked_account_number_snapshot`, `account_holder_name_snapshot` | `rider_payout_account` 값을 신청 시점에 복사. 이후 계좌 정보가 바뀌어도 당시 송금 대상을 이력으로 보존 |
-| `status` (기본 PENDING) | 진행 상태 |
+| `status` (기본 PENDING) | 진행 상태: `PENDING`에서 시작해 `COMPLETED`(송금 성공) 또는 `FAILED`(송금 실패)로 끝난다 |
 | `failure_reason` (NULL 허용) | 실패 사유 |
-| `points_restored` (기본 0) | 출금 실패 시 차감했던 포인트를 복구했는지 여부. 중복 복구를 막는 플래그 |
-| `requested_at`, `processed_at`(NULL 허용) | 신청/처리 시각 |
+| `points_restored` (기본 0) | 출금 실패 시 차감했던 포인트를 복구했는지 여부. 중복 복구를 막는 플래그. `FAILED`면 반드시 1이어야 한다(`ck_rider_withdrawal_state_values`) |
+| `requested_at`, `processed_at`(NULL 허용) | 신청/처리 시각. `PENDING`이면 `processed_at`은 NULL, `COMPLETED`/`FAILED`면 NOT NULL이어야 한다(`ck_rider_withdrawal_state_values`) |
 
 **예시 데이터**
 
@@ -676,3 +673,29 @@ notification_id=3은 특정 주문과 무관한 공통 알림이라 `order_id`�
 5. 정산 → 확정된 `order_fare_snapshot` 기준으로 `rider_settlement` 생성 → `point_transaction`에 반영.
 6. 고객은 `point_charge`로 포인트를 충전해 `point_wallet` 잔액을 채우고 주문에 사용, 라이더는 정산된 포인트를 `rider_withdrawal`로 출금 신청.
 7. 주요 이벤트마다 `member_notification`이 발송됨.
+
+---
+
+## 6. 부록: 상태값 목록
+
+각 컬럼이 실제로 허용하는 값을 한곳에 모았다. 본문에서 개별 컬럼 설명에 이미 나온 값들이지만, 전체를 훑어볼 때는 이 표가 더 빠르다.
+
+| 이름 | 어디서 쓰이나 | 허용값 |
+|---|---|---|
+| 회원 역할 | `member.role` | `CUSTOMER`, `RIDER` |
+| 계정 상태 | `member.status` | `ACTIVE`, `SUSPENDED`, `WITHDRAWN` |
+| 약관 대상 | `term.target_role` | `COMMON`, `CUSTOMER`, `RIDER` |
+| 배송 상태 | `delivery_order.status` | `WAITING`, `ASSIGNED`, `MOVING_TO_PICKUP`, `PICKED_UP`, `DELIVERING`, `COMPLETED`, `CANCELED` |
+| 물품 종류 | `delivery_order.item_type`, `item_type_surcharge.item_type` | `DOCUMENT`, `SMALL_PARCEL`, `MEDIUM_PARCEL`, `LARGE_PARCEL`, `FOOD` |
+| 상태변경 행위자 종류 | `order_status_history.actor_type` | `CUSTOMER`, `RIDER`, `SYSTEM` |
+| 요금 정책 상태 | `fare_policy.status` | `ACTIVE`, `INACTIVE` |
+| 운임 스냅샷 종류 | `order_fare_snapshot.fare_type` | `ESTIMATE`, `FINAL` |
+| 배송 완료 인증 방식 | `delivery_proof.proof_type` | `PHOTO`, `RECIPIENT_CONFIRMATION`, `AUTH_CODE` |
+| 결제 수단 | `point_charge.payment_method` | `CARD`, `BANK_TRANSFER` |
+| 포인트 충전 상태 | `point_charge.status` | `PENDING`, `PAID`, `FAILED`, `CANCELED`, `REFUNDED` |
+| 포인트 증감 방향 | `point_transaction.direction` | `CREDIT`(적립), `DEBIT`(차감) |
+| 포인트 거래 유형 | `point_transaction.transaction_type` | `CHARGE`→CREDIT, `CHARGE_REFUND`→DEBIT, `ORDER_USE`→DEBIT, `ORDER_REFUND`→CREDIT, `SETTLEMENT`→CREDIT, `WITHDRAWAL`→DEBIT, `WITHDRAWAL_REFUND`→CREDIT |
+| 라이더 운행 상태 | `rider_profile.operating_status` | `UNAVAILABLE`, `AVAILABLE`, `BUSY` |
+| 라이더 출금 상태 | `rider_withdrawal.status` | `PENDING`, `COMPLETED`, `FAILED` |
+
+`transaction_type`은 값마다 증감 방향이 고정돼 있어(위 표의 →), "CHARGE인데 DEBIT" 같은 잘못된 조합이 나올 수 없다. 이 조합과 소스 컬럼(어떤 FK가 채워지는지)의 대응 규칙은 3.3 `point_transaction` 절을 참고한다.
