@@ -1,7 +1,7 @@
 ---
 title: Turkey ERD
 status: draft
-updated_at: 2026-07-23
+updated_at: 2026-07-28
 owner: WEB-Team7-Turkey
 ---
 
@@ -11,43 +11,66 @@ owner: WEB-Team7-Turkey
 
 ## 1. 핵심 엔터티
 
+고객/라이더를 별도 테이블로 나누지 않고 `member`를 역할 컬럼(`CUSTOMER`/`RIDER`)으로 구분한다. 라이더만 갖는 확장 정보는 `rider_profile`/`rider_payout_account`에 둔다. 컬럼 단위 상세와 예시 데이터는 [`docs/03-erd-reference.md`](03-erd-reference.md)를 참고한다.
+
 | 엔터티 | 책임 |
 |---|---|
-| `member` | 로그인 계정, 역할과 공통 사용자 정보 |
-| `customer` | 고객 전용 프로필 |
-| `rider` | 라이더 전용 프로필과 운행 상태 |
-| `delivery_order` | 배송요청, 주소, 요금과 진행 상태 |
-| `delivery_assignment` | 주문과 라이더의 배차 결과 및 배차 시각 |
-| `point_account` | 고객의 현재 포인트 잔액 |
-| `point_transaction` | 포인트 차감·충전·환불 원장 |
-| `settlement` | 완료 배송에 대한 라이더 정산 |
-| `delivery_proof` | 배송 완료 인증 정보 |
+| `member` | 로그인 계정, 역할(`CUSTOMER`/`RIDER`)과 공통 사용자 정보 |
+| `rider_profile` | 라이더 역할 회원의 운행 상태 확장 정보(`member`와 1:1) |
+| `rider_payout_account` | 라이더 정산 계좌 정보(`rider_profile`과 1:1) |
+| `term` | 버전·대상 역할별 약관 |
+| `member_term_agreement` | 회원과 약관 사이의 동의 이력 |
+| `delivery_order` | 배송요청, 주소, 요금과 진행 상태. 배차 결과(`assigned_rider_id`)를 별도 테이블 없이 FK로 직접 보관한다 |
+| `order_status_history` | 배송 상태 변화를 낱개로 기록하는 이력 |
+| `fare_policy` | 버전 단위로 관리하는 기본요금·거리요금 정책 |
+| `item_type_surcharge` | 요금 정책에 종속된 품목별 추가요금 |
+| `order_fare_snapshot` | 주문 시점에 적용된 정책과 계산 결과(예상/확정) 스냅샷 |
+| `delivery_proof` | 배송 완료 인증 정보(주문당 최대 1건) |
 | `rider_location_history` | 선별 보관하는 라이더 위치 이력 |
+| `point_wallet` | 회원의 현재 포인트 잔액 |
+| `point_charge` | 고객의 포인트 충전 결제 트랜잭션 |
+| `point_transaction` | 포인트 차감·충전·정산·출금 원장 |
+| `rider_settlement` | 완료 배송에 대한 라이더 정산 |
+| `rider_withdrawal` | 라이더의 정산 포인트 출금 신청 |
+| `member_notification`(미구현) | 회원 알림 로그. 2·3차 MVP 이후 구현 예정이며 현재 코드·DDL에는 없다 |
 
 Redis에 저장하는 세션과 최신 위치는 관계형 ERD의 원본 엔터티로 보지 않는다.
 
 ## 2. 관계
 
 ```text
-Member 1 ── 0..1 Customer
-Member 1 ── 0..1 Rider
-Customer 1 ── N DeliveryOrder
-DeliveryOrder 1 ── 0..1 DeliveryAssignment
-Rider 1 ── N DeliveryAssignment
-Customer 1 ── 1 PointAccount
-PointAccount 1 ── N PointTransaction
+Member 1 ── 0..1 RiderProfile
+RiderProfile 1 ── 0..1 RiderPayoutAccount
+Member 1 ── N DeliveryOrder (customer_id)
+RiderProfile 1 ── N DeliveryOrder (assigned_rider_id)
+DeliveryOrder 1 ── N OrderStatusHistory
+Member 1 ── N OrderStatusHistory (actor_member_id, 0..1)
+FarePolicy 1 ── N ItemTypeSurcharge
+FarePolicy 1 ── N OrderFareSnapshot
+DeliveryOrder 1 ── N OrderFareSnapshot
+DeliveryOrder 1 ── 0..1 DeliveryProof
+RiderProfile 1 ── N DeliveryProof
+DeliveryOrder 1 ── N RiderLocationHistory
+RiderProfile 1 ── N RiderLocationHistory
+DeliveryOrder 1 ── 0..1 RiderSettlement
+RiderProfile 1 ── N RiderSettlement
+OrderFareSnapshot 1 ── 0..1 RiderSettlement
+Member 1 ── 1 PointWallet
+Member 1 ── N PointCharge
+PointWallet 1 ── N PointTransaction
 DeliveryOrder 1 ── N PointTransaction
-DeliveryOrder 1 ── 0..1 Settlement
-Rider 1 ── N Settlement
-DeliveryOrder 1 ── 0..N DeliveryProof
-Rider 1 ── N RiderLocationHistory
-DeliveryOrder 1 ── 0..N RiderLocationHistory
+PointCharge 1 ── N PointTransaction
+RiderWithdrawal 1 ── N PointTransaction
+RiderSettlement 1 ── 0..1 PointTransaction
+RiderProfile 1 ── N RiderWithdrawal
+Member 1 ── N MemberTermAgreement
+Term 1 ── N MemberTermAgreement
 ```
 
 ## 3. 주요 무결성 규칙
 
 - `member.role`은 `CUSTOMER`, `RIDER` 중 하나다.
-- 회원 역할과 고객·라이더 프로필 유형이 일치해야 한다.
+- `rider_profile`은 `role='RIDER'`인 회원에게만 존재해야 한다(`CUSTOMER`는 별도 프로필 테이블 없이 `member` 자체가 프로필 역할을 한다).
 - 배송요청에는 최대 하나의 활성 배차만 존재한다.
 - 완료된 배송 하나에는 최대 하나의 정산만 존재한다.
 - 포인트 원장은 금액, 유형, 대상 주문과 생성 시각을 보존한다.
@@ -111,10 +134,15 @@ TTL: 10분
 
 ## 6. 최종화 필요 항목
 
-- 데이터 접근 기술에 따른 테이블 매핑 전략
-- 주소와 좌표의 컬럼 구조
-- 배차를 별도 테이블로 둘지 주문 FK로 단순화할지
-- 배송 완료 인증의 단건·다건 정책
-- 위치 이력 파티셔닝 및 인덱스
-- 포인트 잔액 캐시 컬럼 유지 여부
-- 논리 삭제 사용 범위
+아래는 확정된 항목이다(참고로 남김):
+
+- 데이터 접근 기술에 따른 테이블 매핑 전략 → JPA, 테이블과 엔터티 1:1 매핑
+- 주소와 좌표의 컬럼 구조 → `delivery_order`에 `pickup_*`/`destination_*` 컬럼으로 직접 보관(도로명주소/상세주소/우편번호/위경도)
+- 배차를 별도 테이블로 둘지 주문 FK로 단순화할지 → 주문 FK(`delivery_order.assigned_rider_id`)로 단순화, 별도 배차 테이블 없음
+- 배송 완료 인증의 단건·다건 정책 → 단건(`delivery_proof`, 주문당 최대 1건)
+- 포인트 잔액 캐시 컬럼 유지 여부 → 유지(`point_wallet.balance`)
+- 논리 삭제 사용 범위 → `member.withdrawn_at`만 사용. 나머지 테이블은 소프트 삭제 없음(대부분 append-only 이력 테이블)
+
+아직 미확정:
+
+- 위치 이력 파티셔닝 및 인덱스(`rider_location_history`는 현재 파티셔닝 없는 단순 append-only 테이블)
