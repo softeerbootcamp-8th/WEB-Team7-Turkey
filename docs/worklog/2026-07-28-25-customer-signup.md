@@ -58,21 +58,6 @@ ERD에 있는 `customer` 테이블은 만들지 않기로 결정했다(「사람
 - **영향**: `CustomerSignupRequest.password`는 `@NotBlank`만 걸려 있다. 비밀번호==비밀번호확인 일치 검증은
   이슈 처리 흐름에 명시된 별개 항목이라 그대로 유지했다(형식 규칙과는 다른 체크).
 
-### 3. #24와의 브랜치 의존 순서
-
-- **있었던 일**: 이슈 읽기·계약 확정 도중, 작업 디렉터리에 커밋되지 않은 `#24`(로그인 아이디 중복 확인)
-  구현이 남아 있는 걸 발견했고, 브랜치를 옮기는 과정에서 그 파일들이 의도치 않게 `feature/25-customer-signup`
-  브랜치에 커밋되는 사고가 있었다(제가 실행한 커밋이 아니라 자동 커밋 기능으로 추정).
-- **선택지**:
-  - (A) 그 커밋을 `#24` 브랜치로 옮기고 `#25`는 커밋 이전 상태로 되돌림
-  - (B) 그대로 두고 나중에 정리
-  - (C) `#24`를 실제로 먼저 머지하고, `#25`는 머지된 `dev` 위에서 다시 시작
-- **고른 것**: (C) — 사용자가 `#24`를 PR #178로 직접 머지한 뒤 "그것 기반으로 25이슈를 개발하자"고 지시
-- **근거**: `#24`가 정식으로 `dev`에 머지되면 굳이 커밋을 옮길 필요 없이 `feature/25-customer-signup`을
-  최신 `dev`로 fast-forward하는 것으로 충분했다.
-- **영향**: `feature/25-customer-signup`은 `dev`(PR #178 포함) 위에서 새로 fast-forward된 상태에서
-  시작했다. `MemberRepository.existsByLoginId`, `LoginIdController` 등은 `#24` 결과물을 그대로 재사용한다.
-
 ## 스스로 판단한 것
 
 - **인증 완료 토큰 소비는 Redis GETDEL로**: `VerificationCodeStore.consumeVerifiedToken(token)`을 추가하고
