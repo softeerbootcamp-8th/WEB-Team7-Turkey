@@ -25,13 +25,16 @@
 
 해당 없음. Redis TTL로만 관리.
 
-## 브랜치를 #20 위에 쌓은 이유
+## 브랜치를 #20 위에 쌓은 이유 (해소됨)
 
-`#21`은 `#20`이 만든 `VerificationCodeStore`/`RedisVerificationCodeStore`를 그대로 확장해야 하는데,
-`#20`의 PR([#174](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/pull/174))이 아직 `dev`에
-머지되지 않았다. `dev`에서 새로 브랜치를 따면 그 클래스들이 없어서, `feature/20-phone-verification-request`
-위에 `feature/21-phone-verification-confirm`을 쌓았다. **`#174`가 먼저 머지된 뒤에 이 브랜치의 PR을 올리거나,
-PR 베이스를 `feature/20-...`으로 잡아야 diff가 깔끔하다.**
+`#21`은 `#20`이 만든 `VerificationCodeStore`/`RedisVerificationCodeStore`를 그대로 확장해야 해서,
+구현 시작 시점엔 `#20`의 PR([#174](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/pull/174))이
+아직 `dev`에 머지되지 않은 상태라 `feature/20-phone-verification-request` 위에
+`feature/21-phone-verification-confirm`을 쌓았다.
+
+**이후 `#174`가 `dev`에 머지되면서(2026-07-28T02:55:31Z) 자동으로 해소됐다.** `git diff
+origin/dev...feature/21-phone-verification-confirm --stat`로 확인한 결과 `#21`이 만든 13개 파일만
+깨끗하게 잡혀서, 별도 리베이스 없이 `dev`를 베이스로 PR을 열면 된다.
 
 ## 사람이 고른 선택
 
