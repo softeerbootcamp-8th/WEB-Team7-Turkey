@@ -150,11 +150,19 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - 주소·좌표 컬럼 구조, 배차 결과를 별도 테이블로 둘지 주문 FK로 단순화할지
 - 포인트 잔액 캐시 컬럼 유지 여부, 논리 삭제 사용 범위
 - EC2 구성 및 MySQL·Redis 배치 방식
-- S3·CloudFront·도메인·인증서 구성, 캐시/invalidation 정책
-- 프론트 Origin과 API Origin 분리 시 CORS·쿠키 설정
+- S3·CloudFront·도메인·인증서 구성, 캐시/invalidation 정책. **#26 결정에 따라 CloudFront 배포
+  하나에 `/api/*`(및 SSE 경로) behavior를 추가해 EC2를 origin으로 묶기로 함(비용 없이 same-origin
+  쿠키를 쓰기 위함, 사람 확인) — 아직 실제 AWS 설정은 안 됨. SSE 경로는 CachingDisabled로 둬야 함.
+  배포 전 필수.**
+- 프론트 Origin과 API Origin 분리 시 CORS·쿠키 설정. **#26에서 위 CloudFront 단일 배포 전제로
+  `SameSite=Lax`+프로파일별 `Secure`로 구현함(`common/auth/SessionCookie`). 만약 나중에 API가
+  별도 CloudFront 배포나 EC2 직접 노출로 바뀌면(크로스사이트) `SameSite=None`+EC2 자체 HTTPS로
+  재검토 필요.**
 - GitHub Actions의 AWS 인증 방식(OIDC + 최소 권한 IAM Role 권장)과 배포 권한 범위
 - Redis 장애 시 세션·위치 기능 대응 방식
-- 쿠키 보안 속성(`Secure`/`HttpOnly`/`SameSite`/`Domain`)과 CSRF 대응 정책
+- CSRF 대응 정책 (`SameSite=Lax`가 어느 정도 기본 방어가 되지만 별도 토큰 방식 여부는 미결)
+- 세션 슬라이딩 갱신(활동 중 TTL 연장) 여부 — 로그인(#26)은 고정 TTL(2시간)만 정함, 세션 검증(#27)에서 결정
+- 계정 정지(SUSPENDED) 기능 자체가 아직 없음(관리자 기능 미구현) — `member.status`는 정의돼 있지만 정지시키는 코드 경로가 없음
 - 통합/E2E 테스트가 Redis를 인메모리 대체(`InMemoryVerificationCodeStore`)로만 검증함 — 실제 Redis TTL 만료 동작은 아직 검증되지 않음(#20)
 - 외부 SMS 발송 연동(현재는 로그만 남기는 모킹) — 실제 벤더 선정 시 `SmsSender` 구현체 교체 필요(#20)
 - 인증번호 확인(`PhoneVerificationService.confirm`)에 원자적 보호가 없어, 동시에 같은 유효 코드로 확인

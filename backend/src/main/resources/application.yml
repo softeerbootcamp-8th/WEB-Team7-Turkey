@@ -35,6 +35,13 @@ spring:
 server:
   port: 8080
 
+# --- 로그인 세션 쿠키 ---
+# Secure는 프로파일별로 다르다: 배포는 CloudFront가 HTTPS를 종단하므로 true,
+# 로컬은 http라 브라우저가 Secure 쿠키를 거부하므로 local 프로파일에서 false로 덮어쓴다.
+session:
+  cookie:
+    secure: true
+
 # --- springdoc(OpenAPI) ---
 # /v3/api-docs 의 스펙을 프론트 Orval 이 읽어 API 클라이언트를 생성한다.
 # 스펙 순서가 요청마다 바뀌면 생성물 diff 가 무의미하게 커지므로 정렬을 고정한다.

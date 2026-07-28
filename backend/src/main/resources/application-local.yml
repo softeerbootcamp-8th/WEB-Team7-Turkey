@@ -16,3 +16,7 @@ spring:
 
   flyway:
     enabled: true
+
+session:
+  cookie:
+    secure: false
