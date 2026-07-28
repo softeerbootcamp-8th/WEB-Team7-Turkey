@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Map;
+import java.util.Optional;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -31,6 +32,15 @@ public class RedisSessionStore implements SessionStore {
                 "expiresAt", expiresAt.toString()
         ));
         redisTemplate.expire(key, ttl);
+    }
+
+    @Override
+    public Optional<Long> findMemberId(String sessionId) {
+        Object memberId = redisTemplate.opsForHash().get(key(sessionId), "memberId");
+        if (memberId == null) {
+            return Optional.empty();
+        }
+        return Optional.of(Long.valueOf((String) memberId));
     }
 
     private String key(String sessionId) {
