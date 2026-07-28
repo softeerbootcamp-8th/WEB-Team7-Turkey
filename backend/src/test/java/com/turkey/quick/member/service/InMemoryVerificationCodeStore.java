@@ -55,6 +55,11 @@ public class InMemoryVerificationCodeStore implements VerificationCodeStore {
         verifiedTokens.put(token, purpose + ":" + phoneNumber);
     }
 
+    @Override
+    public String consumeVerifiedToken(String token) {
+        return verifiedTokens.remove(token);
+    }
+
     public String savedCode(VerificationPurpose purpose, String phoneNumber) {
         return codes.get(key(purpose, phoneNumber));
     }
