@@ -28,6 +28,10 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 
+    // 비밀번호 해시(BCrypt)만 쓴다. spring-security-crypto는 Spring Security 본체와 무관한
+    // 단독 모듈이라 "Spring Security 사용 금지" 정책에 걸리지 않는다(CLAUDE.md).
+    implementation 'org.springframework.security:spring-security-crypto'
+
     // 세션 저장 / 라이더 위치 / GEO 검색 / 휴대전화 인증번호(TTL) 등 휘발성 데이터 저장.
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 

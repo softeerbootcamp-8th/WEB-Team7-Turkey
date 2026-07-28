@@ -36,4 +36,10 @@ public interface VerificationCodeStore {
 
     /** 인증 완료 결과로 발급하는 일회성 토큰을 저장한다. 값은 "purpose:phoneNumber" 형태. */
     void saveVerifiedToken(String token, VerificationPurpose purpose, String phoneNumber, Duration ttl);
+
+    /**
+     * 인증 완료 토큰을 조회와 동시에 삭제해 일회성으로 소비한다(Redis GETDEL과 동등).
+     * 토큰이 없거나 만료됐으면 null. 값 형식은 saveVerifiedToken과 동일한 "purpose:phoneNumber".
+     */
+    String consumeVerifiedToken(String token);
 }
