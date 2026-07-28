@@ -3,6 +3,7 @@ package com.turkey.quick.order.controller;
 import com.turkey.quick.common.response.ApiResponse;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.*;
+import com.turkey.quick.order.service.DeliveryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -11,10 +12,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class CustomerDeliveryController implements CustomerDeliveryApi {
 
+    private final DeliveryService deliveryService;
 
     @Override
     public ApiResponse<FareQuoteResponse> quoteFare(FareQuoteRequest request) {
-        return null;
+        return ApiResponse.ok(deliveryService.quoteFare(request));
     }
 
     @Override

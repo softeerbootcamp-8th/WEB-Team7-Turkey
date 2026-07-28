@@ -13,6 +13,8 @@ import com.turkey.quick.order.dto.FareQuoteRequest;
 import com.turkey.quick.order.dto.FareQuoteResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -49,6 +51,25 @@ public interface CustomerDeliveryApi {
 
     @Operation(summary = "요금 견적",
             description = "주문을 만들지 않고 금액만 계산한다. 산정 기준 거리는 좌표로 서버가 구한다.")
+    @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(
+            examples = @ExampleObject(value = """
+                    {
+                      "itemType": "DOCUMENT",
+                      "pickupAddress": {
+                        "roadAddress": "서울 강남구 테헤란로 152",
+                        "detailAddress": "5층 프론트데스크",
+                        "postalCode": "06236",
+                        "latitude": 37.5006,
+                        "longitude": 127.0366
+                      },
+                      "destinationAddress": {
+                        "roadAddress": "서울 송파구 올림픽로 300",
+                        "detailAddress": "1동 관리사무소",
+                        "postalCode": "05551",
+                        "latitude": 37.5145,
+                        "longitude": 127.1059
+                      }
+                    }""")))
     @PostMapping("/quote")
     ApiResponse<FareQuoteResponse> quoteFare(@RequestBody FareQuoteRequest request);
 
@@ -62,6 +83,34 @@ public interface CustomerDeliveryApi {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "409", description = "진행 중 배송요청이 이미 있음")
     })
+    @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(
+            examples = @ExampleObject(value = """
+                    {
+                      "requestKey": "6c1f1a0e-6f7a-4b2b-9a3f-6b0d7f2a1c34",
+                      "itemType": "DOCUMENT",
+                      "pickup": {
+                        "roadAddress": "서울 강남구 테헤란로 152",
+                        "detailAddress": "5층 프론트데스크",
+                        "postalCode": "06236",
+                        "latitude": 37.5006,
+                        "longitude": 127.0366
+                      },
+                      "destination": {
+                        "roadAddress": "서울 송파구 올림픽로 300",
+                        "detailAddress": "1동 관리사무소",
+                        "postalCode": "05551",
+                        "latitude": 37.5145,
+                        "longitude": 127.1059
+                      },
+                      "sender": {
+                        "name": "김고객",
+                        "phoneNumber": "010-1234-5678"
+                      },
+                      "recipient": {
+                        "name": "이수령",
+                        "phoneNumber": "010-9876-5432"
+                      }
+                    }""")))
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     ApiResponse<DeliveryCreateResponse> createDelivery(
