@@ -4,6 +4,7 @@ import com.turkey.quick.member.domain.VerificationPurpose;
 import java.time.Duration;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 테스트 전용 인메모리 대체 구현. 로컬 Redis 없이 서비스·통합·E2E 테스트를 돌리기 위한 것으로,
@@ -13,6 +14,8 @@ public class InMemoryVerificationCodeStore implements VerificationCodeStore {
 
     private final Set<String> cooldownKeys = ConcurrentHashMap.newKeySet();
     private final ConcurrentHashMap<String, String> codes = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, AtomicLong> attempts = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, String> verifiedTokens = new ConcurrentHashMap<>();
 
     @Override
     public boolean reserveCooldown(VerificationPurpose purpose, String phoneNumber, Duration cooldownTtl) {
@@ -31,8 +34,33 @@ public class InMemoryVerificationCodeStore implements VerificationCodeStore {
         cooldownKeys.remove(key(purpose, phoneNumber));
     }
 
+    @Override
+    public String getCode(VerificationPurpose purpose, String phoneNumber) {
+        return codes.get(key(purpose, phoneNumber));
+    }
+
+    @Override
+    public long incrementAttempts(VerificationPurpose purpose, String phoneNumber, Duration ttl) {
+        return attempts.computeIfAbsent(key(purpose, phoneNumber), k -> new AtomicLong()).incrementAndGet();
+    }
+
+    @Override
+    public void clearVerification(VerificationPurpose purpose, String phoneNumber) {
+        codes.remove(key(purpose, phoneNumber));
+        attempts.remove(key(purpose, phoneNumber));
+    }
+
+    @Override
+    public void saveVerifiedToken(String token, VerificationPurpose purpose, String phoneNumber, Duration ttl) {
+        verifiedTokens.put(token, purpose + ":" + phoneNumber);
+    }
+
     public String savedCode(VerificationPurpose purpose, String phoneNumber) {
         return codes.get(key(purpose, phoneNumber));
+    }
+
+    public String verifiedTokenValue(String token) {
+        return verifiedTokens.get(token);
     }
 
     private String key(VerificationPurpose purpose, String phoneNumber) {

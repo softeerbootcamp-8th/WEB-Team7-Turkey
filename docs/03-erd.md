@@ -94,9 +94,20 @@ Phone Verification Cooldown
 key: phone-verification:cooldown:{purpose}:{phoneNumber}
 value: "1"
 TTL: 60초
+
+Phone Verification Attempts
+key: phone-verification:attempts:{purpose}:{phoneNumber}
+value: 오입력 횟수(정수, INCR)
+TTL: 5분 (인증번호 코드와 동일 — 처음 증가할 때만 건다)
+
+Phone Verification Verified Token
+key: phone-verification:verified:{token}
+value: "{purpose}:{phoneNumber}"
+TTL: 10분
 ```
 
-키 이름과 TTL은 구현 시 확정한다. (Phone Verification 두 키는 #20에서 확정, `docs/worklog/2026-07-28-20-phone-verification-request.md` 참고)
+키 이름과 TTL은 구현 시 확정한다. (Phone Verification 6개 키는 #20~#21에서 확정, `docs/worklog/2026-07-28-20-phone-verification-request.md`,
+`docs/worklog/2026-07-28-21-phone-verification-confirm.md` 참고)
 
 ## 6. 최종화 필요 항목
 

@@ -135,4 +135,68 @@ class PhoneVerificationServiceTest {
         assertThat(성공.get()).isEqualTo(1);
         assertThat(실패.get()).isEqualTo(시도수 - 1);
     }
+
+    @Test
+    void 올바른_코드로_확인하면_토큰을_발급하고_코드를_지운다() {
+        when(memberRepository.existsByPhoneNumber(PHONE_NUMBER)).thenReturn(false);
+        phoneVerificationService.request(PHONE_NUMBER, VerificationPurpose.SIGNUP);
+        String code = verificationCodeStore.savedCode(VerificationPurpose.SIGNUP, PHONE_NUMBER);
+
+        PhoneVerificationConfirmResult result = phoneVerificationService.confirm(PHONE_NUMBER, VerificationPurpose.SIGNUP, code);
+
+        assertThat(result.verificationToken()).isNotBlank();
+        assertThat(verificationCodeStore.verifiedTokenValue(result.verificationToken()))
+                .isEqualTo(VerificationPurpose.SIGNUP + ":" + PHONE_NUMBER);
+        assertThat(verificationCodeStore.savedCode(VerificationPurpose.SIGNUP, PHONE_NUMBER)).isNull();
+    }
+
+    @Test
+    void 인증_요청_이력이_없으면_404를_반환한다() {
+        assertThatThrownBy(() -> phoneVerificationService.confirm(PHONE_NUMBER, VerificationPurpose.SIGNUP, "123456"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getStatus())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void 인증번호가_틀리면_400을_반환한다() {
+        when(memberRepository.existsByPhoneNumber(PHONE_NUMBER)).thenReturn(false);
+        phoneVerificationService.request(PHONE_NUMBER, VerificationPurpose.SIGNUP);
+
+        assertThatThrownBy(() -> phoneVerificationService.confirm(PHONE_NUMBER, VerificationPurpose.SIGNUP, "000000"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getStatus())
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void 오입력을_5회_초과하면_429를_반환하고_코드를_지운다() {
+        when(memberRepository.existsByPhoneNumber(PHONE_NUMBER)).thenReturn(false);
+        phoneVerificationService.request(PHONE_NUMBER, VerificationPurpose.SIGNUP);
+
+        for (int i = 0; i < 5; i++) {
+            assertThatThrownBy(() -> phoneVerificationService.confirm(PHONE_NUMBER, VerificationPurpose.SIGNUP, "000000"))
+                    .isInstanceOf(BusinessException.class);
+        }
+
+        assertThatThrownBy(() -> phoneVerificationService.confirm(PHONE_NUMBER, VerificationPurpose.SIGNUP, "000000"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getStatus())
+                .isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+
+        assertThat(verificationCodeStore.savedCode(VerificationPurpose.SIGNUP, PHONE_NUMBER)).isNull();
+    }
+
+    @Test
+    void 검증에_성공한_코드는_다시_사용할_수_없다() {
+        when(memberRepository.existsByPhoneNumber(PHONE_NUMBER)).thenReturn(false);
+        phoneVerificationService.request(PHONE_NUMBER, VerificationPurpose.SIGNUP);
+        String code = verificationCodeStore.savedCode(VerificationPurpose.SIGNUP, PHONE_NUMBER);
+        phoneVerificationService.confirm(PHONE_NUMBER, VerificationPurpose.SIGNUP, code);
+
+        assertThatThrownBy(() -> phoneVerificationService.confirm(PHONE_NUMBER, VerificationPurpose.SIGNUP, code))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getStatus())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+    }
 }
