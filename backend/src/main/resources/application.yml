@@ -9,6 +9,12 @@ spring:
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:}
 
+  # --- Redis: 세션 저장 / 라이더 최신 위치 / GEO 위치 검색 / 휴대전화 인증번호(TTL) ---
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
   # --- Flyway: 스키마 버전 관리 ---
   # datasource 가 채워지면 앱 기동 시 db/migration 의 마이그레이션이 자동 실행된다.
   # (지금은 datasource 가 비어 있어 Flyway 도 동작하지 않음 — 배선만 된 상태)

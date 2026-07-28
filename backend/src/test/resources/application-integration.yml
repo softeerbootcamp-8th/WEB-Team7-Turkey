@@ -1,0 +1,17 @@
+# 통합 테스트용 설정: H2를 MySQL 호환 모드로 띄우고 Flyway 마이그레이션을 실제 실행한다.
+# Docker 금지 정책상 Testcontainers 대신 이 방식을 쓴다(backend.md 참고).
+spring:
+  datasource:
+    url: jdbc:h2:mem:turkey_it_${random.uuid};MODE=MySQL;DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
