@@ -16,7 +16,7 @@
 - 에러/바디 타입: `ErrorType<E>` = `AxiosError<E>`, `BodyType<B>` (`src/lib/axios.ts` export).
 - 공통 처리(401 → 로그인 리다이렉트 등)는 `axiosInstance` 인터셉터에 등록한다.
 - 세션 인증이므로 `withCredentials: true` 유지(쿠키 기반 서버 세션).
-- 백엔드 스펙 확정 시 `input.target` 을 `http://localhost:8080/v3/api-docs`(springdoc)로 교체하고 `pnpm generate:api` 실행.
+- `input.target` 은 `http://localhost:8080/v3/api-docs`(springdoc) 이다. 생성 전에 백엔드를 local 프로파일로 띄운 뒤 `pnpm generate:api` 를 실행한다.
 - `src/api/generated/` 는 **자동 생성물, 수정 금지**. 화면은 이 훅만 소비한다.
 - 실시간 위치는 REST 가 아니므로 Orval 대상 아님 → `shared/hooks/useTrackingStream`(SSE)로 분리 유지.
 
