@@ -2,6 +2,7 @@ package com.turkey.quick.common.auth;
 
 import java.time.Duration;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -17,7 +18,21 @@ public class InMemorySessionStore implements SessionStore {
         sessions.put(sessionId, Map.of("memberId", String.valueOf(memberId), "role", role));
     }
 
+    @Override
+    public Optional<Long> findMemberId(String sessionId) {
+        Map<String, String> session = sessions.get(sessionId);
+        if (session == null) {
+            return Optional.empty();
+        }
+        return Optional.of(Long.valueOf(session.get("memberId")));
+    }
+
     public Map<String, String> get(String sessionId) {
         return sessions.get(sessionId);
+    }
+
+    /** 세션 만료를 흉내낸다(#27 "존재하지 않는 세션" 테스트용). */
+    public void remove(String sessionId) {
+        sessions.remove(sessionId);
     }
 }
