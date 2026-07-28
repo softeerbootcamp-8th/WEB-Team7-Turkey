@@ -43,6 +43,11 @@ public class RedisSessionStore implements SessionStore {
         return Optional.of(Long.valueOf((String) memberId));
     }
 
+    @Override
+    public void delete(String sessionId) {
+        redisTemplate.delete(key(sessionId));
+    }
+
     private String key(String sessionId) {
         return KEY_FORMAT.formatted(sessionId);
     }
