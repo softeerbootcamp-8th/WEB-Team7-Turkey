@@ -102,6 +102,17 @@ class CustomerSessionE2ETest {
     }
 
     @Test
+    void 만료된_세션이면_401과_함께_쿠키를_만료시키는_응답을_반환한다() {
+        var response = rest.exchange(SESSION_ENDPOINT, org.springframework.http.HttpMethod.GET,
+                withCookie("SESSION_ID=expired-or-unknown-session"), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        String setCookie = response.getHeaders().get(HttpHeaders.SET_COOKIE).get(0);
+        assertThat(setCookie).contains("SESSION_ID=");
+        assertThat(setCookie).containsIgnoringCase("Max-Age=0");
+    }
+
+    @Test
     void 로그인_이후_탈퇴한_계정이면_401을_반환한다() {
         Member member = saveCustomer("e2e_session02", "p@ssw0rd", "01022223333");
         String cookie = loginAndGetSessionCookie("e2e_session02", "p@ssw0rd");

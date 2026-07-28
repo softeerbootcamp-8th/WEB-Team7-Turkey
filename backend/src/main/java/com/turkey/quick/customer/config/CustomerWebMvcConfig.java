@@ -4,6 +4,7 @@ import com.turkey.quick.common.auth.SessionStore;
 import com.turkey.quick.customer.auth.CustomerSessionInterceptor;
 import com.turkey.quick.member.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -21,9 +22,12 @@ public class CustomerWebMvcConfig implements WebMvcConfigurer {
     private final SessionStore sessionStore;
     private final MemberRepository memberRepository;
 
+    @Value("${session.cookie.secure:true}")
+    private boolean cookieSecure;
+
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(new CustomerSessionInterceptor(sessionStore, memberRepository))
+        registry.addInterceptor(new CustomerSessionInterceptor(sessionStore, memberRepository, cookieSecure))
                 .addPathPatterns("/api/customer/session");
     }
 }
