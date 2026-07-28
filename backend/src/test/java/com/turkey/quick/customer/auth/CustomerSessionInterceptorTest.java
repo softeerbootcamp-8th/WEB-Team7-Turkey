@@ -32,7 +32,7 @@ class CustomerSessionInterceptorTest {
     void setUp() {
         sessionStore = new InMemorySessionStore();
         memberRepository = mock(MemberRepository.class);
-        interceptor = new CustomerSessionInterceptor(sessionStore, memberRepository);
+        interceptor = new CustomerSessionInterceptor(sessionStore, memberRepository, true);
     }
 
     private Member customer() {
@@ -72,6 +72,19 @@ class CustomerSessionInterceptorTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getStatus())
                 .isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void 인증에_실패하면_응답에_만료_쿠키를_함께_보낸다() {
+        MockHttpServletRequest request = requestWithCookie("no-such-session");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertThatThrownBy(() -> interceptor.preHandle(request, response, new Object()))
+                .isInstanceOf(BusinessException.class);
+
+        String setCookie = response.getHeader("Set-Cookie");
+        assertThat(setCookie).contains("SESSION_ID=");
+        assertThat(setCookie).containsIgnoringCase("Max-Age=0");
     }
 
     @Test
