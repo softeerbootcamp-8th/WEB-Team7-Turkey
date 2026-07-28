@@ -29,6 +29,7 @@ import org.springframework.test.context.ActiveProfiles;
 class PhoneVerificationE2ETest {
 
     private static final String ENDPOINT = "/api/phone-verifications";
+    private static final String CONFIRM_ENDPOINT = "/api/phone-verifications/confirm";
 
     @Autowired
     private TestRestTemplate rest;
@@ -38,6 +39,9 @@ class PhoneVerificationE2ETest {
 
     @Autowired
     private FakeSmsSender smsSender;
+
+    @Autowired
+    private InMemoryVerificationCodeStore verificationCodeStore;
 
     @TestConfiguration
     static class FakeInfraConfig {
@@ -116,5 +120,39 @@ class PhoneVerificationE2ETest {
 
         var retry = rest.postForEntity(ENDPOINT, request, ApiResponse.class);
         assertThat(retry.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void 발급된_인증번호로_확인하면_200과_토큰을_반환한다() {
+        var phoneNumber = "010-3333-4444";
+        rest.postForEntity(ENDPOINT, Map.of("phoneNumber", phoneNumber, "purpose", VerificationPurpose.SIGNUP), ApiResponse.class);
+        String code = verificationCodeStore.savedCode(VerificationPurpose.SIGNUP, "01033334444");
+
+        var confirmRequest = Map.of("phoneNumber", phoneNumber, "purpose", VerificationPurpose.SIGNUP, "code", code);
+        var response = rest.postForEntity(CONFIRM_ENDPOINT, confirmRequest, ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).extracting("data").asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
+                .containsKey("verificationToken");
+    }
+
+    @Test
+    void 인증_요청_이력_없이_확인하면_404를_반환한다() {
+        var confirmRequest = Map.of("phoneNumber", "010-5555-6666", "purpose", VerificationPurpose.SIGNUP, "code", "123456");
+
+        var response = rest.postForEntity(CONFIRM_ENDPOINT, confirmRequest, ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void 틀린_인증번호로_확인하면_400을_반환한다() {
+        var phoneNumber = "010-7777-8888";
+        rest.postForEntity(ENDPOINT, Map.of("phoneNumber", phoneNumber, "purpose", VerificationPurpose.FIND_ID), ApiResponse.class);
+
+        var confirmRequest = Map.of("phoneNumber", phoneNumber, "purpose", VerificationPurpose.FIND_ID, "code", "000000");
+        var response = rest.postForEntity(CONFIRM_ENDPOINT, confirmRequest, ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 }

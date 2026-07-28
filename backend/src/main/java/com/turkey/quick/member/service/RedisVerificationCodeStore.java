@@ -10,6 +10,8 @@ public class RedisVerificationCodeStore implements VerificationCodeStore {
 
     private static final String CODE_KEY_FORMAT = "phone-verification:code:%s:%s";
     private static final String COOLDOWN_KEY_FORMAT = "phone-verification:cooldown:%s:%s";
+    private static final String ATTEMPTS_KEY_FORMAT = "phone-verification:attempts:%s:%s";
+    private static final String VERIFIED_KEY_FORMAT = "phone-verification:verified:%s";
 
     private final StringRedisTemplate redisTemplate;
 
@@ -36,11 +38,45 @@ public class RedisVerificationCodeStore implements VerificationCodeStore {
         redisTemplate.delete(cooldownKey(purpose, phoneNumber));
     }
 
+    @Override
+    public String getCode(VerificationPurpose purpose, String phoneNumber) {
+        return redisTemplate.opsForValue().get(codeKey(purpose, phoneNumber));
+    }
+
+    @Override
+    public long incrementAttempts(VerificationPurpose purpose, String phoneNumber, Duration ttl) {
+        String key = attemptsKey(purpose, phoneNumber);
+        Long attempts = redisTemplate.opsForValue().increment(key);
+        if (attempts != null && attempts == 1L) {
+            redisTemplate.expire(key, ttl);
+        }
+        return attempts == null ? 0L : attempts;
+    }
+
+    @Override
+    public void clearVerification(VerificationPurpose purpose, String phoneNumber) {
+        redisTemplate.delete(codeKey(purpose, phoneNumber));
+        redisTemplate.delete(attemptsKey(purpose, phoneNumber));
+    }
+
+    @Override
+    public void saveVerifiedToken(String token, VerificationPurpose purpose, String phoneNumber, Duration ttl) {
+        redisTemplate.opsForValue().set(verifiedKey(token), purpose + ":" + phoneNumber, ttl);
+    }
+
     private String codeKey(VerificationPurpose purpose, String phoneNumber) {
         return CODE_KEY_FORMAT.formatted(purpose, phoneNumber);
     }
 
     private String cooldownKey(VerificationPurpose purpose, String phoneNumber) {
         return COOLDOWN_KEY_FORMAT.formatted(purpose, phoneNumber);
+    }
+
+    private String attemptsKey(VerificationPurpose purpose, String phoneNumber) {
+        return ATTEMPTS_KEY_FORMAT.formatted(purpose, phoneNumber);
+    }
+
+    private String verifiedKey(String token) {
+        return VERIFIED_KEY_FORMAT.formatted(token);
     }
 }

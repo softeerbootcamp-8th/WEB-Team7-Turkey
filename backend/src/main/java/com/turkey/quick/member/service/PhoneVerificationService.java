@@ -7,6 +7,7 @@ import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Base64;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,6 +24,8 @@ public class PhoneVerificationService {
     private static final int CODE_LENGTH = 6;
     private static final Duration CODE_TTL = Duration.ofMinutes(5);
     private static final Duration RESEND_COOLDOWN = Duration.ofSeconds(60);
+    private static final int MAX_ATTEMPTS = 5;
+    private static final Duration VERIFIED_TOKEN_TTL = Duration.ofMinutes(10);
 
     private final MemberRepository memberRepository;
     private final VerificationCodeStore verificationCodeStore;
@@ -59,9 +62,43 @@ public class PhoneVerificationService {
         return new PhoneVerificationResult(phoneNumber, purpose, code, expiresAt);
     }
 
+    @Transactional(readOnly = true)
+    public PhoneVerificationConfirmResult confirm(String rawPhoneNumber, VerificationPurpose purpose, String inputCode) {
+        String phoneNumber = rawPhoneNumber.replace("-", "");
+
+        String savedCode = verificationCodeStore.getCode(purpose, phoneNumber);
+        if (savedCode == null) {
+            throw new BusinessException(HttpStatus.NOT_FOUND, "인증 요청 이력이 없거나 만료되었습니다. 인증번호를 다시 요청해 주세요.");
+        }
+
+        long attempts = verificationCodeStore.incrementAttempts(purpose, phoneNumber, CODE_TTL);
+        if (attempts > MAX_ATTEMPTS) {
+            verificationCodeStore.clearVerification(purpose, phoneNumber);
+            throw new BusinessException(HttpStatus.TOO_MANY_REQUESTS, "인증 시도 횟수를 초과했습니다. 인증번호를 다시 요청해 주세요.");
+        }
+
+        if (!savedCode.equals(inputCode)) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "인증번호가 일치하지 않습니다.");
+        }
+
+        // 검증에 성공했으니 코드는 재사용할 수 없게 지우고, 일회성 인증 완료 토큰을 새로 발급한다.
+        verificationCodeStore.clearVerification(purpose, phoneNumber);
+        String token = generateToken();
+        LocalDateTime expiresAt = LocalDateTime.now(ZoneOffset.UTC).plus(VERIFIED_TOKEN_TTL);
+        verificationCodeStore.saveVerifiedToken(token, purpose, phoneNumber, VERIFIED_TOKEN_TTL);
+
+        return new PhoneVerificationConfirmResult(token, expiresAt);
+    }
+
     private String generateCode() {
         int bound = (int) Math.pow(10, CODE_LENGTH);
         int value = secureRandom.nextInt(bound);
         return String.format("%0" + CODE_LENGTH + "d", value);
+    }
+
+    private String generateToken() {
+        byte[] bytes = new byte[24];
+        secureRandom.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 }

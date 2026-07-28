@@ -21,4 +21,19 @@ public interface VerificationCodeStore {
 
     /** 문자 발송 실패 시 롤백용. 저장된 코드와 쿨다운을 모두 지워 즉시 재시도할 수 있게 한다. */
     void release(VerificationPurpose purpose, String phoneNumber);
+
+    /** 저장된 인증번호를 읽는다. 요청 이력이 없거나 만료됐으면 null(Redis에서는 둘을 구분할 수 없다). */
+    String getCode(VerificationPurpose purpose, String phoneNumber);
+
+    /**
+     * 오입력 시도 횟수를 원자적으로 1 증가시키고 새 값을 반환한다(Redis INCR와 동등).
+     * 카운터가 이번에 처음 생겼을 때만 ttl을 건다 — 인증번호와 같은 시점에 만료되도록.
+     */
+    long incrementAttempts(VerificationPurpose purpose, String phoneNumber, Duration ttl);
+
+    /** 검증 성공 또는 시도 횟수 초과 후 정리용. 코드와 시도 횟수 카운터를 지워 재사용을 막는다. */
+    void clearVerification(VerificationPurpose purpose, String phoneNumber);
+
+    /** 인증 완료 결과로 발급하는 일회성 토큰을 저장한다. 값은 "purpose:phoneNumber" 형태. */
+    void saveVerifiedToken(String token, VerificationPurpose purpose, String phoneNumber, Duration ttl);
 }

@@ -157,3 +157,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - 쿠키 보안 속성(`Secure`/`HttpOnly`/`SameSite`/`Domain`)과 CSRF 대응 정책
 - 통합/E2E 테스트가 Redis를 인메모리 대체(`InMemoryVerificationCodeStore`)로만 검증함 — 실제 Redis TTL 만료 동작은 아직 검증되지 않음(#20)
 - 외부 SMS 발송 연동(현재는 로그만 남기는 모킹) — 실제 벤더 선정 시 `SmsSender` 구현체 교체 필요(#20)
+- 인증번호 확인(`PhoneVerificationService.confirm`)에 원자적 보호가 없어, 동시에 같은 유효 코드로 확인
+  요청이 오면 인증 완료 토큰이 중복 발급될 수 있음(#21) — 발생 가능성·영향 재검토 필요
+- 인증 완료 토큰(`phone-verification:verified:{token}`)을 소비(조회+1회성 삭제)하는 로직이 아직 없음 —
+  `#25`(고객 회원가입)·`#22`(아이디 찾기) 구현 시 함께 추가 필요
