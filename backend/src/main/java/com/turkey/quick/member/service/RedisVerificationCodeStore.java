@@ -64,6 +64,12 @@ public class RedisVerificationCodeStore implements VerificationCodeStore {
         redisTemplate.opsForValue().set(verifiedKey(token), purpose + ":" + phoneNumber, ttl);
     }
 
+    @Override
+    public String consumeVerifiedToken(String token) {
+        // GETDEL: 조회와 삭제를 원자적으로 묶어, 같은 토큰으로 동시에 들어온 요청이 둘 다 값을 받는 것을 막는다.
+        return redisTemplate.opsForValue().getAndDelete(verifiedKey(token));
+    }
+
     private String codeKey(VerificationPurpose purpose, String phoneNumber) {
         return CODE_KEY_FORMAT.formatted(purpose, phoneNumber);
     }
