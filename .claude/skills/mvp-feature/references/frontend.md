@@ -9,10 +9,12 @@
 ## 1단계 — OpenAPI 스펙 갱신
 
 Orval은 `orval.config.ts`의 `input.target`(= `http://localhost:8080/v3/api-docs`)에서 스펙을 읽는다.
-그러니 **백엔드가 떠 있어야 한다.** local 프로파일은 파일 기반 H2를 쓰므로 외부 DB 없이 뜬다.
+그러니 **백엔드가 떠 있어야 한다.** local 프로파일은 Docker MySQL 8.4에 붙으므로
+DB 컨테이너를 먼저 띄운다(`docs/05-local-dev.md`).
 
 ```bash
 cd backend
+docker compose up -d                                          # MySQL 먼저. healthy 확인 후 진행
 ./gradlew bootRun --args='--spring.profiles.active=local' &   # 백그라운드로 기동
 # 기동 확인 — 200 이 나올 때까지 기다린다
 until curl -sf localhost:8080/api/health > /dev/null; do sleep 2; done

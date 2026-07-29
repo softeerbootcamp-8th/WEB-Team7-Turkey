@@ -98,6 +98,12 @@ docker compose exec mysql mysql -uturkey -plocal turkey
 
 ## 범위
 
-이 문서는 **로컬 개발 실행용 DB** 만 다룬다. 자동화 테스트(`./gradlew test`)는 여전히 DataSource 자동설정을
-제외한 채 DB 없이 동작한다(`src/test/resources/application.yml`). 통합 테스트용 DB 구성은 CI 영향이 있어
-별도로 논의한다.
+단위 테스트는 여전히 DataSource 자동설정을 제외한 채 DB 없이 돈다(`src/test/resources/application.yml`).
+
+통합·E2E 테스트(`integration` 프로파일)는 **이 문서의 컨테이너에 그대로 붙는다.** 개발용과 같은 `turkey`
+스키마를 공유하므로, 각 테스트는 `IntegrationTestSupport`(→ `DatabaseCleaner`)로 테이블을 비우고 시작한다.
+즉 **`./gradlew test` 를 돌리면 로컬 개발 데이터가 지워진다.** 남겨야 할 데이터가 있으면 먼저 백업한다.
+상세 규칙은 `.claude/skills/mvp-feature/references/testing.md` 에 있다.
+
+CI(`.github/workflows/deploy.yml`)는 `./gradlew clean build -x test` 로 테스트를 돌리지 않으므로 영향이 없다.
+CI 에서 테스트를 켜려면 워크플로에 MySQL 서비스 컨테이너를 붙이는 작업이 따로 필요하다.
