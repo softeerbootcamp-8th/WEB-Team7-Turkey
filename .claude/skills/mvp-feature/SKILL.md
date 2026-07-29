@@ -25,10 +25,48 @@ description: >
 `CLAUDE.md`의 규칙(금지 기술, 상태 전이, 확정된 결정)은 이미 컨텍스트에 있다.
 여기 다시 옮기지 않았으니, 충돌하면 항상 `CLAUDE.md`가 우선이다.
 
+## 프로젝트 보드 연동 (참조값)
+
+이슈 진행 상태는 GitHub Projects로 관리한다: **`turkey 팀의 프로젝트 관리`** (owner `softeerbootcamp-8th`, project 번호 `7`).
+Backlog → Todo 이동은 스프린트 계획 시 사람이 직접 한다 — 이 스킬은 건드리지 않는다.
+이 스킬이 담당하는 구간은 **Todo 이후**(브랜치 생성 → In progress → 푸시/PR → In review)부터다.
+
+매번 다시 조회하지 말고 아래 값을 그대로 쓴다:
+
+| 항목 | 값 |
+|---|---|
+| Project ID | `PVT_kwDOEWcus84BeFEV` |
+| Status 필드 ID | `PVTSSF_lADOEWcus84BeFEVzhYh8Ao` |
+| Status: Todo | `f75ad846` |
+| Status: In progress | `47fc9ee4` |
+| Status: In review | `20562865` |
+| Status: Done | `98236657` |
+
+이슈 N의 프로젝트 아이템 ID 조회:
+
+```bash
+gh project item-list 7 --owner softeerbootcamp-8th --format json --limit 500 \
+  | jq -r '.items[] | select(.content.number==N) | .id'
+```
+
+Status 변경:
+
+```bash
+gh project item-edit --id <ITEM_ID> --project-id PVT_kwDOEWcus84BeFEV \
+  --field-id PVTSSF_lADOEWcus84BeFEVzhYh8Ao --single-select-option-id <OPTION_ID>
+```
+
+(위 ID들은 프로젝트 보드 자체를 새로 만들거나 필드를 바꾸지 않는 한 안정적이다. `gh project item-edit`가 실패하면
+필드/프로젝트가 바뀐 것일 수 있으니, 값을 추측해 재시도하지 말고 사람에게 알린다.)
+
 ## 단계 1 — 이슈 읽기와 범위 판정
 
-`mcp__github__issue_read`로 이슈 본문·라벨·코멘트를 읽는다 (repo: `softeerbootcamp-8th/WEB-Team7-Turkey`).
-이슈에 `Part of #N`, `Depends on #N`이 있으면 그 상위 이슈도 읽어 단계 분할 맥락을 파악한다.
+GitHub 이슈 본문·라벨·코멘트를 읽는다 (repo: `softeerbootcamp-8th/WEB-Team7-Turkey`, 예: `gh issue view <N> --json title,body,labels,comments`).
+
+**선행 이슈 확인**: 이슈 본문에 "전제 조건", "선행", `Depends on #N`, `Part of #N`처럼 다른 이슈를 가리키는
+표현이 있으면 그 이슈를 읽고 상태(열림/닫힘, 프로젝트 보드 Status)를 확인한다. 아직 Done/닫힘이 아니면
+**요청받은 이슈 대신 그 선행 이슈부터 하는 걸 사람에게 제안**하고, 확인 없이 그대로 진행하지 않는다.
+그런 언급이 없으면 이 확인은 통과.
 
 읽은 뒤 **범위를 스스로 판정**한다. 이 판정이 이후 단계에서 무엇을 읽고 무엇을 건너뛸지 결정한다.
 
@@ -77,6 +115,17 @@ POST /api/customer/deliveries  → 201, ApiResponse<DeliveryCreateResponse>
 
 받은 답변은 그대로 메모해 둔다 (질문 / 선택지 / 고른 것 / 사람이 덧붙인 말).
 단계 6에서 이 메모가 문서의 핵심이 된다.
+
+계약이 정해지면 코드를 쓰기 전에 브랜치를 만들고 보드 상태를 옮긴다:
+
+```bash
+gh issue develop <N> -c -n feature/<이슈번호>-<영문-슬러그>
+```
+
+(`gh issue develop`는 브랜치 생성과 동시에 GitHub 쪽 이슈-브랜치 연결도 등록한다 — 단순 `git checkout -b`보다 이걸 우선한다.
+세션 시스템 프롬프트에 지정 브랜치가 있으면 새로 만들지 않고 그 브랜치를 따른다.)
+
+그다음 이슈 N의 프로젝트 아이템 Status를 `In progress`로 바꾼다(위 「프로젝트 보드 연동」 참조값 사용).
 
 ## 단계 3 — 백엔드 구현
 
@@ -128,8 +177,18 @@ cd frontend && pnpm typecheck
 
 ## 단계 7 — 커밋과 마무리
 
-`CLAUDE.md`의 협업 규칙을 따른다. 커밋 메시지에 이슈 번호를 넣고,
-기능과 무관한 포맷팅·파일 이동을 섞지 않는다.
+`CLAUDE.md`의 협업 규칙을 따른다. 기능과 무관한 포맷팅·파일 이동을 섞지 않는다.
+
+**PR 제목·커밋 메시지 컨벤션 (팀 그라운드룰, 고정)** — 기존 병합 이력(#181~#191 등)에서
+이미 쓰이던 패턴을 그대로 고정한다. 커밋 메시지와 PR 제목은 같은 포맷을 쓴다:
+
+```
+<type>: <한글 설명> (#이슈번호)
+```
+
+- `type`은 `feat`/`fix`/`docs`/`test`/`refactor`/`chore` 중 하나.
+- 이슈가 여러 개면 `(#48-50)`처럼 범위로 쓰거나 `(#25)(#27)`처럼 나열한다.
+- Squash merge 시 GitHub가 뒤에 `(#PR번호)`를 자동으로 붙이는 것은 그대로 둔다.
 
 ```
 feat: 배송요청 생성 API 구현 (#142)
@@ -137,8 +196,16 @@ test: 배송요청 생성 단위·통합·E2E 테스트 (#142)
 docs: 배송요청 생성 작업 기록 (#142)
 ```
 
-푸시는 지정 브랜치로 `git push -u origin <branch>`.
-**PR은 사람이 명시적으로 요청할 때만 만든다.** 만들 때는 `.github/PULL_REQUEST_TEMPLATE.md` 구조를 채운다.
+푸시는 지정 브랜치로 `git push -u origin <branch>`. 푸시 후 이슈 N의 프로젝트 아이템 Status를
+`In review`로 바꾼다(위 「프로젝트 보드 연동」 참조값 사용) — PR을 아직 안 만들었어도 리뷰 대기 상태로 옮긴다.
+
+**PR은 사람이 명시적으로 요청할 때만 만든다.** 만들 때는 `.github/PULL_REQUEST_TEMPLATE.md` 구조를 채우고
+제목은 위 컨벤션을 따른다.
+
+**머지는 절대 자동으로 하지 않는다.** 리뷰 승인·CI 통과 등 어떤 조건이 갖춰져도, 그 시점에 사람이
+다시 명시적으로 머지를 요청하지 않는 한 실행하지 않는다 — "PR 열어줘"라는 이전 요청이 머지까지
+포함하지 않는다. 머지가 되면(사람이 실행했든 GitHub UI에서 직접 했든) 프로젝트 아이템 Status는
+보통 보드 자동화로 `Done`이 되지만, 확인해서 안 되어 있으면 직접 옮긴다.
 
 마지막에 사람에게 보고할 것: 만든 엔드포인트, 테스트 결과(실제 출력 기준), 기록 문서 경로,
 그리고 **이슈에서 빼놓은 것**. 빼놓은 게 있으면 반드시 말한다.
