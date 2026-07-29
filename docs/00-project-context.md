@@ -81,11 +81,12 @@ Spring Boot WAS #1 … #N   (같은 애플리케이션 N대)
   두므로 스티키 세션이 필요 없다.
 - 기능별 책임은 코드 수준에서 분리하되 MSA로 분리하지 않는다. **수평 확장은 같은 모놀리스를 여러 대
   띄우는 것이라 MSA와 무관하다.**
-- Redis Pub/Sub과 Redis Streams는 사용하지 않는다. → **재검토 중.** 이 금지는 WAS가 1대라는 전제
-  위에서만 비용이 0이었다. 다중 인스턴스에서는 SSE 이벤트 팬아웃 수단이 필요하다
-  ([Discussion #246](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/246)).
-- ~~위치 요청을 처리한 WAS가 기존 `SseEmitter`에 직접 이벤트를 전달한다.~~ → **무효.** 위치를 처리한
-  인스턴스와 고객의 SSE 연결을 들고 있는 인스턴스가 다를 수 있다. 대체 방식은 위 Discussion에서 결정한다.
+- Redis Streams는 사용하지 않는다. **Redis Pub/Sub은 SSE 이벤트 팬아웃 용도로만 사용한다**
+  (2026-07-29 결정, [Discussion #246](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/246)).
+  다른 용도(작업 큐, 도메인 이벤트 버스, 인스턴스 간 RPC)로 확장하지 않는다.
+- 위치 요청을 처리한 인스턴스가 **Redis Pub/Sub으로 발행**하고, 해당 주문의 `SseEmitter`를 들고 있는
+  인스턴스가 고객에게 전송한다. 인스턴스마다 다른 고객의 연결을 들고 있으므로 직접 전달은 불가능하다.
+  `SseEmitter` 레지스트리만 인스턴스 로컬이고, 연결 개수 같은 집계값은 Redis로 센다.
 
 ### 4.1 프론트엔드 라우트 구조 (ADR-0002, 결정일 2026-07-23)
 
