@@ -157,7 +157,12 @@ WAITING → ASSIGNED → MOVING_TO_PICKUP → PICKED_UP → DELIVERING → COMPL
 - **라이더 위치 발행**: 진행 중 배송 동안 위치 업로드 — **위치가 실제 변경됐을 때만** 이벤트. CANCELED 발생 시 라이더에게 push.
 - **(검토)** `/rider/requests` 신규 요청 실시간 피드도 SSE 후보 — 정책 미확정.
 
-초기엔 단일 WAS이므로 Redis를 이벤트 브로커로 쓰지 않고, 위치 갱신 처리한 앱이 기존 SSE 연결로 직접 전달.
+~~초기엔 단일 WAS이므로 Redis를 이벤트 브로커로 쓰지 않고, 위치 갱신 처리한 앱이 기존 SSE 연결로 직접 전달.~~
+→ **무효**(2026-07-29 수평 확장 요구사항 변경). 위치를 처리한 인스턴스와 고객의 SSE 연결을 들고 있는
+인스턴스가 다를 수 있다. 대체 방식은
+[Discussion #246](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/246)에서 결정한다.
+프론트 영향은 없다 — 재연결 시 이벤트 재생 대신 최신 스냅샷으로 복구하는 설계(#79)라 다른 인스턴스에
+붙어도 성립한다.
 
 ---
 
