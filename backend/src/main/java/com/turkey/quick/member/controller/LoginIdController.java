@@ -23,6 +23,7 @@ public class LoginIdController {
     private final LoginIdAvailabilityService loginIdAvailabilityService;
 
     @Operation(
+            operationId = "checkLoginIdAvailability",
             summary = "아이디 중복 확인",
             description = "고객·라이더를 포함한 전체 회원 기준으로 로그인 ID 사용 가능 여부를 확인한다. 형식(길이·문자) 제약은 없다."
     )

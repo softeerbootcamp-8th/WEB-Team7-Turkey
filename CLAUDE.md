@@ -190,3 +190,10 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   채우는 방법이 정해지지 않음 — `#72` 구현 시 응답 스키마(`termId`)를 맞춰야 함
 - 회원가입 동시 요청(같은 아이디로 동시 가입)은 DB unique 제약 + 예외 변환으로 막지만, 실제
   멀티스레드 경쟁 재현 통합 테스트는 없음(#25)
+- Orval 생성 훅의 `error` 가 전부 `AxiosError<unknown>` 임(#194) — 스펙에 공통 에러 응답 스키마가
+  선언돼 있지 않다. springdoc 에 에러 스키마를 노출하고 orval `override.errorType` 을 지정할지,
+  화면에서 `unknown` 을 좁혀 쓸지 미결
+- 새 컨트롤러에 `@Operation(operationId = "...")` 명시가 사실상 필수가 됨(#194). 생략하면 springdoc 이
+  메서드명을 쓰고 동명 메서드에 `_1` 을 붙여 프론트 훅 이름이 액터를 구분하지 못한다
+  (`useLogin` / `useLogin1`, 배정 순서는 컨트롤러 스캔 순서 의존). 현재는 `OpenApiOperationIdE2ETest`
+  실패로만 알게 되는데, 리뷰 체크리스트나 PR 템플릿에 넣을지 미결

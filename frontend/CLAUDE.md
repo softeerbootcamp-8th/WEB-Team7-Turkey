@@ -20,6 +20,43 @@
 - `src/api/generated/` 는 **자동 생성물, 수정 금지**. 화면은 이 훅만 소비한다.
 - 실시간 위치는 REST 가 아니므로 Orval 대상 아님 → `shared/hooks/useTrackingStream`(SSE)로 분리 유지.
 
+### 재생성 절차(#194)
+
+백엔드 API 가 추가·변경되면 아래를 그대로 실행한다. 생성물은 커밋에 포함한다 —
+프론트만 받는 사람이 백엔드를 띄우지 않고도 타입·훅을 쓸 수 있어야 한다.
+
+```bash
+# 1) 로컬 DB·Redis (docs/05-local-dev.md)
+cd backend && docker compose up -d
+docker compose ps            # STATUS 가 healthy 가 될 때까지 대기
+
+# 2) 백엔드 기동 (local 프로파일)
+./gradlew bootRun --args='--spring.profiles.active=local'
+
+# 3) 다른 셸에서 기동·스펙 노출 확인
+until curl -sf localhost:8080/api/health > /dev/null; do sleep 2; done
+curl -sf localhost:8080/v3/api-docs > /dev/null && echo spec ok
+
+# 4) 재생성 + 검증
+cd frontend && pnpm generate:api
+pnpm typecheck && pnpm build
+```
+
+`import.meta is not available with the "cjs" output format` 경고는 orval 이 mutator(`src/lib/axios.ts`)를
+esbuild 로 한 번 변환하면서 나오는 것이고 생성물에는 영향이 없다. **이 경고를 없애려고 `src/lib/axios.ts` 를 수정하지 않는다.**
+
+생성 후 확인할 것:
+
+- 새 훅이 생겼는지, 이름이 **어떤 액터의 어떤 행위인지 읽히는지**(`useRiderLogin`, `useGetCustomerSession`)
+- 요청/응답 타입에 `unknown`/`any` 가 없는지. 단 `ErrorType<unknown>`·`TContext = unknown` 은
+  Orval 제네릭 기본값이라 정상이다. 실제 확인 대상은 `*.schemas.ts` 의 스키마 타입이다.
+
+**훅 이름은 백엔드 `operationId` 에서 온다.** 마음에 안 들면 생성물이 아니라
+컨트롤러의 `@Operation(operationId = "...")` 을 고친다. operationId 를 생략하면 springdoc 이
+메서드명을 쓰고, 두 컨트롤러가 같은 메서드명(`login`/`signup`/`session`)을 쓰면 나중 것에 `_1` 을 붙인다
+→ `useLogin` / `useLogin1` 처럼 액터를 구분할 수 없는 이름이 되고, 어느 쪽이 `_1` 인지는 스캔 순서에 달려 있다.
+이 회귀는 백엔드 `OpenApiOperationIdE2ETest` 가 잡는다.
+
 ## 디자인 시안(HTML) → TSX 변환 규칙
 `~/Downloads` 등의 Stitch/디자인 시안 HTML 을 라우트/컴포넌트로 옮길 때 아래를 지킨다.
 
