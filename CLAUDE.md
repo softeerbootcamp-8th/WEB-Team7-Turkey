@@ -212,3 +212,6 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   메서드명을 쓰고 동명 메서드에 `_1` 을 붙여 프론트 훅 이름이 액터를 구분하지 못한다
   (`useLogin` / `useLogin1`, 배정 순서는 컨트롤러 스캔 순서 의존). 현재는 `OpenApiOperationIdE2ETest`
   실패로만 알게 되는데, 리뷰 체크리스트나 PR 템플릿에 넣을지 미결
+- 라이더 로그아웃(#51)의 "배차 후보 제외"는 지금 `operatingStatus`를 UNAVAILABLE로 바꾸는 것으로만
+  처리한다(Redis GEO 후보 스토어가 아직 없음, `location/`은 빈 스텁). 향후 GEO 후보 스토어가 생기면
+  로그아웃 경로(`RiderLogoutService`)에 상태 전이와 함께 GEO 멤버 제거를 묶어야 함
