@@ -12,6 +12,8 @@ import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.member.repository.MemberTermAgreementRepository;
 import com.turkey.quick.member.repository.TermRepository;
 import com.turkey.quick.member.service.VerificationCodeStore;
+import com.turkey.quick.payment.domain.PointWallet;
+import com.turkey.quick.payment.repository.PointWalletRepository;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -39,6 +41,7 @@ public class CustomerSignupService {
     private final MemberRepository memberRepository;
     private final TermRepository termRepository;
     private final MemberTermAgreementRepository memberTermAgreementRepository;
+    private final PointWalletRepository pointWalletRepository;
     private final VerificationCodeStore verificationCodeStore;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
@@ -80,6 +83,8 @@ public class CustomerSignupService {
         } catch (DataIntegrityViolationException e) {
             throw new BusinessException(HttpStatus.CONFLICT, "이미 사용 중인 아이디 또는 휴대전화 번호입니다.");
         }
+
+        pointWalletRepository.save(PointWallet.create(member));
 
         List<MemberTermAgreement> agreements = agreedTerms.stream()
                 .map(term -> MemberTermAgreement.create(member, term, true))
