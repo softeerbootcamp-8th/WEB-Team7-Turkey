@@ -60,6 +60,34 @@ class RiderLocationSnapshotTest {
             // 단말·환경에 따라 정확도를 주지 않는다. 엔터티 컬럼도 nullable 이다.
             assertThat(snapshot("37.4979", "127.0276", null).accuracyMeters()).isNull();
         }
+
+        @Test
+        @DisplayName("측정 시각은 밀리초로 절단된다")
+        void truncatesMeasuredAtToMilliseconds() {
+            // 요청은 Instant 로 들어와 마이크로·나노초를 담을 수 있는데, Redis 값 형식과
+            // measured_at 컬럼(DATETIME(3))은 밀리초까지다. 절단하지 않으면 저장한 값과 다시 읽은
+            // 값이 달라, 같은 요청을 두 번 보낼 때 두 번째가 "더 최신"으로 판정된다(#250).
+            RiderLocationSnapshot location = new RiderLocationSnapshot(
+                    BigDecimal.ONE, BigDecimal.ONE,
+                    LocalDateTime.of(2026, 7, 29, 12, 34, 56, 789_654_321),
+                    null);
+
+            assertThat(location.measuredAt())
+                    .isEqualTo(LocalDateTime.of(2026, 7, 29, 12, 34, 56, 789_000_000));
+        }
+
+        @Test
+        @DisplayName("측정 시각은 반올림하지 않고 버린다")
+        void discardsSubMillisecondInsteadOfRounding() {
+            // 반올림하면 측정하지 않은 미래 시각이 만들어진다. 미래 시각 판정(#234)은 이미 통과한
+            // 뒤라 그 값이 그대로 저장된다 — 좌표와 달리 시각은 절단이 맞다.
+            RiderLocationSnapshot location = new RiderLocationSnapshot(
+                    BigDecimal.ONE, BigDecimal.ONE,
+                    LocalDateTime.of(2026, 7, 29, 12, 34, 56, 789_999_999),
+                    null);
+
+            assertThat(location.measuredAt().getNano()).isEqualTo(789_000_000);
+        }
     }
 
     @Nested

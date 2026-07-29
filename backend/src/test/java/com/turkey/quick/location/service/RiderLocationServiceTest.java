@@ -11,6 +11,8 @@ import com.turkey.quick.location.dto.RiderLocationUpdateResponse;
 import com.turkey.quick.rider.domain.OperatingStatus;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -273,6 +275,58 @@ class RiderLocationServiceTest {
             var response = updateAsBusy(request("37.4979", 10));
 
             assertThat(response.reason()).isEqualTo(LocationUpdateOutcome.ACCEPTED);
+        }
+    }
+
+    @Nested
+    @DisplayName("원자적 조건부 갱신")
+    class ConditionalUpdate {
+
+        @Test
+        @DisplayName("사전 검사를 통과한 뒤 다른 인스턴스가 더 최신을 쓰면 NON_MONOTONIC 이다")
+        void reportsNonMonotonicWhenLosingRace() {
+            // 사전 단조성 검사만으로는 막히지 않는 창이다 — find 시점에는 통과했고, 쓰기 시점에
+            // 저장된 값이 이미 더 최신이다. 수평 확장에서 같은 라이더의 요청 둘이 다른 인스턴스로
+            // 갈라졌을 때 실제로 일어난다(#250).
+            RiderLocationSnapshot winner = new RiderLocationSnapshot(
+                    new BigDecimal("37.5000"), LONGITUDE, baseNow.atZone(ZoneOffset.UTC).toLocalDateTime(), null);
+            var racingStore = new StoreLosingRaceAfterFind(winner);
+            var racingService = new RiderLocationService(racingStore);
+
+            RiderLocationUpdateResponse response =
+                    racingService.update(RIDER_ID, OperatingStatus.BUSY, request("37.4979", 10));
+
+            assertThat(response.reason()).isEqualTo(LocationUpdateOutcome.NON_MONOTONIC);
+            assertThat(response.applied()).isFalse();
+            // 경쟁에서 이긴 좌표가 뒤늦은 요청에 덮이지 않았다는 것이 이 이슈의 요점이다.
+            assertThat(racingStore.find(RIDER_ID)).contains(winner);
+        }
+    }
+
+    /**
+     * {@code find} 직후에 다른 인스턴스가 더 최신 좌표를 써 넣은 상태를 재현한다. 서비스는 이전
+     * 위치를 한 번만 읽으므로, 그 읽기 뒤에 값이 바뀌는 것이 정확히 경쟁 창이다.
+     *
+     * <p>한 번만 끼워 넣는다 — 매번 넣으면 어떤 요청도 영원히 저장되지 않아, 테스트가 "경쟁에서
+     * 졌다"가 아니라 "저장이 아예 안 된다"를 검증하게 된다.
+     */
+    private static class StoreLosingRaceAfterFind extends InMemoryRiderLocationStore {
+
+        private final RiderLocationSnapshot winner;
+        private boolean injected;
+
+        StoreLosingRaceAfterFind(RiderLocationSnapshot winner) {
+            this.winner = winner;
+        }
+
+        @Override
+        public Optional<RiderLocationSnapshot> find(Long riderId) {
+            Optional<RiderLocationSnapshot> seen = super.find(riderId);
+            if (!injected) {
+                injected = true;
+                super.saveIfNewer(riderId, winner);
+            }
+            return seen;
         }
     }
 
