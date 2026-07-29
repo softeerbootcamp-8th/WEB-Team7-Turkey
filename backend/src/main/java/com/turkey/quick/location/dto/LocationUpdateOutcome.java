@@ -26,9 +26,34 @@ public enum LocationUpdateOutcome {
      * 이전 최신 위치보다 측정 시각이 과거이거나 같다. 순서가 뒤바뀌어 도착한 요청이나 재전송이며,
      * 받아들이면 "최신 위치"가 과거로 되돌아간다.
      */
-    NON_MONOTONIC;
+    NON_MONOTONIC,
 
-    public boolean isAccepted() {
+    /**
+     * 이전 위치에서 의미 있게 움직이지 않았다(#82). <b>저장은 하고 전송만 생략한다</b> —
+     * 정지한 라이더도 Redis 키 TTL 을 갱신해야 배차 후보 검색(#83)에서 빠지지 않지만, 고객 지도에
+     * 같은 좌표를 다시 밀 이유는 없다. 이 값만 "폐기"가 아니라 "저장하되 전파하지 않음"이다.
+     */
+    DUPLICATE,
+
+    /**
+     * 이전 위치에서 물리적으로 불가능한 속도로 이동했다(#82). 측위 오류로 보고 저장하지 않는다 —
+     * 저장하면 잘못된 좌표가 다음 판정의 기준이 된다.
+     */
+    IMPLAUSIBLE_SPEED;
+
+    /**
+     * Redis 최신 위치를 갱신할 판정인가.
+     *
+     * {@link #DUPLICATE} 가 유일하게 "저장은 하되 전송하지 않는" 값이라, 저장 여부와 전송 여부를
+     * 한 메서드로 물을 수 없다. 둘을 합치면 정지한 라이더의 TTL 이 갱신되지 않아 배차 후보에서
+     * 빠지거나(전송 기준으로 합치면), 같은 좌표가 고객 지도로 계속 밀린다(저장 기준으로 합치면).
+     */
+    public boolean shouldStore() {
+        return this == ACCEPTED || this == DUPLICATE;
+    }
+
+    /** 구독 중인 고객에게 전송할 판정인가. */
+    public boolean shouldPublish() {
         return this == ACCEPTED;
     }
 }

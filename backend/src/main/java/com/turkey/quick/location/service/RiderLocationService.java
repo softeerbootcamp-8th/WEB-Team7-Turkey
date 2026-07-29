@@ -66,7 +66,7 @@ public class RiderLocationService {
         }
 
         LocationUpdateOutcome outcome = LocationAcceptancePolicy.evaluate(request, Instant.now());
-        if (!outcome.isAccepted()) {
+        if (!outcome.shouldStore()) {
             return discard(riderId, outcome);
         }
 

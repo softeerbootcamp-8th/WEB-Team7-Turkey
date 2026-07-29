@@ -32,8 +32,9 @@ public record RiderLocationUpdateResponse(
 
     /** 요청은 정상이지만 쓸 수 없는 값이라 버렸다. 버린 값을 전파하는 경우는 없다. */
     public static RiderLocationUpdateResponse discard(LocationUpdateOutcome reason) {
-        if (reason.isAccepted()) {
-            throw new IllegalArgumentException("폐기 사유가 ACCEPTED 일 수 없습니다.");
+        if (reason.shouldStore()) {
+            throw new IllegalArgumentException(
+                    "저장 대상인 판정을 폐기 사유로 쓸 수 없습니다. reason=" + reason);
         }
         return new RiderLocationUpdateResponse(false, false, reason);
     }
