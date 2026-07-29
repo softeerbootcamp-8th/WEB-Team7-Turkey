@@ -57,6 +57,50 @@ esbuild 로 한 번 변환하면서 나오는 것이고 생성물에는 영향�
 → `useLogin` / `useLogin1` 처럼 액터를 구분할 수 없는 이름이 되고, 어느 쪽이 `_1` 인지는 스캔 순서에 달려 있다.
 이 회귀는 백엔드 `OpenApiOperationIdE2ETest` 가 잡는다.
 
+## 인증 가드 (#195)
+
+라우트 가드는 `src/shared/auth/` 에 모여 있다. 화면은 401 을 개별 처리하지 않는다.
+
+| 파일 | 역할 |
+|---|---|
+| `shared/auth/guard.ts` | 순수 판정 로직(어디로 보낼지). 라우터·네트워크 의존 없음 → 단위 테스트 대상 |
+| `shared/auth/session.ts` | 세션 확인 쿼리와 역할 무관 합성 조회(`ensureSessionInfo`) |
+| `shared/auth/redirectSearch.ts` | `?redirect=` 검증(같은 출처 절대 경로만) |
+| `shared/auth/SessionErrorScreen.tsx` | 세션 확인이 **실패**했을 때 화면(만료와 구분) |
+
+가드가 걸린 곳:
+
+| 라우트 | 가드 | 비로그인 시 |
+|---|---|---|
+| `customer/_authed/**` | 인증 + 고객 역할 | `/customer/login?redirect=…` |
+| `rider/_authed/**` | 인증 + 라이더 역할 + 운행 상태 정합성 | `/rider/login?redirect=…` |
+| `account/**` (`account/route.tsx`) | 인증만(역할 무관, 공용 화면) | `/?redirect=…` |
+| `auth/**` (`auth/route.tsx`) | **비인증**(로그인 상태면 역할 홈으로) | 통과 |
+
+지켜야 할 것:
+
+- **보호가 필요한 새 화면은 `customer/_authed/` 또는 `rider/_authed/` 하위에 만든다.** `_authed` 는 경로 없는
+  레이아웃이라 URL 은 바뀌지 않는다. 밖에 만들면 가드 없이 열린다(백엔드 인터셉터 등록을 빠뜨리는 것과 같은 종류의 실수).
+- 역할 무관 세션 확인은 **두 세션 API 를 모두 시도해 합성**한다. 백엔드에 역할 무관 세션 API 가 없고,
+  역할 불일치도 401 이라 한쪽만 보면 "비로그인"과 "다른 역할로 로그인"을 구분할 수 없다.
+- **401 이 아닌 실패(네트워크·5xx)를 만료로 처리하지 않는다.** 그렇게 하면 서버가 잠깐 흔들릴 때 전원이 로그아웃된다.
+- 401 공통 처리는 `axiosInstance` 인터셉터 + `main.tsx` 배선이다. 단 세션 확인·로그인 경로는 제외한다
+  (전자는 가드의 정상 판정 신호, 후자는 자격 증명 오류라 폼에 표시해야 한다).
+- 라이더 운행 상태 강제는 홈·콜목록·진행배송 **3개 화면끼리만** 적용한다. 이력·정산까지 강제하면
+  BUSY 라이더가 그 화면을 아예 열 수 없다.
+- `baseURL` 은 빈 문자열이다. 생성된 URL 이 이미 `/api/...` 이므로 여기에 `/api` 를 넣으면 `/api/api/...` 가 된다.
+
+## 테스트
+
+```bash
+pnpm test        # vitest run — src/**/*.test.ts
+pnpm typecheck
+pnpm build
+```
+
+가드처럼 분기가 많은 로직은 **순수 함수로 떼어내 테스트**한다(라우터를 띄우지 않는다).
+네트워크가 개입하는 부분은 생성된 API 모듈을 `vi.mock` 으로 대체한다 — 실제 서버에 붙는 테스트는 두지 않는다.
+
 ## 디자인 시안(HTML) → TSX 변환 규칙
 `~/Downloads` 등의 Stitch/디자인 시안 HTML 을 라우트/컴포넌트로 옮길 때 아래를 지킨다.
 
