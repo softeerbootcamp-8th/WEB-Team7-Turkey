@@ -32,12 +32,13 @@ public class RedisCleaner {
     /**
      * {@code docker-compose.yml} 이 고정한 이미지의 메이저 버전.
      *
-     * <p>이 검사가 있는 이유: 개발 PC 에 Homebrew Redis 가 설치돼 있으면 그쪽이
-     * {@code 127.0.0.1:6379} 를 잡고 컨테이너는 {@code *:6379} 에 바인딩하므로 더 구체적인 호스트
-     * 쪽이 이긴다. 그래서 <b>테스트가 컨테이너가 아니라 호스트 Redis(8.8.0)로 조용히 돌고 있었다</b>.
-     * 포트를 6380 으로 옮겨 해소했지만, 설정을 다시 읽는 것으로는 "실제로 어디에 붙었는가"를 알 수
-     * 없다 — 그래서 연결된 인스턴스의 실체를 확인한다. H2 로 통과하고 MySQL 에서 깨졌던 것과 같은
-     * 종류의 문제다.
+     * <p>이 검사가 있는 이유: 개발 PC 에 Redis 가 직접 설치돼 있으면(Homebrew 등) 그쪽이
+     * {@code 127.0.0.1:6379} 를 잡고 컨테이너는 {@code *:6379} 에 바인딩하므로, 더 구체적인 호스트
+     * 쪽이 이긴다. 그러면 <b>테스트가 컨테이너가 아니라 호스트 Redis 로 조용히 돌아간다</b> —
+     * 2026-07-29 에 실제로 그 상태였다(호스트 8.8.0 vs 컨테이너 7.4). 호스트 Redis 를 제거해
+     * 해소했지만 누군가 다시 설치하면 같은 일이 반복되고, <b>설정을 다시 읽는 것으로는 "실제로
+     * 어디에 붙었는가"를 알 수 없다.</b> 그래서 연결된 인스턴스의 실체를 확인한다. H2 로 통과하고
+     * MySQL 에서 깨졌던 것과 같은 종류의 문제다.
      *
      * <p>이미지를 올릴 때 이 값도 함께 올린다. 실패 메시지가 무엇을 고쳐야 하는지 알려 준다.
      */
@@ -73,8 +74,9 @@ public class RedisCleaner {
             throw new IllegalStateException(
                     "예상과 다른 Redis 인스턴스에 연결됐습니다. redis_version=" + version
                             + ", 기대=" + EXPECTED_REDIS_MAJOR_VERSION + "x. "
-                            + "docker-compose 의 컨테이너(6380)가 떠 있는지, 개발 PC 에 설치된 Redis 가 "
-                            + "먼저 잡히지 않는지 확인하세요. 이미지를 올렸다면 RedisCleaner 의 "
+                            + "docker-compose 의 Redis 컨테이너가 떠 있는지, 그리고 개발 PC 에 직접 "
+                            + "설치된 Redis 가 127.0.0.1:6379 를 먼저 잡고 있지 않은지 확인하세요"
+                            + "(lsof -nP -iTCP:6379 -sTCP:LISTEN). 이미지를 올렸다면 RedisCleaner 의 "
                             + "EXPECTED_REDIS_MAJOR_VERSION 도 함께 올리세요.");
         }
         instanceVerified = true;

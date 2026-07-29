@@ -18,9 +18,7 @@ spring:
   data:
     redis:
       host: localhost
-      # 6379 가 아닌 이유는 backend/docker-compose.yml 주석 참고 — 개발 PC 에 설치된 Redis 가
-      # 127.0.0.1:6379 를 잡으면 컨테이너 대신 그쪽으로 조용히 붙는다.
-      port: 6380
+      port: 6379
       database: 1
 
   datasource:
