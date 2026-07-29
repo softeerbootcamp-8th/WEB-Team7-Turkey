@@ -156,8 +156,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - EC2 구성 및 MySQL·Redis 배치 방식
 - S3·CloudFront·도메인·인증서 구성, 캐시/invalidation 정책. **#26 결정에 따라 CloudFront 배포
   하나에 `/api/*`(및 SSE 경로) behavior를 추가해 EC2를 origin으로 묶는 구성을 2026-07-29 기준
-  실제 AWS에 반영 완료(S3·CloudFront·`/api/*` behavior 연결). SSE 경로가 CachingDisabled로
-  설정돼 있는지는 배포 자동화 작업 시 재확인.**
+  실제 AWS에 반영 완료(S3·CloudFront·`/api/*` behavior 연결, SSE 경로 CachingDisabled 설정 확인 완료).**
 - 프론트 Origin과 API Origin 분리 시 CORS·쿠키 설정. **#26에서 위 CloudFront 단일 배포 전제로
   `SameSite=Lax`+프로파일별 `Secure`로 구현함(`common/auth/SessionCookie`). 만약 나중에 API가
   별도 CloudFront 배포나 EC2 직접 노출로 바뀌면(크로스사이트) `SameSite=None`+EC2 자체 HTTPS로
