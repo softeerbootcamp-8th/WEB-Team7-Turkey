@@ -13,6 +13,7 @@ import com.turkey.quick.member.repository.MemberTermAgreementRepository;
 import com.turkey.quick.member.repository.TermRepository;
 import com.turkey.quick.member.service.FakeSmsSender;
 import com.turkey.quick.member.service.InMemoryVerificationCodeStore;
+import com.turkey.quick.support.IntegrationTestSupport;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -34,7 +35,7 @@ import org.springframework.test.context.ActiveProfiles;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")
-class CustomerSignupE2ETest {
+class CustomerSignupE2ETest extends IntegrationTestSupport {
 
     private static final String SIGNUP_ENDPOINT = "/api/customer/signup";
     private static final String PHONE_VERIFICATION_ENDPOINT = "/api/phone-verifications";

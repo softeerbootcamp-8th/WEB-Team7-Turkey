@@ -14,6 +14,7 @@ import com.turkey.quick.member.repository.TermRepository;
 import com.turkey.quick.member.service.InMemoryVerificationCodeStore;
 import com.turkey.quick.rider.domain.OperatingStatus;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
+import com.turkey.quick.support.IntegrationTestSupport;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -36,7 +37,7 @@ import org.springframework.test.context.ActiveProfiles;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")
-class RiderSignupE2ETest {
+class RiderSignupE2ETest extends IntegrationTestSupport {
 
     private static final String SIGNUP_ENDPOINT = "/api/rider/signup";
 

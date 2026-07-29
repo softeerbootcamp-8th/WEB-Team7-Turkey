@@ -3,6 +3,7 @@ package com.turkey.quick.common.openapi;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.turkey.quick.support.IntegrationTestSupport;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -28,7 +29,7 @@ import org.springframework.test.context.ActiveProfiles;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")
-class OpenApiOperationIdE2ETest {
+class OpenApiOperationIdE2ETest extends IntegrationTestSupport {
 
     private static final String API_DOCS_ENDPOINT = "/v3/api-docs";
 

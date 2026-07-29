@@ -57,8 +57,8 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
-    // 통합 테스트: MySQL 호환 모드로 띄워 Flyway 마이그레이션을 실제 실행한다(Docker 금지 정책).
-    testRuntimeOnly 'com.h2database:h2'
+    // 통합·E2E 테스트는 로컬 개발과 같은 Docker MySQL 에 붙는다(위 mysql-connector-j 를 그대로 쓴다).
+    // H2 는 걷어냈다 — 호환 모드는 MySQL 이 아니라서 통과해도 배포를 보장하지 못한다(docs/05-local-dev.md).
 }
 
 tasks.named('test') {
