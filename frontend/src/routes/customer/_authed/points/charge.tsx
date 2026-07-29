@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 
-export const Route = createFileRoute('/customer/points/charge')({ component: PointsCharge })
+export const Route = createFileRoute('/customer/_authed/points/charge')({ component: PointsCharge })
 
 function PointsCharge() {
   return (

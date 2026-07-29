@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, Info } from 'lucide-react'
 
-export const Route = createFileRoute('/rider/points/')({
+export const Route = createFileRoute('/rider/_authed/points/')({
   component: RiderPoints,
 })
 
