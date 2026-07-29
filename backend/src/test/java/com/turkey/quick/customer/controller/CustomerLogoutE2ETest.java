@@ -7,6 +7,7 @@ import com.turkey.quick.common.response.ApiResponse;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
 import com.turkey.quick.member.repository.MemberRepository;
+import com.turkey.quick.support.IntegrationTestSupport;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,7 +29,7 @@ import org.springframework.test.context.ActiveProfiles;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")
-class CustomerLogoutE2ETest {
+class CustomerLogoutE2ETest extends IntegrationTestSupport {
 
     private static final String LOGIN_ENDPOINT = "/api/customer/login";
     private static final String LOGOUT_ENDPOINT = "/api/customer/logout";

@@ -152,9 +152,11 @@ public class GlobalExceptionHandler {
 - 파일 하나 = 논리적 변경 하나. 테이블 생성에 필요한 제약·인덱스는 같은 파일에 포함해도 된다.
 - JPA는 `ddl-auto: validate`다. 엔터티와 스키마가 어긋나면 **앱이 뜨지 않는다.**
   마이그레이션과 엔터티 매핑을 반드시 같이 맞춘다.
-- 로컬은 H2(MySQL 모드)로 검증한다. H2 2.3.x는 생성 컬럼의 `VIRTUAL` 키워드를 파싱하지 못하므로
-  `GENERATED ALWAYS AS (...)`까지만 쓴다(MySQL 기본값이 VIRTUAL이라 결과가 같다).
-  이 저장소의 기존 마이그레이션이 이미 그 방식이다.
+- 로컬 검증도 배포와 같은 **Docker MySQL 8.4**로 한다(`docker compose up -d`, `docs/05-local-dev.md`).
+  H2는 걷어냈다 — 호환 모드에서의 성공은 실제 적용을 보장하지 못했다.
+- 생성 컬럼은 `GENERATED ALWAYS AS (...)`까지만 쓴다. 원래는 H2가 `VIRTUAL` 키워드를 파싱하지 못해
+  생긴 제약이었지만, MySQL도 기본값이 VIRTUAL이라 의미가 같고 기존 마이그레이션이 전부 그 형태다.
+  일관성을 위해 유지한다.
 
 ## 인증
 

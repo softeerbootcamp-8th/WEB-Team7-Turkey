@@ -9,6 +9,7 @@ import com.turkey.quick.member.domain.VerificationPurpose;
 import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.member.service.FakeSmsSender;
 import com.turkey.quick.member.service.InMemoryVerificationCodeStore;
+import com.turkey.quick.support.IntegrationTestSupport;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,7 +27,7 @@ import org.springframework.test.context.ActiveProfiles;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")
-class PhoneVerificationE2ETest {
+class PhoneVerificationE2ETest extends IntegrationTestSupport {
 
     private static final String ENDPOINT = "/api/phone-verifications";
     private static final String CONFIRM_ENDPOINT = "/api/phone-verifications/confirm";
