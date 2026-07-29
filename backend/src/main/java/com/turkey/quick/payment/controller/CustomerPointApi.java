@@ -59,7 +59,9 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 @RequestMapping("/api/customer/points")
 public interface CustomerPointApi {
 
-    @Operation(summary = "포인트 잔액 조회",
+    @Operation(
+            operationId = "getCustomerPointBalance",
+            summary = "포인트 잔액 조회",
             description = "로그인한 고객의 사용 가능 포인트 잔액을 조회한다(CUS-POINT-001). "
                     + "잔액의 정본은 서버의 point_wallet 이며 클라이언트가 전달한 잔액은 신뢰하지 않는다. "
                     + "지갑은 회원 가입 시 잔액 0 으로 생성되므로 정상 고객에게 지갑 없음은 발생하지 않는다 — "
@@ -76,7 +78,9 @@ public interface CustomerPointApi {
             @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
             AuthenticatedCustomer customer);
 
-    @Operation(summary = "포인트 거래 내역",
+    @Operation(
+            operationId = "getCustomerPointTransactions",
+            summary = "포인트 거래 내역",
             description = "잔액 변화를 남긴 원장(point_transaction)을 최신순으로 조회한다. "
                     + "type 을 주면 해당 거래 유형만 거른다. 화면 상단 카드용 현재 잔액을 같은 응답에 담는다.")
     @GetMapping("/transactions")
@@ -93,7 +97,9 @@ public interface CustomerPointApi {
             @Parameter(description = "페이지 크기")
             @RequestParam(defaultValue = "20") int size);
 
-    @Operation(summary = "포인트 충전 요청",
+    @Operation(
+            operationId = "requestCustomerPointCharge",
+            summary = "포인트 충전 요청",
             description = "충전 결제를 PENDING 으로 생성한다. 이 시점에는 잔액이 변하지 않는다. "
                     + "같은 chargeRequestKey 로 재전송하면 새로 만들지 않고 기존 결과를 돌려준다. "
                     + "MVP 는 실 PG 연동이 아닌 모킹 흐름이지만 요청·승인 2단계 구조는 유지한다.")
@@ -118,7 +124,9 @@ public interface CustomerPointApi {
 
             @Valid @RequestBody PointChargeRequest request);
 
-    @Operation(summary = "포인트 충전 승인",
+    @Operation(
+            operationId = "confirmCustomerPointCharge",
+            summary = "포인트 충전 승인",
             description = "PENDING 충전을 승인해 PAID 로 전이하고, 같은 트랜잭션에서 지갑 잔액을 늘리고 "
                     + "CHARGE 원장 1행을 남긴다. 승인 금액은 항상 요청 금액 전액이다(부분 결제 없음). "
                     + "이미 PAID 인 충전에 다시 승인하면 409 로 거부한다 — provider_payment_key 유니크가 "

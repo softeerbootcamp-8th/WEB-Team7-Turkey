@@ -51,7 +51,9 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 @RequestMapping("/api/rider/points")
 public interface RiderPointApi {
 
-    @Operation(summary = "포인트 잔액 조회",
+    @Operation(
+            operationId = "getRiderPointBalance",
+            summary = "포인트 잔액 조회",
             description = "로그인한 라이더의 출금 가능 포인트 잔액을 조회한다. 지갑은 회원 단위 개념이라 "
                     + "고객과 같은 스키마를 쓴다. 출금 요청 중(PENDING)인 금액은 이미 선차감되어 "
                     + "이 잔액에 포함되지 않는다.")
@@ -66,7 +68,9 @@ public interface RiderPointApi {
             @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
             AuthenticatedRider rider);
 
-    @Operation(summary = "정산 내역",
+    @Operation(
+            operationId = "getRiderSettlements",
+            summary = "정산 내역",
             description = "완료된 배송의 정산(rider_settlement)을 최신순으로 조회한다. "
                     + "배송별 수익 관점의 목록이며, 잔액 변화 관점은 거래 내역 API 를 쓴다. "
                     + "운행 기록 화면(/api/rider/history)의 주간 합계와 근거 테이블이 같다.")
@@ -81,7 +85,9 @@ public interface RiderPointApi {
             @Parameter(description = "페이지 크기")
             @RequestParam(defaultValue = "20") int size);
 
-    @Operation(summary = "포인트 거래 내역",
+    @Operation(
+            operationId = "getRiderPointTransactions",
+            summary = "포인트 거래 내역",
             description = "라이더 지갑의 원장을 최신순으로 조회한다. 라이더에게 나타나는 유형은 "
                     + "SETTLEMENT·WITHDRAWAL·WITHDRAWAL_REFUND 다.")
     @GetMapping("/transactions")
@@ -98,7 +104,9 @@ public interface RiderPointApi {
             @Parameter(description = "페이지 크기")
             @RequestParam(defaultValue = "20") int size);
 
-    @Operation(summary = "출금 요청",
+    @Operation(
+            operationId = "requestRiderWithdrawal",
+            summary = "출금 요청",
             description = "등록된 정산 계좌로 출금을 요청한다. 계좌는 요청 바디로 받지 않고 "
                     + "rider_payout_account 의 값을 스냅샷으로 복사한다. 요청 즉시 잔액을 선차감하고 "
                     + "WITHDRAWAL 원장을 남기며, 송금 실패 시 WITHDRAWAL_REFUND 로 복구한다. "
@@ -123,7 +131,9 @@ public interface RiderPointApi {
 
             @Valid @RequestBody WithdrawalRequest request);
 
-    @Operation(summary = "출금 내역",
+    @Operation(
+            operationId = "getRiderWithdrawals",
+            summary = "출금 내역",
             description = "출금 요청을 최신순으로 조회한다. 계좌는 요청 시점 스냅샷이라 "
                     + "이후 계좌를 변경해도 과거 내역의 표시는 바뀌지 않는다.")
     @GetMapping("/withdrawals")
