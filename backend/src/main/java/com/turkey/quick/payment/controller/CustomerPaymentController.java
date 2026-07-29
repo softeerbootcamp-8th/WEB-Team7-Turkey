@@ -9,6 +9,7 @@ import com.turkey.quick.payment.dto.PointChargeConfirmResponse;
 import com.turkey.quick.payment.dto.PointChargeRequest;
 import com.turkey.quick.payment.dto.PointChargeResponse;
 import com.turkey.quick.payment.dto.PointTransactionListResponse;
+import com.turkey.quick.payment.service.CustomerPaymentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -16,9 +17,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class CustomerPaymentController implements CustomerPointApi {
 
+    private final CustomerPaymentService customerPaymentService;
+
     @Override
     public ApiResponse<PointBalanceResponse> getPointBalance(AuthenticatedCustomer customer) {
-        return null;
+        return ApiResponse.ok(customerPaymentService.getPointBalance(customer.memberId()));
     }
 
     @Override
