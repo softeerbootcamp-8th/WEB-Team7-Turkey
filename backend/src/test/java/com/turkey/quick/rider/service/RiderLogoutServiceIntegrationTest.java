@@ -12,7 +12,6 @@ import com.turkey.quick.rider.domain.OperatingStatus;
 import com.turkey.quick.rider.domain.RiderProfile;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
-import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,16 +25,15 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * 라이더 로그아웃의 트랜잭션 경계 검증(#51). 실제 MySQL에 붙어, 상태 전이가 커밋되는지와
- * 세션 삭제가 커밋 이후(afterCommit)에만 일어나는지를 확인한다. 단위 테스트는 트랜잭션이 없어
- * 세션 삭제가 동기적으로 일어나므로 이 경로는 여기서만 검증된다.
+ * 라이더 로그아웃 상태 전이의 트랜잭션 경계 검증(#51). 실제 MySQL에 붙어, AVAILABLE→UNAVAILABLE
+ * 전이가 커밋되는지와 BUSY 거부 시 아무것도 영속되지 않는지를 확인한다.
+ * (세션 삭제·쿠키 만료는 컨트롤러 책임이라 여기서 검증하지 않는다 — E2E가 전 경로로 확인한다.)
  */
 @SpringBootTest(properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")
 class RiderLogoutServiceIntegrationTest extends IntegrationTestSupport {
 
     private static final BCryptPasswordEncoder PASSWORD_ENCODER = new BCryptPasswordEncoder();
-    private static final Duration TTL = Duration.ofHours(2);
 
     @Autowired
     private RiderLogoutService riderLogoutService;
@@ -45,9 +43,6 @@ class RiderLogoutServiceIntegrationTest extends IntegrationTestSupport {
 
     @Autowired
     private RiderProfileRepository riderProfileRepository;
-
-    @Autowired
-    private InMemorySessionStore sessionStore;
 
     @Autowired
     private PlatformTransactionManager transactionManager;
@@ -78,53 +73,41 @@ class RiderLogoutServiceIntegrationTest extends IntegrationTestSupport {
         });
     }
 
-    private String createSession(Long memberId) {
-        String sessionId = "session-" + memberId;
-        sessionStore.create(sessionId, memberId, "RIDER", TTL);
-        return sessionId;
-    }
-
     @Test
-    @DisplayName("AVAILABLE 라이더 로그아웃: DB 상태가 UNAVAILABLE로 커밋되고 세션이 삭제된다")
-    void availableRiderLogoutCommitsUnavailableAndDeletesSession() {
+    @DisplayName("AVAILABLE 라이더 상태 전이가 UNAVAILABLE로 커밋된다")
+    void availableRiderCommitsUnavailable() {
         Long memberId = saveRiderWithStatus("int_logout_avail", "01011112222", OperatingStatus.AVAILABLE);
-        String sessionId = createSession(memberId);
 
-        riderLogoutService.logout(sessionId);
+        riderLogoutService.changeStatusForLogout(memberId);
 
         // 서비스 트랜잭션이 커밋된 뒤 새 조회로 확인한다.
         assertThat(riderProfileRepository.findById(memberId)).get()
                 .extracting(RiderProfile::getOperatingStatus)
                 .isEqualTo(OperatingStatus.UNAVAILABLE);
-        assertThat(sessionStore.get(sessionId)).isNull();
     }
 
     @Test
-    @DisplayName("BUSY 라이더 로그아웃: 409로 거부되고 DB 상태와 세션이 그대로 유지된다")
-    void busyRiderLogoutIsRejectedAndNothingIsPersisted() {
+    @DisplayName("BUSY 라이더는 409로 거부되고 DB 상태가 그대로 유지된다")
+    void busyRiderIsRejectedAndNothingIsPersisted() {
         Long memberId = saveRiderWithStatus("int_logout_busy", "01022223333", OperatingStatus.BUSY);
-        String sessionId = createSession(memberId);
 
-        assertThatThrownBy(() -> riderLogoutService.logout(sessionId))
+        assertThatThrownBy(() -> riderLogoutService.changeStatusForLogout(memberId))
                 .isInstanceOf(BusinessException.class);
 
         assertThat(riderProfileRepository.findById(memberId)).get()
                 .extracting(RiderProfile::getOperatingStatus)
                 .isEqualTo(OperatingStatus.BUSY);
-        assertThat(sessionStore.get(sessionId)).isNotNull();
     }
 
     @Test
-    @DisplayName("UNAVAILABLE 라이더 로그아웃: 상태는 그대로 두고 세션만 삭제한다")
-    void unavailableRiderLogoutKeepsStatusAndDeletesSession() {
+    @DisplayName("UNAVAILABLE 라이더는 상태가 그대로 유지된다")
+    void unavailableRiderKeepsStatus() {
         Long memberId = saveRiderWithStatus("int_logout_unavail", "01033334444", OperatingStatus.UNAVAILABLE);
-        String sessionId = createSession(memberId);
 
-        riderLogoutService.logout(sessionId);
+        riderLogoutService.changeStatusForLogout(memberId);
 
         assertThat(riderProfileRepository.findById(memberId)).get()
                 .extracting(RiderProfile::getOperatingStatus)
                 .isEqualTo(OperatingStatus.UNAVAILABLE);
-        assertThat(sessionStore.get(sessionId)).isNull();
     }
 }
