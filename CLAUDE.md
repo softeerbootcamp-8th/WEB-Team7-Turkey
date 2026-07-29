@@ -45,7 +45,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 ## 금지 사항
 
 - **Spring Security, Spring Batch, Spring AI 사용 금지**
-- **Docker: 로컬 개발 DB 실행 용도로만 허용**(`backend/docker-compose.yml`). 애플리케이션 컨테이너화, 배포 파이프라인, 테스트 인프라(Testcontainers 등)에는 사용하지 않는다 — 필요하면 ADR 로 별도 논의한다.
+- **Docker 사용 제약 없음**(2026-07-29 변경). 로컬 개발 DB(`backend/docker-compose.yml`) 외에도 애플리케이션 컨테이너화, 배포 파이프라인, 테스트 인프라(Testcontainers 등)에 자유롭게 사용할 수 있다. (변경 전 정책: 로컬 개발 DB 실행 용도로만 허용)
 - **Redis Pub/Sub, Redis Streams 사용 금지**
 
 ## 저장소 구조
@@ -155,9 +155,9 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - 포인트 잔액 캐시 컬럼 유지 여부, 논리 삭제 사용 범위
 - EC2 구성 및 MySQL·Redis 배치 방식
 - S3·CloudFront·도메인·인증서 구성, 캐시/invalidation 정책. **#26 결정에 따라 CloudFront 배포
-  하나에 `/api/*`(및 SSE 경로) behavior를 추가해 EC2를 origin으로 묶기로 함(비용 없이 same-origin
-  쿠키를 쓰기 위함, 사람 확인) — 아직 실제 AWS 설정은 안 됨. SSE 경로는 CachingDisabled로 둬야 함.
-  배포 전 필수.**
+  하나에 `/api/*`(및 SSE 경로) behavior를 추가해 EC2를 origin으로 묶는 구성을 2026-07-29 기준
+  실제 AWS에 반영 완료(S3·CloudFront·`/api/*` behavior 연결). SSE 경로가 CachingDisabled로
+  설정돼 있는지는 배포 자동화 작업 시 재확인.**
 - 프론트 Origin과 API Origin 분리 시 CORS·쿠키 설정. **#26에서 위 CloudFront 단일 배포 전제로
   `SameSite=Lax`+프로파일별 `Secure`로 구현함(`common/auth/SessionCookie`). 만약 나중에 API가
   별도 CloudFront 배포나 EC2 직접 노출로 바뀌면(크로스사이트) `SameSite=None`+EC2 자체 HTTPS로
