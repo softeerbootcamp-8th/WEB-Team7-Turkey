@@ -11,7 +11,7 @@ import com.turkey.quick.member.domain.VerificationPurpose;
 import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.member.repository.MemberTermAgreementRepository;
 import com.turkey.quick.member.repository.TermRepository;
-import com.turkey.quick.member.service.InMemoryVerificationCodeStore;
+import com.turkey.quick.member.service.VerificationCodeStore;
 import com.turkey.quick.rider.domain.OperatingStatus;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
@@ -23,10 +23,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.context.ActiveProfiles;
 
@@ -57,17 +54,7 @@ class RiderSignupE2ETest extends IntegrationTestSupport {
     private MemberTermAgreementRepository memberTermAgreementRepository;
 
     @Autowired
-    private InMemoryVerificationCodeStore verificationCodeStore;
-
-    @TestConfiguration
-    static class FakeInfraConfig {
-
-        @Bean
-        @Primary
-        InMemoryVerificationCodeStore verificationCodeStore() {
-            return new InMemoryVerificationCodeStore();
-        }
-    }
+    private VerificationCodeStore verificationCodeStore;
 
     @AfterEach
     void 만든_약관을_정리한다() {

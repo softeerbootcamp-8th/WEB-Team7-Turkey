@@ -17,6 +17,12 @@ spring:
   flyway:
     enabled: true
 
+  # 컨테이너 Redis 는 6380 에 노출된다(backend/docker-compose.yml 주석 참고).
+  # 표준 6379 를 쓰면 개발 PC 에 설치된 Redis 가 있을 때 그쪽으로 조용히 붙는다.
+  data:
+    redis:
+      port: 6380
+
 session:
   cookie:
     secure: false
