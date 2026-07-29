@@ -5,12 +5,13 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 테스트 전용 인메모리 대체 구현. 로컬 Redis 없이 서비스·통합·E2E 테스트를 돌리기 위한 것으로,
- * InMemorySessionStore·InMemoryVerificationCodeStore와 같은 이유다. TTL은 실제로 만료시키지 않고
- * 값 존재만 흉내낸다 — 만료 동작 자체를 검증해야 하면 실제 Redis가 필요하다.
+ * <b>단위 테스트</b> 전용 인메모리 대체 구현. 스프링 컨텍스트 없이 서비스 로직만 검증할 때 쓴다
+ * (InMemorySessionStore·InMemoryVerificationCodeStore와 같은 이유).
  *
- * 스프링 빈이 아니다(@Component 없음). 테스트가 @TestConfiguration 안에서 @Primary 빈으로 직접
- * 등록해 RedisRiderLocationStore를 덮는다(RiderSessionE2ETest.FakeInfraConfig와 같은 방식).
+ * 통합·E2E는 이 대체를 쓰지 않는다 — 실제 Docker Redis에 붙는다(2026-07-29 변경). 그러니
+ * 스프링 빈으로 등록하지 않고, 테스트가 직접 {@code new} 로 만들어 서비스에 넣는다.
+ *
+ * TTL은 실제로 만료시키지 않고 값 존재만 흉내낸다. 만료 동작을 검증해야 하면 실제 Redis가 필요하다.
  */
 public class InMemoryRiderLocationStore implements RiderLocationStore {
 
@@ -38,9 +39,5 @@ public class InMemoryRiderLocationStore implements RiderLocationStore {
     /** 테스트가 저장 여부를 직접 들여다볼 때 쓴다(#235에서 "저장되지 않았음"을 단언하기 위해). */
     public boolean isEmpty() {
         return locations.isEmpty();
-    }
-
-    public void clear() {
-        locations.clear();
     }
 }
