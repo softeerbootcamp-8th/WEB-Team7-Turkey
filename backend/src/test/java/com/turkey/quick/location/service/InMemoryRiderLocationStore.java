@@ -26,6 +26,15 @@ public class InMemoryRiderLocationStore implements RiderLocationStore {
         return Optional.ofNullable(locations.get(riderId));
     }
 
+    /**
+     * TTL을 흉내만 내므로 갱신할 것이 없다. 값이 있는지만 돌려준다 — 호출자가 보는 계약은
+     * "갱신할 값이 실제로 있었는지"이고 그건 정확히 재현된다.
+     */
+    @Override
+    public boolean refreshTtl(Long riderId) {
+        return locations.containsKey(riderId);
+    }
+
     /** 테스트가 저장 여부를 직접 들여다볼 때 쓴다(#235에서 "저장되지 않았음"을 단언하기 위해). */
     public boolean isEmpty() {
         return locations.isEmpty();

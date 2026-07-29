@@ -11,6 +11,10 @@ import io.swagger.v3.oas.annotations.media.Schema;
  * 합치면 그 상태를 표현할 수 없다.
  *
  * <p>{@code published} 는 SSE 발행(#78)이 붙기 전까지 항상 false 다.
+ *
+ * <p>팩토리를 판정값 하나로 통일한 이유: {@code applied} 를 호출자가 직접 정하게 두면
+ * {@code applied=false} 인데 {@code reason=ACCEPTED} 같은 조합이 만들어질 수 있다. 저장 여부는
+ * 판정값이 이미 알고 있으므로({@link LocationUpdateOutcome#shouldStore()}) 거기서 파생시킨다.
  */
 @Schema(description = "라이더 현재 위치 갱신 결과")
 public record RiderLocationUpdateResponse(
@@ -25,17 +29,15 @@ public record RiderLocationUpdateResponse(
         LocationUpdateOutcome reason
 ) {
 
-    /** 검증을 통과해 최신 위치를 갱신했다. */
-    public static RiderLocationUpdateResponse accept(boolean published) {
-        return new RiderLocationUpdateResponse(true, published, LocationUpdateOutcome.ACCEPTED);
-    }
-
-    /** 요청은 정상이지만 쓸 수 없는 값이라 버렸다. 버린 값을 전파하는 경우는 없다. */
-    public static RiderLocationUpdateResponse discard(LocationUpdateOutcome reason) {
-        if (reason.shouldStore()) {
+    /**
+     * @param outcome   판정값. {@code applied} 는 여기서 파생된다
+     * @param published 실제로 구독자에게 전송했는지. 전송 대상이 아닌 판정에 true 를 줄 수 없다
+     */
+    public static RiderLocationUpdateResponse of(LocationUpdateOutcome outcome, boolean published) {
+        if (published && !outcome.shouldPublish()) {
             throw new IllegalArgumentException(
-                    "저장 대상인 판정을 폐기 사유로 쓸 수 없습니다. reason=" + reason);
+                    "전송 대상이 아닌 판정을 전송했다고 응답할 수 없습니다. reason=" + outcome);
         }
-        return new RiderLocationUpdateResponse(false, false, reason);
+        return new RiderLocationUpdateResponse(outcome.shouldStore(), published, outcome);
     }
 }

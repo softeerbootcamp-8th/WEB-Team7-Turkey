@@ -15,6 +15,7 @@ import com.turkey.quick.support.IntegrationTestSupport;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -60,6 +61,23 @@ class RiderLocationE2ETest extends IntegrationTestSupport {
 
     @Autowired
     private PlatformTransactionManager transactionManager;
+
+    @Autowired
+    private InMemoryRiderLocationStore riderLocationStore;
+
+    /**
+     * 인메모리 위치 저장소를 테스트마다 비운다.
+     *
+     * <p>{@code IntegrationTestSupport} 는 MySQL 테이블만 비우고, 이 저장소는 스프링 컨텍스트
+     * 싱글턴이라 테스트 사이에 값이 남는다. 그리고 <b>TRUNCATE 가 AUTO_INCREMENT 를 1로
+     * 리셋하므로 모든 테스트의 첫 회원이 같은 member_id 를 받는다</b> — 즉 앞 테스트가 남긴 라이더의
+     * 위치가 다음 테스트의 기준선이 되어 첫 요청부터 DUPLICATE 판정이 난다. Redis 대체 저장소를
+     * 쓰는 E2E 는 모두 같은 함정이 있다.
+     */
+    @BeforeEach
+    void clearLeftoverLocations() {
+        riderLocationStore.clear();
+    }
 
     @TestConfiguration
     static class FakeInfraConfig {
