@@ -1,6 +1,9 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { validateRedirectSearch } from '@/shared/auth/redirectSearch'
 
 export const Route = createFileRoute('/rider/login/')({
+  // 가드가 보존한 원래 목적지(#195). 로그인 성공 후 이 경로로 돌려보낸다.
+  validateSearch: validateRedirectSearch,
   component: RiderLogin,
 })
 

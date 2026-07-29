@@ -10,67 +10,69 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AccountRouteRouteImport } from './routes/account/route'
+import { Route as AuthRouteRouteImport } from './routes/auth/route'
 import { Route as AccountIndexRouteImport } from './routes/account/index'
 import { Route as AccountEditRouteImport } from './routes/account/edit'
 import { Route as AccountSettingsRouteImport } from './routes/account/settings'
-import { Route as CustomerIndexRouteImport } from './routes/customer/index'
 import { Route as CustomerAuthedRouteImport } from './routes/customer/_authed'
-import { Route as RiderIndexRouteImport } from './routes/rider/index'
 import { Route as RiderAuthedRouteImport } from './routes/rider/_authed'
 import { Route as AccountNotificationsIndexRouteImport } from './routes/account/notifications/index'
 import { Route as AuthFindAccountIndexRouteImport } from './routes/auth/find-account/index'
 import { Route as AuthSignupIndexRouteImport } from './routes/auth/signup/index'
 import { Route as AuthVerifyIndexRouteImport } from './routes/auth/verify/index'
-import { Route as CustomerDeliveriesIndexRouteImport } from './routes/customer/deliveries/index'
-import { Route as CustomerDeliveriesNewRouteImport } from './routes/customer/deliveries/new'
+import { Route as CustomerAuthedIndexRouteImport } from './routes/customer/_authed/index'
 import { Route as CustomerLoginIndexRouteImport } from './routes/customer/login/index'
-import { Route as CustomerPointsIndexRouteImport } from './routes/customer/points/index'
-import { Route as CustomerPointsChargeRouteImport } from './routes/customer/points/charge'
 import { Route as CustomerSignupIndexRouteImport } from './routes/customer/signup/index'
-import { Route as RiderDeliveryIndexRouteImport } from './routes/rider/delivery/index'
-import { Route as RiderHistoryIndexRouteImport } from './routes/rider/history/index'
+import { Route as RiderAuthedIndexRouteImport } from './routes/rider/_authed/index'
 import { Route as RiderLoginIndexRouteImport } from './routes/rider/login/index'
-import { Route as RiderPointsIndexRouteImport } from './routes/rider/points/index'
-import { Route as RiderRequestsIndexRouteImport } from './routes/rider/requests/index'
 import { Route as RiderSignupIndexRouteImport } from './routes/rider/signup/index'
-import { Route as CustomerDeliveriesDeliveryIdIndexRouteImport } from './routes/customer/deliveries/$deliveryId/index'
-import { Route as CustomerDeliveriesDeliveryIdTrackingRouteImport } from './routes/customer/deliveries/$deliveryId/tracking'
-import { Route as RiderHistoryDeliveryIdIndexRouteImport } from './routes/rider/history/$deliveryId/index'
-import { Route as RiderRequestsDeliveryIdIndexRouteImport } from './routes/rider/requests/$deliveryId/index'
+import { Route as CustomerAuthedDeliveriesIndexRouteImport } from './routes/customer/_authed/deliveries/index'
+import { Route as CustomerAuthedDeliveriesNewRouteImport } from './routes/customer/_authed/deliveries/new'
+import { Route as CustomerAuthedPointsIndexRouteImport } from './routes/customer/_authed/points/index'
+import { Route as CustomerAuthedPointsChargeRouteImport } from './routes/customer/_authed/points/charge'
+import { Route as RiderAuthedDeliveryIndexRouteImport } from './routes/rider/_authed/delivery/index'
+import { Route as RiderAuthedHistoryIndexRouteImport } from './routes/rider/_authed/history/index'
+import { Route as RiderAuthedPointsIndexRouteImport } from './routes/rider/_authed/points/index'
+import { Route as RiderAuthedRequestsIndexRouteImport } from './routes/rider/_authed/requests/index'
+import { Route as CustomerAuthedDeliveriesDeliveryIdIndexRouteImport } from './routes/customer/_authed/deliveries/$deliveryId/index'
+import { Route as CustomerAuthedDeliveriesDeliveryIdTrackingRouteImport } from './routes/customer/_authed/deliveries/$deliveryId/tracking'
+import { Route as RiderAuthedHistoryDeliveryIdIndexRouteImport } from './routes/rider/_authed/history/$deliveryId/index'
+import { Route as RiderAuthedRequestsDeliveryIdIndexRouteImport } from './routes/rider/_authed/requests/$deliveryId/index'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AccountIndexRoute = AccountIndexRouteImport.update({
-  id: '/account/',
-  path: '/account/',
+const AccountRouteRoute = AccountRouteRouteImport.update({
+  id: '/account',
+  path: '/account',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRouteRoute = AuthRouteRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountIndexRoute = AccountIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AccountRouteRoute,
 } as any)
 const AccountEditRoute = AccountEditRouteImport.update({
-  id: '/account/edit',
-  path: '/account/edit',
-  getParentRoute: () => rootRouteImport,
+  id: '/edit',
+  path: '/edit',
+  getParentRoute: () => AccountRouteRoute,
 } as any)
 const AccountSettingsRoute = AccountSettingsRouteImport.update({
-  id: '/account/settings',
-  path: '/account/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CustomerIndexRoute = CustomerIndexRouteImport.update({
-  id: '/customer/',
-  path: '/customer/',
-  getParentRoute: () => rootRouteImport,
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AccountRouteRoute,
 } as any)
 const CustomerAuthedRoute = CustomerAuthedRouteImport.update({
   id: '/customer/_authed',
   path: '/customer',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RiderIndexRoute = RiderIndexRouteImport.update({
-  id: '/rider/',
-  path: '/rider/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RiderAuthedRoute = RiderAuthedRouteImport.update({
@@ -80,48 +82,33 @@ const RiderAuthedRoute = RiderAuthedRouteImport.update({
 } as any)
 const AccountNotificationsIndexRoute =
   AccountNotificationsIndexRouteImport.update({
-    id: '/account/notifications/',
-    path: '/account/notifications/',
-    getParentRoute: () => rootRouteImport,
+    id: '/notifications/',
+    path: '/notifications/',
+    getParentRoute: () => AccountRouteRoute,
   } as any)
 const AuthFindAccountIndexRoute = AuthFindAccountIndexRouteImport.update({
-  id: '/auth/find-account/',
-  path: '/auth/find-account/',
-  getParentRoute: () => rootRouteImport,
+  id: '/find-account/',
+  path: '/find-account/',
+  getParentRoute: () => AuthRouteRoute,
 } as any)
 const AuthSignupIndexRoute = AuthSignupIndexRouteImport.update({
-  id: '/auth/signup/',
-  path: '/auth/signup/',
-  getParentRoute: () => rootRouteImport,
+  id: '/signup/',
+  path: '/signup/',
+  getParentRoute: () => AuthRouteRoute,
 } as any)
 const AuthVerifyIndexRoute = AuthVerifyIndexRouteImport.update({
-  id: '/auth/verify/',
-  path: '/auth/verify/',
-  getParentRoute: () => rootRouteImport,
+  id: '/verify/',
+  path: '/verify/',
+  getParentRoute: () => AuthRouteRoute,
 } as any)
-const CustomerDeliveriesIndexRoute = CustomerDeliveriesIndexRouteImport.update({
-  id: '/customer/deliveries/',
-  path: '/customer/deliveries/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CustomerDeliveriesNewRoute = CustomerDeliveriesNewRouteImport.update({
-  id: '/customer/deliveries/new',
-  path: '/customer/deliveries/new',
-  getParentRoute: () => rootRouteImport,
+const CustomerAuthedIndexRoute = CustomerAuthedIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CustomerAuthedRoute,
 } as any)
 const CustomerLoginIndexRoute = CustomerLoginIndexRouteImport.update({
   id: '/customer/login/',
   path: '/customer/login/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CustomerPointsIndexRoute = CustomerPointsIndexRouteImport.update({
-  id: '/customer/points/',
-  path: '/customer/points/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CustomerPointsChargeRoute = CustomerPointsChargeRouteImport.update({
-  id: '/customer/points/charge',
-  path: '/customer/points/charge',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CustomerSignupIndexRoute = CustomerSignupIndexRouteImport.update({
@@ -129,29 +116,14 @@ const CustomerSignupIndexRoute = CustomerSignupIndexRouteImport.update({
   path: '/customer/signup/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RiderDeliveryIndexRoute = RiderDeliveryIndexRouteImport.update({
-  id: '/rider/delivery/',
-  path: '/rider/delivery/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RiderHistoryIndexRoute = RiderHistoryIndexRouteImport.update({
-  id: '/rider/history/',
-  path: '/rider/history/',
-  getParentRoute: () => rootRouteImport,
+const RiderAuthedIndexRoute = RiderAuthedIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => RiderAuthedRoute,
 } as any)
 const RiderLoginIndexRoute = RiderLoginIndexRouteImport.update({
   id: '/rider/login/',
   path: '/rider/login/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RiderPointsIndexRoute = RiderPointsIndexRouteImport.update({
-  id: '/rider/points/',
-  path: '/rider/points/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RiderRequestsIndexRoute = RiderRequestsIndexRouteImport.update({
-  id: '/rider/requests/',
-  path: '/rider/requests/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RiderSignupIndexRoute = RiderSignupIndexRouteImport.update({
@@ -159,147 +131,200 @@ const RiderSignupIndexRoute = RiderSignupIndexRouteImport.update({
   path: '/rider/signup/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CustomerDeliveriesDeliveryIdIndexRoute =
-  CustomerDeliveriesDeliveryIdIndexRouteImport.update({
-    id: '/customer/deliveries/$deliveryId/',
-    path: '/customer/deliveries/$deliveryId/',
-    getParentRoute: () => rootRouteImport,
+const CustomerAuthedDeliveriesIndexRoute =
+  CustomerAuthedDeliveriesIndexRouteImport.update({
+    id: '/deliveries/',
+    path: '/deliveries/',
+    getParentRoute: () => CustomerAuthedRoute,
   } as any)
-const CustomerDeliveriesDeliveryIdTrackingRoute =
-  CustomerDeliveriesDeliveryIdTrackingRouteImport.update({
-    id: '/customer/deliveries/$deliveryId/tracking',
-    path: '/customer/deliveries/$deliveryId/tracking',
-    getParentRoute: () => rootRouteImport,
+const CustomerAuthedDeliveriesNewRoute =
+  CustomerAuthedDeliveriesNewRouteImport.update({
+    id: '/deliveries/new',
+    path: '/deliveries/new',
+    getParentRoute: () => CustomerAuthedRoute,
   } as any)
-const RiderHistoryDeliveryIdIndexRoute =
-  RiderHistoryDeliveryIdIndexRouteImport.update({
-    id: '/rider/history/$deliveryId/',
-    path: '/rider/history/$deliveryId/',
-    getParentRoute: () => rootRouteImport,
+const CustomerAuthedPointsIndexRoute =
+  CustomerAuthedPointsIndexRouteImport.update({
+    id: '/points/',
+    path: '/points/',
+    getParentRoute: () => CustomerAuthedRoute,
   } as any)
-const RiderRequestsDeliveryIdIndexRoute =
-  RiderRequestsDeliveryIdIndexRouteImport.update({
-    id: '/rider/requests/$deliveryId/',
-    path: '/rider/requests/$deliveryId/',
-    getParentRoute: () => rootRouteImport,
+const CustomerAuthedPointsChargeRoute =
+  CustomerAuthedPointsChargeRouteImport.update({
+    id: '/points/charge',
+    path: '/points/charge',
+    getParentRoute: () => CustomerAuthedRoute,
+  } as any)
+const RiderAuthedDeliveryIndexRoute =
+  RiderAuthedDeliveryIndexRouteImport.update({
+    id: '/delivery/',
+    path: '/delivery/',
+    getParentRoute: () => RiderAuthedRoute,
+  } as any)
+const RiderAuthedHistoryIndexRoute = RiderAuthedHistoryIndexRouteImport.update({
+  id: '/history/',
+  path: '/history/',
+  getParentRoute: () => RiderAuthedRoute,
+} as any)
+const RiderAuthedPointsIndexRoute = RiderAuthedPointsIndexRouteImport.update({
+  id: '/points/',
+  path: '/points/',
+  getParentRoute: () => RiderAuthedRoute,
+} as any)
+const RiderAuthedRequestsIndexRoute =
+  RiderAuthedRequestsIndexRouteImport.update({
+    id: '/requests/',
+    path: '/requests/',
+    getParentRoute: () => RiderAuthedRoute,
+  } as any)
+const CustomerAuthedDeliveriesDeliveryIdIndexRoute =
+  CustomerAuthedDeliveriesDeliveryIdIndexRouteImport.update({
+    id: '/deliveries/$deliveryId/',
+    path: '/deliveries/$deliveryId/',
+    getParentRoute: () => CustomerAuthedRoute,
+  } as any)
+const CustomerAuthedDeliveriesDeliveryIdTrackingRoute =
+  CustomerAuthedDeliveriesDeliveryIdTrackingRouteImport.update({
+    id: '/deliveries/$deliveryId/tracking',
+    path: '/deliveries/$deliveryId/tracking',
+    getParentRoute: () => CustomerAuthedRoute,
+  } as any)
+const RiderAuthedHistoryDeliveryIdIndexRoute =
+  RiderAuthedHistoryDeliveryIdIndexRouteImport.update({
+    id: '/history/$deliveryId/',
+    path: '/history/$deliveryId/',
+    getParentRoute: () => RiderAuthedRoute,
+  } as any)
+const RiderAuthedRequestsDeliveryIdIndexRoute =
+  RiderAuthedRequestsDeliveryIdIndexRouteImport.update({
+    id: '/requests/$deliveryId/',
+    path: '/requests/$deliveryId/',
+    getParentRoute: () => RiderAuthedRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/account': typeof AccountRouteRouteWithChildren
+  '/auth': typeof AuthRouteRouteWithChildren
   '/account/edit': typeof AccountEditRoute
   '/account/settings': typeof AccountSettingsRoute
-  '/customer': typeof CustomerAuthedRoute
-  '/rider': typeof RiderAuthedRoute
+  '/customer': typeof CustomerAuthedRouteWithChildren
+  '/rider': typeof RiderAuthedRouteWithChildren
   '/account/': typeof AccountIndexRoute
-  '/customer/': typeof CustomerIndexRoute
-  '/rider/': typeof RiderIndexRoute
-  '/customer/deliveries/new': typeof CustomerDeliveriesNewRoute
-  '/customer/points/charge': typeof CustomerPointsChargeRoute
   '/account/notifications/': typeof AccountNotificationsIndexRoute
   '/auth/find-account/': typeof AuthFindAccountIndexRoute
   '/auth/signup/': typeof AuthSignupIndexRoute
   '/auth/verify/': typeof AuthVerifyIndexRoute
-  '/customer/deliveries/': typeof CustomerDeliveriesIndexRoute
+  '/customer/': typeof CustomerAuthedIndexRoute
   '/customer/login/': typeof CustomerLoginIndexRoute
-  '/customer/points/': typeof CustomerPointsIndexRoute
   '/customer/signup/': typeof CustomerSignupIndexRoute
-  '/rider/delivery/': typeof RiderDeliveryIndexRoute
-  '/rider/history/': typeof RiderHistoryIndexRoute
+  '/rider/': typeof RiderAuthedIndexRoute
   '/rider/login/': typeof RiderLoginIndexRoute
-  '/rider/points/': typeof RiderPointsIndexRoute
-  '/rider/requests/': typeof RiderRequestsIndexRoute
   '/rider/signup/': typeof RiderSignupIndexRoute
-  '/customer/deliveries/$deliveryId/tracking': typeof CustomerDeliveriesDeliveryIdTrackingRoute
-  '/customer/deliveries/$deliveryId/': typeof CustomerDeliveriesDeliveryIdIndexRoute
-  '/rider/history/$deliveryId/': typeof RiderHistoryDeliveryIdIndexRoute
-  '/rider/requests/$deliveryId/': typeof RiderRequestsDeliveryIdIndexRoute
+  '/customer/deliveries/new': typeof CustomerAuthedDeliveriesNewRoute
+  '/customer/points/charge': typeof CustomerAuthedPointsChargeRoute
+  '/customer/deliveries/': typeof CustomerAuthedDeliveriesIndexRoute
+  '/customer/points/': typeof CustomerAuthedPointsIndexRoute
+  '/rider/delivery/': typeof RiderAuthedDeliveryIndexRoute
+  '/rider/history/': typeof RiderAuthedHistoryIndexRoute
+  '/rider/points/': typeof RiderAuthedPointsIndexRoute
+  '/rider/requests/': typeof RiderAuthedRequestsIndexRoute
+  '/customer/deliveries/$deliveryId/tracking': typeof CustomerAuthedDeliveriesDeliveryIdTrackingRoute
+  '/customer/deliveries/$deliveryId/': typeof CustomerAuthedDeliveriesDeliveryIdIndexRoute
+  '/rider/history/$deliveryId/': typeof RiderAuthedHistoryDeliveryIdIndexRoute
+  '/rider/requests/$deliveryId/': typeof RiderAuthedRequestsDeliveryIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRouteRouteWithChildren
   '/account/edit': typeof AccountEditRoute
   '/account/settings': typeof AccountSettingsRoute
-  '/customer': typeof CustomerIndexRoute
-  '/rider': typeof RiderIndexRoute
   '/account': typeof AccountIndexRoute
-  '/customer/deliveries/new': typeof CustomerDeliveriesNewRoute
-  '/customer/points/charge': typeof CustomerPointsChargeRoute
   '/account/notifications': typeof AccountNotificationsIndexRoute
   '/auth/find-account': typeof AuthFindAccountIndexRoute
   '/auth/signup': typeof AuthSignupIndexRoute
   '/auth/verify': typeof AuthVerifyIndexRoute
-  '/customer/deliveries': typeof CustomerDeliveriesIndexRoute
+  '/customer': typeof CustomerAuthedIndexRoute
   '/customer/login': typeof CustomerLoginIndexRoute
-  '/customer/points': typeof CustomerPointsIndexRoute
   '/customer/signup': typeof CustomerSignupIndexRoute
-  '/rider/delivery': typeof RiderDeliveryIndexRoute
-  '/rider/history': typeof RiderHistoryIndexRoute
+  '/rider': typeof RiderAuthedIndexRoute
   '/rider/login': typeof RiderLoginIndexRoute
-  '/rider/points': typeof RiderPointsIndexRoute
-  '/rider/requests': typeof RiderRequestsIndexRoute
   '/rider/signup': typeof RiderSignupIndexRoute
-  '/customer/deliveries/$deliveryId/tracking': typeof CustomerDeliveriesDeliveryIdTrackingRoute
-  '/customer/deliveries/$deliveryId': typeof CustomerDeliveriesDeliveryIdIndexRoute
-  '/rider/history/$deliveryId': typeof RiderHistoryDeliveryIdIndexRoute
-  '/rider/requests/$deliveryId': typeof RiderRequestsDeliveryIdIndexRoute
+  '/customer/deliveries/new': typeof CustomerAuthedDeliveriesNewRoute
+  '/customer/points/charge': typeof CustomerAuthedPointsChargeRoute
+  '/customer/deliveries': typeof CustomerAuthedDeliveriesIndexRoute
+  '/customer/points': typeof CustomerAuthedPointsIndexRoute
+  '/rider/delivery': typeof RiderAuthedDeliveryIndexRoute
+  '/rider/history': typeof RiderAuthedHistoryIndexRoute
+  '/rider/points': typeof RiderAuthedPointsIndexRoute
+  '/rider/requests': typeof RiderAuthedRequestsIndexRoute
+  '/customer/deliveries/$deliveryId/tracking': typeof CustomerAuthedDeliveriesDeliveryIdTrackingRoute
+  '/customer/deliveries/$deliveryId': typeof CustomerAuthedDeliveriesDeliveryIdIndexRoute
+  '/rider/history/$deliveryId': typeof RiderAuthedHistoryDeliveryIdIndexRoute
+  '/rider/requests/$deliveryId': typeof RiderAuthedRequestsDeliveryIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/account': typeof AccountRouteRouteWithChildren
+  '/auth': typeof AuthRouteRouteWithChildren
   '/account/edit': typeof AccountEditRoute
   '/account/settings': typeof AccountSettingsRoute
-  '/customer/_authed': typeof CustomerAuthedRoute
-  '/rider/_authed': typeof RiderAuthedRoute
+  '/customer/_authed': typeof CustomerAuthedRouteWithChildren
+  '/rider/_authed': typeof RiderAuthedRouteWithChildren
   '/account/': typeof AccountIndexRoute
-  '/customer/': typeof CustomerIndexRoute
-  '/rider/': typeof RiderIndexRoute
-  '/customer/deliveries/new': typeof CustomerDeliveriesNewRoute
-  '/customer/points/charge': typeof CustomerPointsChargeRoute
   '/account/notifications/': typeof AccountNotificationsIndexRoute
   '/auth/find-account/': typeof AuthFindAccountIndexRoute
   '/auth/signup/': typeof AuthSignupIndexRoute
   '/auth/verify/': typeof AuthVerifyIndexRoute
-  '/customer/deliveries/': typeof CustomerDeliveriesIndexRoute
+  '/customer/_authed/': typeof CustomerAuthedIndexRoute
   '/customer/login/': typeof CustomerLoginIndexRoute
-  '/customer/points/': typeof CustomerPointsIndexRoute
   '/customer/signup/': typeof CustomerSignupIndexRoute
-  '/rider/delivery/': typeof RiderDeliveryIndexRoute
-  '/rider/history/': typeof RiderHistoryIndexRoute
+  '/rider/_authed/': typeof RiderAuthedIndexRoute
   '/rider/login/': typeof RiderLoginIndexRoute
-  '/rider/points/': typeof RiderPointsIndexRoute
-  '/rider/requests/': typeof RiderRequestsIndexRoute
   '/rider/signup/': typeof RiderSignupIndexRoute
-  '/customer/deliveries/$deliveryId/tracking': typeof CustomerDeliveriesDeliveryIdTrackingRoute
-  '/customer/deliveries/$deliveryId/': typeof CustomerDeliveriesDeliveryIdIndexRoute
-  '/rider/history/$deliveryId/': typeof RiderHistoryDeliveryIdIndexRoute
-  '/rider/requests/$deliveryId/': typeof RiderRequestsDeliveryIdIndexRoute
+  '/customer/_authed/deliveries/new': typeof CustomerAuthedDeliveriesNewRoute
+  '/customer/_authed/points/charge': typeof CustomerAuthedPointsChargeRoute
+  '/customer/_authed/deliveries/': typeof CustomerAuthedDeliveriesIndexRoute
+  '/customer/_authed/points/': typeof CustomerAuthedPointsIndexRoute
+  '/rider/_authed/delivery/': typeof RiderAuthedDeliveryIndexRoute
+  '/rider/_authed/history/': typeof RiderAuthedHistoryIndexRoute
+  '/rider/_authed/points/': typeof RiderAuthedPointsIndexRoute
+  '/rider/_authed/requests/': typeof RiderAuthedRequestsIndexRoute
+  '/customer/_authed/deliveries/$deliveryId/tracking': typeof CustomerAuthedDeliveriesDeliveryIdTrackingRoute
+  '/customer/_authed/deliveries/$deliveryId/': typeof CustomerAuthedDeliveriesDeliveryIdIndexRoute
+  '/rider/_authed/history/$deliveryId/': typeof RiderAuthedHistoryDeliveryIdIndexRoute
+  '/rider/_authed/requests/$deliveryId/': typeof RiderAuthedRequestsDeliveryIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/account'
+    | '/auth'
     | '/account/edit'
     | '/account/settings'
     | '/customer'
     | '/rider'
     | '/account/'
-    | '/customer/'
-    | '/rider/'
-    | '/customer/deliveries/new'
-    | '/customer/points/charge'
     | '/account/notifications/'
     | '/auth/find-account/'
     | '/auth/signup/'
     | '/auth/verify/'
-    | '/customer/deliveries/'
+    | '/customer/'
     | '/customer/login/'
-    | '/customer/points/'
     | '/customer/signup/'
+    | '/rider/'
+    | '/rider/login/'
+    | '/rider/signup/'
+    | '/customer/deliveries/new'
+    | '/customer/points/charge'
+    | '/customer/deliveries/'
+    | '/customer/points/'
     | '/rider/delivery/'
     | '/rider/history/'
-    | '/rider/login/'
     | '/rider/points/'
     | '/rider/requests/'
-    | '/rider/signup/'
     | '/customer/deliveries/$deliveryId/tracking'
     | '/customer/deliveries/$deliveryId/'
     | '/rider/history/$deliveryId/'
@@ -307,27 +332,28 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/auth'
     | '/account/edit'
     | '/account/settings'
-    | '/customer'
-    | '/rider'
     | '/account'
-    | '/customer/deliveries/new'
-    | '/customer/points/charge'
     | '/account/notifications'
     | '/auth/find-account'
     | '/auth/signup'
     | '/auth/verify'
-    | '/customer/deliveries'
+    | '/customer'
     | '/customer/login'
-    | '/customer/points'
     | '/customer/signup'
+    | '/rider'
+    | '/rider/login'
+    | '/rider/signup'
+    | '/customer/deliveries/new'
+    | '/customer/points/charge'
+    | '/customer/deliveries'
+    | '/customer/points'
     | '/rider/delivery'
     | '/rider/history'
-    | '/rider/login'
     | '/rider/points'
     | '/rider/requests'
-    | '/rider/signup'
     | '/customer/deliveries/$deliveryId/tracking'
     | '/customer/deliveries/$deliveryId'
     | '/rider/history/$deliveryId'
@@ -335,64 +361,47 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/account'
+    | '/auth'
     | '/account/edit'
     | '/account/settings'
     | '/customer/_authed'
     | '/rider/_authed'
     | '/account/'
-    | '/customer/'
-    | '/rider/'
-    | '/customer/deliveries/new'
-    | '/customer/points/charge'
     | '/account/notifications/'
     | '/auth/find-account/'
     | '/auth/signup/'
     | '/auth/verify/'
-    | '/customer/deliveries/'
+    | '/customer/_authed/'
     | '/customer/login/'
-    | '/customer/points/'
     | '/customer/signup/'
-    | '/rider/delivery/'
-    | '/rider/history/'
+    | '/rider/_authed/'
     | '/rider/login/'
-    | '/rider/points/'
-    | '/rider/requests/'
     | '/rider/signup/'
-    | '/customer/deliveries/$deliveryId/tracking'
-    | '/customer/deliveries/$deliveryId/'
-    | '/rider/history/$deliveryId/'
-    | '/rider/requests/$deliveryId/'
+    | '/customer/_authed/deliveries/new'
+    | '/customer/_authed/points/charge'
+    | '/customer/_authed/deliveries/'
+    | '/customer/_authed/points/'
+    | '/rider/_authed/delivery/'
+    | '/rider/_authed/history/'
+    | '/rider/_authed/points/'
+    | '/rider/_authed/requests/'
+    | '/customer/_authed/deliveries/$deliveryId/tracking'
+    | '/customer/_authed/deliveries/$deliveryId/'
+    | '/rider/_authed/history/$deliveryId/'
+    | '/rider/_authed/requests/$deliveryId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AccountEditRoute: typeof AccountEditRoute
-  AccountSettingsRoute: typeof AccountSettingsRoute
-  CustomerAuthedRoute: typeof CustomerAuthedRoute
-  RiderAuthedRoute: typeof RiderAuthedRoute
-  AccountIndexRoute: typeof AccountIndexRoute
-  CustomerIndexRoute: typeof CustomerIndexRoute
-  RiderIndexRoute: typeof RiderIndexRoute
-  CustomerDeliveriesNewRoute: typeof CustomerDeliveriesNewRoute
-  CustomerPointsChargeRoute: typeof CustomerPointsChargeRoute
-  AccountNotificationsIndexRoute: typeof AccountNotificationsIndexRoute
-  AuthFindAccountIndexRoute: typeof AuthFindAccountIndexRoute
-  AuthSignupIndexRoute: typeof AuthSignupIndexRoute
-  AuthVerifyIndexRoute: typeof AuthVerifyIndexRoute
-  CustomerDeliveriesIndexRoute: typeof CustomerDeliveriesIndexRoute
+  AccountRouteRoute: typeof AccountRouteRouteWithChildren
+  AuthRouteRoute: typeof AuthRouteRouteWithChildren
+  CustomerAuthedRoute: typeof CustomerAuthedRouteWithChildren
+  RiderAuthedRoute: typeof RiderAuthedRouteWithChildren
   CustomerLoginIndexRoute: typeof CustomerLoginIndexRoute
-  CustomerPointsIndexRoute: typeof CustomerPointsIndexRoute
   CustomerSignupIndexRoute: typeof CustomerSignupIndexRoute
-  RiderDeliveryIndexRoute: typeof RiderDeliveryIndexRoute
-  RiderHistoryIndexRoute: typeof RiderHistoryIndexRoute
   RiderLoginIndexRoute: typeof RiderLoginIndexRoute
-  RiderPointsIndexRoute: typeof RiderPointsIndexRoute
-  RiderRequestsIndexRoute: typeof RiderRequestsIndexRoute
   RiderSignupIndexRoute: typeof RiderSignupIndexRoute
-  CustomerDeliveriesDeliveryIdTrackingRoute: typeof CustomerDeliveriesDeliveryIdTrackingRoute
-  CustomerDeliveriesDeliveryIdIndexRoute: typeof CustomerDeliveriesDeliveryIdIndexRoute
-  RiderHistoryDeliveryIdIndexRoute: typeof RiderHistoryDeliveryIdIndexRoute
-  RiderRequestsDeliveryIdIndexRoute: typeof RiderRequestsDeliveryIdIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -404,46 +413,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/account': {
+      id: '/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AccountRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/account/': {
       id: '/account/'
-      path: '/account'
+      path: '/'
       fullPath: '/account/'
       preLoaderRoute: typeof AccountIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AccountRouteRoute
     }
     '/account/edit': {
       id: '/account/edit'
-      path: '/account/edit'
+      path: '/edit'
       fullPath: '/account/edit'
       preLoaderRoute: typeof AccountEditRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AccountRouteRoute
     }
     '/account/settings': {
       id: '/account/settings'
-      path: '/account/settings'
+      path: '/settings'
       fullPath: '/account/settings'
       preLoaderRoute: typeof AccountSettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/customer/': {
-      id: '/customer/'
-      path: '/customer'
-      fullPath: '/customer/'
-      preLoaderRoute: typeof CustomerIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AccountRouteRoute
     }
     '/customer/_authed': {
       id: '/customer/_authed'
       path: '/customer'
       fullPath: '/customer'
       preLoaderRoute: typeof CustomerAuthedRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/rider/': {
-      id: '/rider/'
-      path: '/rider'
-      fullPath: '/rider/'
-      preLoaderRoute: typeof RiderIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/rider/_authed': {
@@ -455,65 +464,44 @@ declare module '@tanstack/react-router' {
     }
     '/account/notifications/': {
       id: '/account/notifications/'
-      path: '/account/notifications'
+      path: '/notifications'
       fullPath: '/account/notifications/'
       preLoaderRoute: typeof AccountNotificationsIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AccountRouteRoute
     }
     '/auth/find-account/': {
       id: '/auth/find-account/'
-      path: '/auth/find-account'
+      path: '/find-account'
       fullPath: '/auth/find-account/'
       preLoaderRoute: typeof AuthFindAccountIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthRouteRoute
     }
     '/auth/signup/': {
       id: '/auth/signup/'
-      path: '/auth/signup'
+      path: '/signup'
       fullPath: '/auth/signup/'
       preLoaderRoute: typeof AuthSignupIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthRouteRoute
     }
     '/auth/verify/': {
       id: '/auth/verify/'
-      path: '/auth/verify'
+      path: '/verify'
       fullPath: '/auth/verify/'
       preLoaderRoute: typeof AuthVerifyIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthRouteRoute
     }
-    '/customer/deliveries/': {
-      id: '/customer/deliveries/'
-      path: '/customer/deliveries'
-      fullPath: '/customer/deliveries/'
-      preLoaderRoute: typeof CustomerDeliveriesIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/customer/deliveries/new': {
-      id: '/customer/deliveries/new'
-      path: '/customer/deliveries/new'
-      fullPath: '/customer/deliveries/new'
-      preLoaderRoute: typeof CustomerDeliveriesNewRouteImport
-      parentRoute: typeof rootRouteImport
+    '/customer/_authed/': {
+      id: '/customer/_authed/'
+      path: '/'
+      fullPath: '/customer/'
+      preLoaderRoute: typeof CustomerAuthedIndexRouteImport
+      parentRoute: typeof CustomerAuthedRoute
     }
     '/customer/login/': {
       id: '/customer/login/'
       path: '/customer/login'
       fullPath: '/customer/login/'
       preLoaderRoute: typeof CustomerLoginIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/customer/points/': {
-      id: '/customer/points/'
-      path: '/customer/points'
-      fullPath: '/customer/points/'
-      preLoaderRoute: typeof CustomerPointsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/customer/points/charge': {
-      id: '/customer/points/charge'
-      path: '/customer/points/charge'
-      fullPath: '/customer/points/charge'
-      preLoaderRoute: typeof CustomerPointsChargeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/customer/signup/': {
@@ -523,39 +511,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CustomerSignupIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/rider/delivery/': {
-      id: '/rider/delivery/'
-      path: '/rider/delivery'
-      fullPath: '/rider/delivery/'
-      preLoaderRoute: typeof RiderDeliveryIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/rider/history/': {
-      id: '/rider/history/'
-      path: '/rider/history'
-      fullPath: '/rider/history/'
-      preLoaderRoute: typeof RiderHistoryIndexRouteImport
-      parentRoute: typeof rootRouteImport
+    '/rider/_authed/': {
+      id: '/rider/_authed/'
+      path: '/'
+      fullPath: '/rider/'
+      preLoaderRoute: typeof RiderAuthedIndexRouteImport
+      parentRoute: typeof RiderAuthedRoute
     }
     '/rider/login/': {
       id: '/rider/login/'
       path: '/rider/login'
       fullPath: '/rider/login/'
       preLoaderRoute: typeof RiderLoginIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/rider/points/': {
-      id: '/rider/points/'
-      path: '/rider/points'
-      fullPath: '/rider/points/'
-      preLoaderRoute: typeof RiderPointsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/rider/requests/': {
-      id: '/rider/requests/'
-      path: '/rider/requests'
-      fullPath: '/rider/requests/'
-      preLoaderRoute: typeof RiderRequestsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/rider/signup/': {
@@ -565,68 +532,189 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RiderSignupIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/customer/deliveries/$deliveryId/': {
-      id: '/customer/deliveries/$deliveryId/'
-      path: '/customer/deliveries/$deliveryId'
+    '/customer/_authed/deliveries/': {
+      id: '/customer/_authed/deliveries/'
+      path: '/deliveries'
+      fullPath: '/customer/deliveries/'
+      preLoaderRoute: typeof CustomerAuthedDeliveriesIndexRouteImport
+      parentRoute: typeof CustomerAuthedRoute
+    }
+    '/customer/_authed/deliveries/new': {
+      id: '/customer/_authed/deliveries/new'
+      path: '/deliveries/new'
+      fullPath: '/customer/deliveries/new'
+      preLoaderRoute: typeof CustomerAuthedDeliveriesNewRouteImport
+      parentRoute: typeof CustomerAuthedRoute
+    }
+    '/customer/_authed/points/': {
+      id: '/customer/_authed/points/'
+      path: '/points'
+      fullPath: '/customer/points/'
+      preLoaderRoute: typeof CustomerAuthedPointsIndexRouteImport
+      parentRoute: typeof CustomerAuthedRoute
+    }
+    '/customer/_authed/points/charge': {
+      id: '/customer/_authed/points/charge'
+      path: '/points/charge'
+      fullPath: '/customer/points/charge'
+      preLoaderRoute: typeof CustomerAuthedPointsChargeRouteImport
+      parentRoute: typeof CustomerAuthedRoute
+    }
+    '/rider/_authed/delivery/': {
+      id: '/rider/_authed/delivery/'
+      path: '/delivery'
+      fullPath: '/rider/delivery/'
+      preLoaderRoute: typeof RiderAuthedDeliveryIndexRouteImport
+      parentRoute: typeof RiderAuthedRoute
+    }
+    '/rider/_authed/history/': {
+      id: '/rider/_authed/history/'
+      path: '/history'
+      fullPath: '/rider/history/'
+      preLoaderRoute: typeof RiderAuthedHistoryIndexRouteImport
+      parentRoute: typeof RiderAuthedRoute
+    }
+    '/rider/_authed/points/': {
+      id: '/rider/_authed/points/'
+      path: '/points'
+      fullPath: '/rider/points/'
+      preLoaderRoute: typeof RiderAuthedPointsIndexRouteImport
+      parentRoute: typeof RiderAuthedRoute
+    }
+    '/rider/_authed/requests/': {
+      id: '/rider/_authed/requests/'
+      path: '/requests'
+      fullPath: '/rider/requests/'
+      preLoaderRoute: typeof RiderAuthedRequestsIndexRouteImport
+      parentRoute: typeof RiderAuthedRoute
+    }
+    '/customer/_authed/deliveries/$deliveryId/': {
+      id: '/customer/_authed/deliveries/$deliveryId/'
+      path: '/deliveries/$deliveryId'
       fullPath: '/customer/deliveries/$deliveryId/'
-      preLoaderRoute: typeof CustomerDeliveriesDeliveryIdIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof CustomerAuthedDeliveriesDeliveryIdIndexRouteImport
+      parentRoute: typeof CustomerAuthedRoute
     }
-    '/customer/deliveries/$deliveryId/tracking': {
-      id: '/customer/deliveries/$deliveryId/tracking'
-      path: '/customer/deliveries/$deliveryId/tracking'
+    '/customer/_authed/deliveries/$deliveryId/tracking': {
+      id: '/customer/_authed/deliveries/$deliveryId/tracking'
+      path: '/deliveries/$deliveryId/tracking'
       fullPath: '/customer/deliveries/$deliveryId/tracking'
-      preLoaderRoute: typeof CustomerDeliveriesDeliveryIdTrackingRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof CustomerAuthedDeliveriesDeliveryIdTrackingRouteImport
+      parentRoute: typeof CustomerAuthedRoute
     }
-    '/rider/history/$deliveryId/': {
-      id: '/rider/history/$deliveryId/'
-      path: '/rider/history/$deliveryId'
+    '/rider/_authed/history/$deliveryId/': {
+      id: '/rider/_authed/history/$deliveryId/'
+      path: '/history/$deliveryId'
       fullPath: '/rider/history/$deliveryId/'
-      preLoaderRoute: typeof RiderHistoryDeliveryIdIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof RiderAuthedHistoryDeliveryIdIndexRouteImport
+      parentRoute: typeof RiderAuthedRoute
     }
-    '/rider/requests/$deliveryId/': {
-      id: '/rider/requests/$deliveryId/'
-      path: '/rider/requests/$deliveryId'
+    '/rider/_authed/requests/$deliveryId/': {
+      id: '/rider/_authed/requests/$deliveryId/'
+      path: '/requests/$deliveryId'
       fullPath: '/rider/requests/$deliveryId/'
-      preLoaderRoute: typeof RiderRequestsDeliveryIdIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof RiderAuthedRequestsDeliveryIdIndexRouteImport
+      parentRoute: typeof RiderAuthedRoute
     }
   }
 }
 
-const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
+interface AccountRouteRouteChildren {
+  AccountEditRoute: typeof AccountEditRoute
+  AccountSettingsRoute: typeof AccountSettingsRoute
+  AccountIndexRoute: typeof AccountIndexRoute
+  AccountNotificationsIndexRoute: typeof AccountNotificationsIndexRoute
+}
+
+const AccountRouteRouteChildren: AccountRouteRouteChildren = {
   AccountEditRoute: AccountEditRoute,
   AccountSettingsRoute: AccountSettingsRoute,
-  CustomerAuthedRoute: CustomerAuthedRoute,
-  RiderAuthedRoute: RiderAuthedRoute,
   AccountIndexRoute: AccountIndexRoute,
-  CustomerIndexRoute: CustomerIndexRoute,
-  RiderIndexRoute: RiderIndexRoute,
-  CustomerDeliveriesNewRoute: CustomerDeliveriesNewRoute,
-  CustomerPointsChargeRoute: CustomerPointsChargeRoute,
   AccountNotificationsIndexRoute: AccountNotificationsIndexRoute,
+}
+
+const AccountRouteRouteWithChildren = AccountRouteRoute._addFileChildren(
+  AccountRouteRouteChildren,
+)
+
+interface AuthRouteRouteChildren {
+  AuthFindAccountIndexRoute: typeof AuthFindAccountIndexRoute
+  AuthSignupIndexRoute: typeof AuthSignupIndexRoute
+  AuthVerifyIndexRoute: typeof AuthVerifyIndexRoute
+}
+
+const AuthRouteRouteChildren: AuthRouteRouteChildren = {
   AuthFindAccountIndexRoute: AuthFindAccountIndexRoute,
   AuthSignupIndexRoute: AuthSignupIndexRoute,
   AuthVerifyIndexRoute: AuthVerifyIndexRoute,
-  CustomerDeliveriesIndexRoute: CustomerDeliveriesIndexRoute,
+}
+
+const AuthRouteRouteWithChildren = AuthRouteRoute._addFileChildren(
+  AuthRouteRouteChildren,
+)
+
+interface CustomerAuthedRouteChildren {
+  CustomerAuthedIndexRoute: typeof CustomerAuthedIndexRoute
+  CustomerAuthedDeliveriesNewRoute: typeof CustomerAuthedDeliveriesNewRoute
+  CustomerAuthedPointsChargeRoute: typeof CustomerAuthedPointsChargeRoute
+  CustomerAuthedDeliveriesIndexRoute: typeof CustomerAuthedDeliveriesIndexRoute
+  CustomerAuthedPointsIndexRoute: typeof CustomerAuthedPointsIndexRoute
+  CustomerAuthedDeliveriesDeliveryIdTrackingRoute: typeof CustomerAuthedDeliveriesDeliveryIdTrackingRoute
+  CustomerAuthedDeliveriesDeliveryIdIndexRoute: typeof CustomerAuthedDeliveriesDeliveryIdIndexRoute
+}
+
+const CustomerAuthedRouteChildren: CustomerAuthedRouteChildren = {
+  CustomerAuthedIndexRoute: CustomerAuthedIndexRoute,
+  CustomerAuthedDeliveriesNewRoute: CustomerAuthedDeliveriesNewRoute,
+  CustomerAuthedPointsChargeRoute: CustomerAuthedPointsChargeRoute,
+  CustomerAuthedDeliveriesIndexRoute: CustomerAuthedDeliveriesIndexRoute,
+  CustomerAuthedPointsIndexRoute: CustomerAuthedPointsIndexRoute,
+  CustomerAuthedDeliveriesDeliveryIdTrackingRoute:
+    CustomerAuthedDeliveriesDeliveryIdTrackingRoute,
+  CustomerAuthedDeliveriesDeliveryIdIndexRoute:
+    CustomerAuthedDeliveriesDeliveryIdIndexRoute,
+}
+
+const CustomerAuthedRouteWithChildren = CustomerAuthedRoute._addFileChildren(
+  CustomerAuthedRouteChildren,
+)
+
+interface RiderAuthedRouteChildren {
+  RiderAuthedIndexRoute: typeof RiderAuthedIndexRoute
+  RiderAuthedDeliveryIndexRoute: typeof RiderAuthedDeliveryIndexRoute
+  RiderAuthedHistoryIndexRoute: typeof RiderAuthedHistoryIndexRoute
+  RiderAuthedPointsIndexRoute: typeof RiderAuthedPointsIndexRoute
+  RiderAuthedRequestsIndexRoute: typeof RiderAuthedRequestsIndexRoute
+  RiderAuthedHistoryDeliveryIdIndexRoute: typeof RiderAuthedHistoryDeliveryIdIndexRoute
+  RiderAuthedRequestsDeliveryIdIndexRoute: typeof RiderAuthedRequestsDeliveryIdIndexRoute
+}
+
+const RiderAuthedRouteChildren: RiderAuthedRouteChildren = {
+  RiderAuthedIndexRoute: RiderAuthedIndexRoute,
+  RiderAuthedDeliveryIndexRoute: RiderAuthedDeliveryIndexRoute,
+  RiderAuthedHistoryIndexRoute: RiderAuthedHistoryIndexRoute,
+  RiderAuthedPointsIndexRoute: RiderAuthedPointsIndexRoute,
+  RiderAuthedRequestsIndexRoute: RiderAuthedRequestsIndexRoute,
+  RiderAuthedHistoryDeliveryIdIndexRoute:
+    RiderAuthedHistoryDeliveryIdIndexRoute,
+  RiderAuthedRequestsDeliveryIdIndexRoute:
+    RiderAuthedRequestsDeliveryIdIndexRoute,
+}
+
+const RiderAuthedRouteWithChildren = RiderAuthedRoute._addFileChildren(
+  RiderAuthedRouteChildren,
+)
+
+const rootRouteChildren: RootRouteChildren = {
+  IndexRoute: IndexRoute,
+  AccountRouteRoute: AccountRouteRouteWithChildren,
+  AuthRouteRoute: AuthRouteRouteWithChildren,
+  CustomerAuthedRoute: CustomerAuthedRouteWithChildren,
+  RiderAuthedRoute: RiderAuthedRouteWithChildren,
   CustomerLoginIndexRoute: CustomerLoginIndexRoute,
-  CustomerPointsIndexRoute: CustomerPointsIndexRoute,
   CustomerSignupIndexRoute: CustomerSignupIndexRoute,
-  RiderDeliveryIndexRoute: RiderDeliveryIndexRoute,
-  RiderHistoryIndexRoute: RiderHistoryIndexRoute,
   RiderLoginIndexRoute: RiderLoginIndexRoute,
-  RiderPointsIndexRoute: RiderPointsIndexRoute,
-  RiderRequestsIndexRoute: RiderRequestsIndexRoute,
   RiderSignupIndexRoute: RiderSignupIndexRoute,
-  CustomerDeliveriesDeliveryIdTrackingRoute:
-    CustomerDeliveriesDeliveryIdTrackingRoute,
-  CustomerDeliveriesDeliveryIdIndexRoute:
-    CustomerDeliveriesDeliveryIdIndexRoute,
-  RiderHistoryDeliveryIdIndexRoute: RiderHistoryDeliveryIdIndexRoute,
-  RiderRequestsDeliveryIdIndexRoute: RiderRequestsDeliveryIdIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

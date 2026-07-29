@@ -6,7 +6,7 @@ import { WhilePickupStage } from './-components/WhilePickupStage'
 import { AfterPickupStage } from './-components/AfterPickupStage'
 import { CompleteDeliveryStage } from './-components/CompleteDeliveryStage'
 
-export const Route = createFileRoute('/rider/delivery/')({
+export const Route = createFileRoute('/rider/_authed/delivery/')({
   component: RiderDelivery,
 })
 

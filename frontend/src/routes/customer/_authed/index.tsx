@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { Map, Settings, Truck } from 'lucide-react'
 
-export const Route = createFileRoute('/customer/')({
+export const Route = createFileRoute('/customer/_authed/')({
   component: CustomerHome,
 })
 
