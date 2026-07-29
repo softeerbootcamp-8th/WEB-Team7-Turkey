@@ -38,3 +38,6 @@ backend/data/
 
 # Local Claude Code hook scripts (personal, not shared)
 frontend/.claude/hooks/
+
+# 개인 작업 메모. 팀 공유 문서는 docs/ 와 Wiki(ADR)를 쓴다.
+/plan.md
