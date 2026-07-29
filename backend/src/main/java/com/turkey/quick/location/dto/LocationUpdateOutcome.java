@@ -20,7 +20,13 @@ public enum LocationUpdateOutcome {
     STALE,
 
     /** 정확도가 기준에 못 미친다. 지도가 튀고 배차 거리 계산이 틀어지므로 버린다. */
-    LOW_ACCURACY;
+    LOW_ACCURACY,
+
+    /**
+     * 이전 최신 위치보다 측정 시각이 과거이거나 같다. 순서가 뒤바뀌어 도착한 요청이나 재전송이며,
+     * 받아들이면 "최신 위치"가 과거로 되돌아간다.
+     */
+    NON_MONOTONIC;
 
     public boolean isAccepted() {
         return this == ACCEPTED;
