@@ -129,8 +129,10 @@ Spring Boot WAS
 
 ### Infrastructure
 
-- AWS EC2 직접 설치·운영
-- Docker 사용 금지
+- WAS(Spring Boot)는 AWS EC2 직접 설치·운영
+- Redis는 AWS ElastiCache(관리형) 사용, EC2 직접 설치 아님(2026-07-29 결정, CLAUDE.md 「확정된 결정」 참고)
+- MySQL 배치 방식(EC2 직접 설치 vs RDS)은 미결
+- Docker 사용 제약 없음(2026-07-29 변경, CLAUDE.md 「금지 사항」 참고)
 - GitHub Actions 기반 CI/CD 검토
 
 ### 사용 불가
