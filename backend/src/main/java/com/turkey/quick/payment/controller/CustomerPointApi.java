@@ -16,23 +16,24 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestAttribute;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseStatus;
 
 /**
- * 고객 포인트 API 계약
+ * 고객 포인트 API 계약(문서 전용)
  *
- * <p>경로·HTTP 메서드·스키마를 여기에 고정하고, 구현체는 {@code @RestController} 만 붙여
- * 이 인터페이스를 구현한다. 매핑과 검증 어노테이션을 구현체에서 다시 선언하지 않는다
- * (Bean Validation 은 오버라이드에서 제약을 재선언하면 HV000151 로 실패한다).
+ * <p><b>역할 분담</b>: 이 인터페이스에는 순수 문서화 어노테이션({@code @Tag}, {@code @Operation},
+ * {@code @ApiResponses}, {@code @Parameter}, swagger {@code @RequestBody})만 둔다. 경로·HTTP 메서드
+ * 매핑({@code @RequestMapping}, {@code @GetMapping} 등)과 바인딩·검증
+ * ({@code @RequestAttribute}, {@code @RequestParam}, {@code @PathVariable}, {@code @Valid})은
+ * 전부 구현체에 둔다.
+ *
+ * <p>이렇게 나누는 이유는 두 가지다. 첫째, 인터페이스에 Bean Validation 제약이 없으므로
+ * 오버라이드에서 제약을 재선언해 HV000151 로 실패할 여지가 애초에 없다. 둘째, 실제 동작에 영향을
+ * 주는 어노테이션은 로직과 같은 파일에서 보이고, 수십 줄짜리 명세는 여기로 분리된다.
+ * springdoc 은 상위 타입의 어노테이션을 함께 읽으므로 문서는 정상 생성된다.
+ *
+ * <p><b>주의</b>: 매핑 어노테이션이 구현체에만 있으므로 컨트롤러가 JDK 동적 프록시로 감싸이면
+ * 매핑이 유실되어 404 가 난다. Spring Boot 는 CGLIB 프록시가 기본이라 보통 문제없지만,
+ * {@code spring.aop.proxy-target-class=false} 를 쓰는 경우 확인이 필요하다.
  *
  * <p><b>이 인터페이스만으로는 /v3/api-docs 에 아무것도 나오지 않는다.</b> springdoc 은 빈으로
  * 등록된 컨트롤러를 스캔하므로, 구현체가 생겨야 문서와 Orval 훅이 만들어진다.
@@ -40,9 +41,9 @@ import org.springframework.web.bind.annotation.ResponseStatus;
  * <p>인증은 쿠키 세션이며 세션에서 얻은 고객이 곧 지갑의 주인이다. 따라서 어느 API 도
  * customerId 를 요청 파라미터·바디로 받지 않는다 — 받으면 남의 지갑을 지목할 수 있는 통로가 된다.
  * 대신 {@link CustomerSessionInterceptor} 가 쿠키 → 세션 → 회원 재조회 → 역할·상태 확인을 마치고
- * request attribute 에 담아 둔 {@link AuthenticatedCustomer} 를 {@code @RequestAttribute} 로 받는다
- * ({@code CustomerSessionController} 와 같은 관례). 이 파라미터는 클라이언트가 채울 수 없으므로
- * 스웨거 문서에도 노출되지 않는다.
+ * request attribute 에 담아 둔 {@link AuthenticatedCustomer} 를 구현체에서 {@code @RequestAttribute}
+ * 로 받는다({@code CustomerSessionController} 와 같은 관례). 이 파라미터는 클라이언트가 채울 수
+ * 없으므로 스웨거 문서에도 노출되지 않는다.
  *
  * <p>또한 이 경로들은 {@code CustomerWebMvcConfig} 의 {@code addPathPatterns} 에 반드시 등록해야
  * 인증이 걸린다(팀 정책상 Spring Security 미사용이라 선언적 자동 적용이 없다).
@@ -56,7 +57,6 @@ import org.springframework.web.bind.annotation.ResponseStatus;
  * 같은 부분 성공이 생긴다. 취소 환불(ORDER_REFUND)도 같은 이유로 order 도메인 소관이다.
  */
 @Tag(name = "customer-point", description = "고객 포인트 — 잔액, 충전, 거래 내역")
-@RequestMapping("/api/customer/points")
 public interface CustomerPointApi {
 
     @Operation(
@@ -73,29 +73,24 @@ public interface CustomerPointApi {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401", description = "미로그인 또는 세션 만료")
     })
-    @GetMapping
-    ApiResponse<PointBalanceResponse> getPointBalance(
-            @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
-            AuthenticatedCustomer customer);
+    ApiResponse<PointBalanceResponse> getPointBalance(AuthenticatedCustomer customer);
 
     @Operation(
             operationId = "getCustomerPointTransactions",
             summary = "포인트 거래 내역",
             description = "잔액 변화를 남긴 원장(point_transaction)을 최신순으로 조회한다. "
                     + "type 을 주면 해당 거래 유형만 거른다. 화면 상단 카드용 현재 잔액을 같은 응답에 담는다.")
-    @GetMapping("/transactions")
     ApiResponse<PointTransactionListResponse> getPointTransactions(
-            @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
             AuthenticatedCustomer customer,
 
             @Parameter(description = "거래 유형 필터(미지정 시 전체)")
-            @RequestParam(required = false) PointTransactionType type,
+            PointTransactionType type,
 
             @Parameter(description = "페이지(0부터)")
-            @RequestParam(defaultValue = "0") int page,
+            int page,
 
             @Parameter(description = "페이지 크기")
-            @RequestParam(defaultValue = "20") int size);
+            int size);
 
     @Operation(
             operationId = "requestCustomerPointCharge",
@@ -116,13 +111,9 @@ public interface CustomerPointApi {
                       "amount": 10000,
                       "paymentMethod": "CARD"
                     }""")))
-    @PostMapping("/charges")
-    @ResponseStatus(HttpStatus.CREATED)
     ApiResponse<PointChargeResponse> requestPointCharge(
-            @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
             AuthenticatedCustomer customer,
-
-            @Valid @RequestBody PointChargeRequest request);
+            PointChargeRequest request);
 
     @Operation(
             operationId = "confirmCustomerPointCharge",
@@ -141,13 +132,11 @@ public interface CustomerPointApi {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "409", description = "PENDING 이 아니라 승인할 수 없는 상태")
     })
-    @PostMapping("/charges/{pointChargeId}/confirm")
     ApiResponse<PointChargeConfirmResponse> confirmPointCharge(
-            @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
             AuthenticatedCustomer customer,
 
             @Parameter(description = "충전 식별자", example = "331")
-            @PathVariable Long pointChargeId,
+            Long pointChargeId,
 
-            @Valid @RequestBody PointChargeConfirmRequest request);
+            PointChargeConfirmRequest request);
 }

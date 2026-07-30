@@ -16,26 +16,18 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestAttribute;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseStatus;
 
 /**
- * 라이더 포인트 API 계약
+ * 라이더 포인트 API 계약(문서 전용)
  *
- * <p>구현체 규칙·springdoc 스캔 조건은 {@link CustomerPointApi} 와 동일하다.
+ * <p>역할 분담 규칙·springdoc 스캔 조건·프록시 주의사항은 {@link CustomerPointApi} 와 동일하다 —
+ * 이 인터페이스에는 순수 문서화 어노테이션만 두고, 매핑·바인딩·검증은 구현체에 둔다.
  * 인증 경로 등록은 {@code RiderWebMvcConfig}(라이더 인터셉터) 쪽에 해야 한다 — 고객 설정에 등록하면
  * 역할 검증이 어긋난다.
  *
  * <p>인증 주체는 {@link RiderSessionInterceptor} 가 request attribute 에 담아 둔
- * {@link AuthenticatedRider} 를 {@code @RequestAttribute} 로 받는다. riderId 를 요청으로 받지 않는
- * 이유는 고객 쪽과 같다 — 받으면 남의 지갑·정산을 지목할 수 있는 통로가 된다.
+ * {@link AuthenticatedRider} 를 구현체에서 {@code @RequestAttribute} 로 받는다. riderId 를 요청으로
+ * 받지 않는 이유는 고객 쪽과 같다 — 받으면 남의 지갑·정산을 지목할 수 있는 통로가 된다.
  *
  * <p><b>출금 API 를 payment 에 둔 이유</b>: rider_withdrawal 엔터티는 rider 패키지에 있지만,
  * 출금이 실제로 하는 일은 지갑 잔액 선차감 + WITHDRAWAL 원장 기록이다. 원장을 쓰는 코드가
@@ -48,7 +40,6 @@ import org.springframework.web.bind.annotation.ResponseStatus;
  * 외부에서 호출할 수 있게 열면 완료 없이 정산만 생기는 경로가 만들어진다. 여기서는 조회만 한다.
  */
 @Tag(name = "rider-point", description = "라이더 포인트 — 잔액, 정산 내역, 거래 내역, 출금")
-@RequestMapping("/api/rider/points")
 public interface RiderPointApi {
 
     @Operation(
@@ -63,10 +54,7 @@ public interface RiderPointApi {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401", description = "미로그인 또는 세션 만료")
     })
-    @GetMapping
-    ApiResponse<PointBalanceResponse> getPointBalance(
-            @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
-            AuthenticatedRider rider);
+    ApiResponse<PointBalanceResponse> getPointBalance(AuthenticatedRider rider);
 
     @Operation(
             operationId = "getRiderSettlements",
@@ -74,35 +62,31 @@ public interface RiderPointApi {
             description = "완료된 배송의 정산(rider_settlement)을 최신순으로 조회한다. "
                     + "배송별 수익 관점의 목록이며, 잔액 변화 관점은 거래 내역 API 를 쓴다. "
                     + "운행 기록 화면(/api/rider/history)의 주간 합계와 근거 테이블이 같다.")
-    @GetMapping("/settlements")
     ApiResponse<SettlementListResponse> getSettlements(
-            @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
             AuthenticatedRider rider,
 
             @Parameter(description = "페이지(0부터)")
-            @RequestParam(defaultValue = "0") int page,
+            int page,
 
             @Parameter(description = "페이지 크기")
-            @RequestParam(defaultValue = "20") int size);
+            int size);
 
     @Operation(
             operationId = "getRiderPointTransactions",
             summary = "포인트 거래 내역",
             description = "라이더 지갑의 원장을 최신순으로 조회한다. 라이더에게 나타나는 유형은 "
                     + "SETTLEMENT·WITHDRAWAL·WITHDRAWAL_REFUND 다.")
-    @GetMapping("/transactions")
     ApiResponse<PointTransactionListResponse> getPointTransactions(
-            @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
             AuthenticatedRider rider,
 
             @Parameter(description = "거래 유형 필터(미지정 시 전체)")
-            @RequestParam(required = false) PointTransactionType type,
+            PointTransactionType type,
 
             @Parameter(description = "페이지(0부터)")
-            @RequestParam(defaultValue = "0") int page,
+            int page,
 
             @Parameter(description = "페이지 크기")
-            @RequestParam(defaultValue = "20") int size);
+            int size);
 
     @Operation(
             operationId = "requestRiderWithdrawal",
@@ -123,27 +107,21 @@ public interface RiderPointApi {
                       "requestKey": "8f3d2b71-0c4e-4a19-9d55-1e7a3c6b40aa",
                       "amount": 50000
                     }""")))
-    @PostMapping("/withdrawals")
-    @ResponseStatus(HttpStatus.CREATED)
     ApiResponse<WithdrawalResponse> requestWithdrawal(
-            @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
             AuthenticatedRider rider,
-
-            @Valid @RequestBody WithdrawalRequest request);
+            WithdrawalRequest request);
 
     @Operation(
             operationId = "getRiderWithdrawals",
             summary = "출금 내역",
             description = "출금 요청을 최신순으로 조회한다. 계좌는 요청 시점 스냅샷이라 "
                     + "이후 계좌를 변경해도 과거 내역의 표시는 바뀌지 않는다.")
-    @GetMapping("/withdrawals")
     ApiResponse<WithdrawalListResponse> getWithdrawals(
-            @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
             AuthenticatedRider rider,
 
             @Parameter(description = "페이지(0부터)")
-            @RequestParam(defaultValue = "0") int page,
+            int page,
 
             @Parameter(description = "페이지 크기")
-            @RequestParam(defaultValue = "20") int size);
+            int size);
 }

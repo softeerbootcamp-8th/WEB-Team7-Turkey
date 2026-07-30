@@ -9,43 +9,76 @@ import com.turkey.quick.payment.dto.WithdrawalListResponse;
 import com.turkey.quick.payment.dto.WithdrawalRequest;
 import com.turkey.quick.payment.dto.WithdrawalResponse;
 import com.turkey.quick.rider.auth.AuthenticatedRider;
+import com.turkey.quick.rider.auth.RiderSessionInterceptor;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestAttribute;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * {@link RiderPointApi} 구현체(골격).
- *
- * <p>구현 규칙은 {@link CustomerPaymentController} 와 동일하다 — 매핑·검증 어노테이션은
- * 인터페이스에만, 반환은 {@code @RestController} 로 JSON.
- */
 @RestController
+@RequestMapping("/api/rider/points")
 public class RiderPaymentController implements RiderPointApi {
 
     @Override
-    public ApiResponse<PointBalanceResponse> getPointBalance(AuthenticatedRider rider) {
+    @GetMapping
+    public ApiResponse<PointBalanceResponse> getPointBalance(
+            @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
+            AuthenticatedRider rider) {
         return null;
     }
 
     @Override
+    @GetMapping("/settlements")
     public ApiResponse<SettlementListResponse> getSettlements(
-            AuthenticatedRider rider, int page, int size) {
+            @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
+            AuthenticatedRider rider,
+
+            @RequestParam(name = "page", defaultValue = "0") int page,
+
+            @RequestParam(name = "size", defaultValue = "20") int size) {
         return null;
     }
 
     @Override
+    @GetMapping("/transactions")
     public ApiResponse<PointTransactionListResponse> getPointTransactions(
-            AuthenticatedRider rider, PointTransactionType type, int page, int size) {
+            @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
+            AuthenticatedRider rider,
+
+            @RequestParam(name = "type", required = false) PointTransactionType type,
+
+            @RequestParam(name = "page", defaultValue = "0") int page,
+
+            @RequestParam(name = "size", defaultValue = "20") int size) {
         return null;
     }
 
     @Override
+    @PostMapping("/withdrawals")
+    @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<WithdrawalResponse> requestWithdrawal(
-            AuthenticatedRider rider, WithdrawalRequest request) {
+            @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
+            AuthenticatedRider rider,
+
+            @Valid @RequestBody WithdrawalRequest request) {
         return null;
     }
 
     @Override
+    @GetMapping("/withdrawals")
     public ApiResponse<WithdrawalListResponse> getWithdrawals(
-            AuthenticatedRider rider, int page, int size) {
+            @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
+            AuthenticatedRider rider,
+
+            @RequestParam(name = "page", defaultValue = "0") int page,
+
+            @RequestParam(name = "size", defaultValue = "20") int size) {
         return null;
     }
 }
