@@ -8,8 +8,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
- * "첫 연결 / 마지막 연결" 판정이 이 클래스의 핵심이다 — 그 판정이 Pub/Sub 채널 구독·해제 시점을
- * 결정하므로, 어긋나면 구독이 새거나(해제되지 않음) 이벤트를 받지 못한다(구독되지 않음).
+ * 검증의 핵심은 <b>주문별 인덱싱이 새지 않는 것</b>이다. 마지막 연결이 빠질 때 빈 맵을 남기면
+ * 추적한 주문 수만큼 누수되고, 순회 중 변경이 섞이면 리스너가 전송 실패를 정리하다 터진다.
  */
 @DisplayName("TrackingEmitterRegistry")
 class TrackingEmitterRegistryTest {
@@ -28,26 +28,12 @@ class TrackingEmitterRegistryTest {
     class Adding {
 
         @Test
-        @DisplayName("주문의 첫 연결이면 true 를 돌려준다")
-        void reportsFirstConnection() {
-            // 호출자가 이 신호로만 채널을 구독한다.
-            assertThat(registry.add(connection(ORDER_ID, "a"))).isTrue();
-        }
-
-        @Test
-        @DisplayName("두 번째 연결은 첫 연결이 아니다")
-        void reportsSubsequentConnection() {
+        @DisplayName("같은 주문에 연결 여러 개를 담는다")
+        void holdsMultipleConnectionsPerOrder() {
             registry.add(connection(ORDER_ID, "a"));
+            registry.add(connection(ORDER_ID, "b"));
 
-            assertThat(registry.add(connection(ORDER_ID, "b"))).isFalse();
-        }
-
-        @Test
-        @DisplayName("다른 주문의 첫 연결은 다시 true 다")
-        void reportsFirstConnectionPerOrder() {
-            registry.add(connection(ORDER_ID, "a"));
-
-            assertThat(registry.add(connection(OTHER_ORDER_ID, "b"))).isTrue();
+            assertThat(registry.connectionsOf(ORDER_ID)).hasSize(2);
         }
 
         @Test
@@ -75,38 +61,36 @@ class TrackingEmitterRegistryTest {
     class Removing {
 
         @Test
-        @DisplayName("마지막 연결이 사라지면 true 를 돌려준다")
-        void reportsLastConnectionRemoved() {
-            registry.add(connection(ORDER_ID, "a"));
-
-            assertThat(registry.remove(ORDER_ID, "a")).isTrue();
-        }
-
-        @Test
-        @DisplayName("연결이 남아 있으면 false 다")
-        void reportsRemainingConnections() {
+        @DisplayName("지목한 연결만 빠진다")
+        void removesOnlyTargetedConnection() {
             registry.add(connection(ORDER_ID, "a"));
             registry.add(connection(ORDER_ID, "b"));
 
-            assertThat(registry.remove(ORDER_ID, "a")).isFalse();
-            assertThat(registry.connectionsOf(ORDER_ID)).hasSize(1);
+            registry.remove(ORDER_ID, "a");
+
+            assertThat(registry.connectionsOf(ORDER_ID))
+                    .extracting(TrackingConnection::emitterId)
+                    .containsExactly("b");
         }
 
         @Test
-        @DisplayName("같은 연결을 두 번 제거하면 두 번째는 false 다")
-        void doesNotReportLastTwice() {
-            // onTimeout 뒤에 onCompletion 이 이어 오므로 정리가 두 번 불린다. 두 번 다 true 면
-            // 채널 구독 해제가 두 번 일어난다.
+        @DisplayName("같은 연결을 두 번 제거해도 오류가 아니다")
+        void isIdempotent() {
+            // onTimeout·onError 뒤에 onCompletion 이 이어 오므로 정리가 두 번 이상 불린다.
             registry.add(connection(ORDER_ID, "a"));
             registry.remove(ORDER_ID, "a");
 
-            assertThat(registry.remove(ORDER_ID, "a")).isFalse();
+            registry.remove(ORDER_ID, "a");
+
+            assertThat(registry.size()).isZero();
         }
 
         @Test
         @DisplayName("등록되지 않은 연결을 제거해도 오류가 아니다")
         void toleratesUnknownConnection() {
-            assertThat(registry.remove(ORDER_ID, "never-added")).isFalse();
+            registry.remove(ORDER_ID, "never-added");
+
+            assertThat(registry.size()).isZero();
         }
 
         @Test

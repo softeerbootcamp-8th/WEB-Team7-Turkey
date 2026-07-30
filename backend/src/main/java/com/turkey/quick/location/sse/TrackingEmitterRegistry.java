@@ -21,51 +21,38 @@ import org.springframework.stereotype.Component;
  * <b>테스트가 통과하면서 아무것도 증명하지 못한다</b> — 그래서 그 테스트가
  * {@code registryA != registryB} 와 "B 의 레지스트리가 비어 있음"을 함께 단언한다.
  *
- * <p>주문별 맵을 {@code compute} 로만 고치는 이유: "이 주문의 첫 연결인가 / 마지막 연결인가"를
- * 확인과 변경이 쪼개지지 않은 채로 판정해야 한다. 그 판정이 Pub/Sub 채널 구독·해제 시점
- * (#78 {@code TrackingSubscriptionManager})을 결정하므로, 어긋나면 구독이 새거나 이벤트를
- * 받지 못한다.
+ * <p>주문별 맵을 {@code compute} 로만 고치는 이유: 확인과 변경이 쪼개지면 마지막 연결이 빠지는
+ * 순간에 빈 맵이 남거나(주문 수만큼 누수), 지워진 항목이 되살아난다.
+ *
+ * <p><b>"첫 연결 / 마지막 연결" 신호를 두지 않는다.</b> 처음에는 그 신호로 Pub/Sub 채널을
+ * 주문별로 구독·해제할 계획이었지만, 패턴 하나로 구독하는 쪽으로 바꿨다
+ * ({@link TrackingChannel#pattern()} 에 근거를 적어 뒀다). 쓰지 않는 판정을 남기면 다음 사람이
+ * 그것에 의존하는 코드를 만든다.
  */
 @Component
 public class TrackingEmitterRegistry {
 
     private final Map<Long, Map<String, TrackingConnection>> byOrder = new ConcurrentHashMap<>();
 
-    /**
-     * @return 이 주문의 <b>첫</b> 연결이면 true. 호출자가 그때만 채널을 구독하기 위한 신호다
-     */
-    public boolean add(TrackingConnection connection) {
-        boolean[] first = {false};
+    public void add(TrackingConnection connection) {
         byOrder.compute(connection.orderId(), (orderId, connections) -> {
             Map<String, TrackingConnection> next =
                     connections == null ? new ConcurrentHashMap<>() : connections;
-            first[0] = next.isEmpty();
             next.put(connection.emitterId(), connection);
             return next;
         });
-        return first[0];
     }
 
     /**
-     * @return 이 주문의 <b>마지막</b> 연결이 사라졌으면 true. 호출자가 그때만 채널 구독을 해제한다.
-     *         이미 지워진 연결을 다시 지우면 false 다 — {@code onTimeout} 뒤에
-     *         {@code onCompletion} 이 이어 오므로 정리가 두 번 불리는데, 구독 해제를 두 번
-     *         하지 않기 위해서다
+     * 없는 연결을 지워도 오류가 아니다 — {@code onTimeout} 뒤에 {@code onCompletion} 이 이어 오므로
+     * 정리가 두 번 이상 불린다.
      */
-    public boolean remove(Long orderId, String emitterId) {
-        boolean[] last = {false};
+    public void remove(Long orderId, String emitterId) {
         byOrder.computeIfPresent(orderId, (id, connections) -> {
-            if (connections.remove(emitterId) == null) {
-                return connections;
-            }
-            if (connections.isEmpty()) {
-                last[0] = true;
-                // null 을 돌려주면 키 자체가 사라진다 — 빈 맵을 남기면 주문 수만큼 누수된다.
-                return null;
-            }
-            return connections;
+            connections.remove(emitterId);
+            // null 을 돌려주면 키 자체가 사라진다 — 빈 맵을 남기면 추적한 주문 수만큼 누수된다.
+            return connections.isEmpty() ? null : connections;
         });
-        return last[0];
     }
 
     /**
