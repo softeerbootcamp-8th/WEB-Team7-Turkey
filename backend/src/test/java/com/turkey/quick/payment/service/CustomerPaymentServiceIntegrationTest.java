@@ -234,6 +234,24 @@ class CustomerPaymentServiceIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("승인 성공 시 승인 식별자가 DB 에 남는다")
+    void persistsProviderPaymentKey() {
+        Long customerId = saveCustomerWithWallet(0L);
+        Long pointChargeId = customerPaymentService
+                .chargePointRequest(request(), customerId)
+                .pointChargeId();
+
+        customerPaymentService.confirmPointCharge(pointChargeId, confirmRequest(), customerId);
+
+        // 승인 식별자는 PG 응답에서 오고, 반영 실패 시 대사의 근거가 되는 값이다
+        assertThat(pointChargeRepository.findById(pointChargeId))
+                .get()
+                .extracting(PointCharge::getProviderPaymentKey)
+                .asString()
+                .startsWith("mock_pay_");
+    }
+
+    @Test
     @DisplayName("같은 충전 건에 동시에 승인 요청이 와도 포인트는 한 번만 증가한다")
     void concurrentConfirmCreditsOnlyOnce() throws InterruptedException {
         Long customerId = saveCustomerWithWallet(5_000L);

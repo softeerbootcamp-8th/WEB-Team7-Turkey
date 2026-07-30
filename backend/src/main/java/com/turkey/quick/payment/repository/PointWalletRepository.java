@@ -23,7 +23,7 @@ public interface PointWalletRepository extends JpaRepository<PointWallet, Long> 
      * 되므로 읽는 시점에 행을 잠근다({@code @Version} 은 팀 정책상 사용하지 않는다).
      *
      * <p>지갑은 회원당 1행(PK = member_id)이라 잠금 범위가 단일 행이고 회원끼리는 경합하지 않는다.
-     * 같은 회원이 자기 지갑을 동시에 여러 번 바꾸는 일은 사실상 없어 병목이 되지 않는다.
+     * 외부 호출은 이 잠금 밖에서 끝나므로 보유 시간은 DB 작업 시간뿐이다.
      *
      * <p><b>잠금 순서 규칙</b>: 포인트 관련 트랜잭션은 {@code point_charge} → {@code point_wallet}
      * 순서로 잠근다. 순서가 엇갈리면 두 트랜잭션이 서로 상대가 쥔 행을 기다려 데드락이 된다.

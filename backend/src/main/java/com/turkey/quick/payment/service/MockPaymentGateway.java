@@ -52,13 +52,18 @@ public class MockPaymentGateway implements PaymentGateway {
                     "MOCK_DECLINED", "모의 결제가 거절되었습니다.");
         }
 
-        log.info("[MOCK-PG] 결제 승인 orderKey={}, amount={}",
-                command.chargeRequestKey(), command.expectedAmount());
+        String providerPaymentKey =
+                "mock_pay_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+
+        // 승인 식별자를 반드시 로그에 남긴다. DB 반영이 실패해 롤백되면 이 로그가 그 승인이 존재했다는
+        // 유일한 흔적이 된다. 실 PG 구현체도 같은 이유로 승인 응답을 남겨야 한다.
+        log.info("[MOCK-PG] 결제 승인 orderKey={}, amount={}, providerPaymentKey={}",
+                command.chargeRequestKey(), command.expectedAmount(), providerPaymentKey);
 
         // 실 PG 구현체는 여기서 승인 응답의 금액이 expectedAmount 와 같은지 검증해야 한다.
         // 모의 승인은 요청 금액을 그대로 승인하므로 불일치가 발생하지 않는다.
         return new Approval(
-                "mock_pay_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16),
+                providerPaymentKey,
                 command.expectedAmount(),
                 "MOCK",
                 "모의결제",

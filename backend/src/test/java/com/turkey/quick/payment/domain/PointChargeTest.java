@@ -95,4 +95,48 @@ class PointChargeTest {
         assertThatThrownBy(() -> charge.refund("refund-key-1", "고객 변심"))
                 .isInstanceOf(IllegalStateException.class);
     }
+    @Test
+    void 승인_응답을_기록하면_상태는_PENDING_그대로고_승인식별자만_남는다() {
+        PointCharge charge = pending(10_000L);
+
+        boolean recorded = charge.markApprovalReceived("pay-key-1");
+
+        // 이 조합(PENDING + 승인식별자)이 "PG 승인은 받았는데 반영이 안 끝난 건"을 뜻한다
+        assertThat(recorded).isTrue();
+        assertThat(charge.getStatus()).isEqualTo(PointChargeStatus.PENDING);
+        assertThat(charge.getProviderPaymentKey()).isEqualTo("pay-key-1");
+        assertThat(charge.getApprovedAmount()).isNull();
+        assertThat(charge.getApprovedAt()).isNull();
+    }
+
+    @Test
+    void 이미_기록된_승인식별자는_다른_값으로_덮이지_않는다() {
+        PointCharge charge = pending(10_000L);
+        charge.markApprovalReceived("pay-key-first");
+
+        boolean recorded = charge.markApprovalReceived("pay-key-second");
+
+        // 덮어쓰면 먼저 받은 승인이 어디에도 안 남아 추적할 수 없게 된다
+        assertThat(recorded).isFalse();
+        assertThat(charge.getProviderPaymentKey()).isEqualTo("pay-key-first");
+    }
+
+    @Test
+    void 같은_승인식별자를_다시_기록하면_성공으로_본다() {
+        PointCharge charge = pending(10_000L);
+        charge.markApprovalReceived("pay-key-1");
+
+        assertThat(charge.markApprovalReceived("pay-key-1")).isTrue();
+    }
+
+    @Test
+    void 승인은_이미_기록된_승인식별자를_덮어쓰지_않는다() {
+        PointCharge charge = pending(10_000L);
+        charge.markApprovalReceived("pay-key-first");
+
+        charge.approve("pay-key-second", "IBK", "국민카드(1234)");
+
+        assertThat(charge.getStatus()).isEqualTo(PointChargeStatus.PAID);
+        assertThat(charge.getProviderPaymentKey()).isEqualTo("pay-key-first");
+    }
 }

@@ -118,9 +118,11 @@ public interface CustomerPointApi {
     @Operation(
             operationId = "confirmCustomerPointCharge",
             summary = "포인트 충전 모의 승인",
-            description = "모의 결제 결과를 검증하고 PENDING 충전을 PAID 로 전이한다(CUS-POINT-003). "
-                    + "같은 트랜잭션에서 지갑 잔액을 늘리고 CHARGE 원장 1행을 남긴다 — 셋 중 하나라도 "
-                    + "실패하면 전부 롤백된다. 승인 금액은 항상 요청 금액 전액이다(부분 결제 없음). "
+            description = "PG 승인을 받아 PENDING 충전을 PAID 로 전이한다(CUS-POINT-003). "
+                    + "상태 전이·잔액 증가·CHARGE 원장 기록은 한 트랜잭션이라 셋 중 하나라도 실패하면 "
+                    + "전부 롤백된다. 단 PG 호출은 그 트랜잭션 밖에서 일어난다 — 외부 응답을 기다리는 "
+                    + "동안 DB 커넥션과 행 잠금을 쥐지 않기 위해서다. "
+                    + "승인 금액은 항상 요청 금액 전액이다(부분 결제 없음). "
                     + "요청의 amount 는 대조용이며 승인 금액으로 쓰이지 않는다 — 서버가 기억하는 요청 "
                     + "금액과 다르면 400 이다. "
                     + "승인 여부는 PaymentGateway 가 결정한다(MVP 는 MockPaymentGateway). PG 가 거절하면 "
@@ -142,7 +144,9 @@ public interface CustomerPointApi {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "404", description = "존재하지 않는 충전 건"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "409", description = "PENDING·PAID 가 아니라 승인할 수 없는 상태"),
+                    responseCode = "409",
+                    description = "승인할 수 없는 상태이거나, 앞선 승인이 반영 도중 끊겨 결제 확인이 "
+                            + "필요한 건(PENDING 이면서 승인 식별자가 이미 기록된 경우)"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "502", description = "PG 응답 불명 — 충전 건은 PENDING 으로 남는다")
     })

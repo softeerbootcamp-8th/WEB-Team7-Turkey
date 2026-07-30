@@ -25,9 +25,12 @@ public interface PointChargeRepository extends JpaRepository<PointCharge, Long> 
      * 승인·실패 전이를 위해 충전 행을 배타 잠금하며 조회한다({@code SELECT ... FOR UPDATE}, #33).
      *
      * <p>잠그지 않으면 같은 충전 건에 승인 요청이 동시에 들어올 때 둘 다 PENDING 을 읽고 각각
-     * 승인으로 진행한다. 그러면 잔액이 두 번 늘어날 수 있고, 원장은
-     * {@code uk_point_transaction_charge_type} 에 걸려 한쪽이 실패하지만 그건 사후 차단이다.
-     * 앞단에서 직렬화해 "포인트는 한 번만 증가"(이슈 비고)를 상태 판정 시점부터 보장한다.
+     * 증액으로 진행해 잔액이 두 번 늘 수 있다. 이 잠금이 확정 구간을 직렬화해
+     * "포인트는 한 번만 증가"(이슈 비고)를 보장한다.
+     *
+     * <p><b>PG 호출은 이 잠금 밖에 있다</b>(#33). 그래서 동시 요청이 PG 를 각각 부르는 것은 막지 못하고,
+     * 그쪽은 PG 의 멱등성과 확정 구간의 상태 재확인이 담당한다. 잠금 안에서 외부 호출을 하면
+     * 응답을 기다리는 동안 DB 커넥션과 행 잠금을 함께 쥐게 되어 트래픽이 몰릴 때 커넥션 풀이 마른다.
      *
      * <p><b>잠금 순서 규칙</b>: 이 조회가 먼저이고 그다음이
      * {@code PointWalletRepository.findByMemberIdForUpdate} 다. 반대로 잠그는 코드가 생기면 데드락이 난다.
