@@ -11,7 +11,7 @@ import com.turkey.quick.member.domain.VerificationPurpose;
 import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.member.repository.MemberTermAgreementRepository;
 import com.turkey.quick.member.repository.TermRepository;
-import com.turkey.quick.member.service.InMemoryVerificationCodeStore;
+import com.turkey.quick.member.service.VerificationCodeStore;
 import com.turkey.quick.payment.domain.PointWallet;
 import com.turkey.quick.payment.repository.PointWalletRepository;
 import com.turkey.quick.rider.domain.OperatingStatus;
@@ -30,9 +30,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.test.context.ActiveProfiles;
 
 /**
- * CustomerSignupE2ETest(#25)와 같은 이유로 VerificationCodeStore를 인메모리 대체로 교체한다.
- * 시나리오는 CustomerSignupE2ETest와 겹치는 것(형식 오류, 토큰 재사용 등)은 반복하지 않고,
- * 라이더 가입에서만 갈리는 것(라이더 프로필 생성)에 집중한다.
+ * 실제 Redis VerificationCodeStore 에 인증 완료 토큰을 직접 넣어 가입 흐름을 태운다(통합·E2E 는
+ * 인메모리 대체가 아니라 실제 Docker Redis 에 붙는다, #254). 시나리오는 CustomerSignupE2ETest 와
+ * 겹치는 것(형식 오류, 토큰 재사용 등)은 반복하지 않고, 라이더 가입에서만 갈리는 것(라이더 프로필
+ * 생성)에 집중한다.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")
@@ -56,20 +57,10 @@ class RiderSignupE2ETest extends IntegrationTestSupport {
     private MemberTermAgreementRepository memberTermAgreementRepository;
 
     @Autowired
-    private InMemoryVerificationCodeStore verificationCodeStore;
+    private VerificationCodeStore verificationCodeStore;
 
     @Autowired
     private PointWalletRepository pointWalletRepository;
-
-    @TestConfiguration
-    static class FakeInfraConfig {
-
-        @Bean
-        @Primary
-        InMemoryVerificationCodeStore verificationCodeStore() {
-            return new InMemoryVerificationCodeStore();
-        }
-    }
 
     @AfterEach
     void 만든_약관을_정리한다() {
