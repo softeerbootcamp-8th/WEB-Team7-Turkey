@@ -130,6 +130,19 @@ public class TrackingSubscriptionService {
         emitter.onError(throwable -> cleanUp(connection, "ERROR"));
     }
 
+    /**
+     * 서버 쪽에서 연결을 끊는다. heartbeat 가 죽은 클라이언트를 탐지했을 때 쓴다.
+     *
+     * <p>{@code complete()} 만 부르고 {@code onCompletion} 콜백에 정리를 맡기지 않는 이유:
+     * 이미 깨진 응답에 {@code complete()} 를 부르면 예외가 날 수 있고, 그러면 콜백이 돌지 않아
+     * 레지스트리와 연결 집계에 항목이 남는다. 정리를 먼저 하고 종료를 시도한다 — 둘 다 멱등이라
+     * 콜백이 뒤이어 또 돌아도 문제없다.
+     */
+    public void disconnect(TrackingConnection connection, String reason) {
+        cleanUp(connection, reason);
+        connection.complete();
+    }
+
     private void cleanUp(TrackingConnection connection, String reason) {
         registry.remove(connection.orderId(), connection.emitterId());
         releaseSlot(connection);
