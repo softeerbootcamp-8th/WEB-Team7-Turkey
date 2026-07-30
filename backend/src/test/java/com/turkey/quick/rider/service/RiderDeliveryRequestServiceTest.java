@@ -23,6 +23,7 @@ import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
 import com.turkey.quick.order.service.DeliveryService;
 import com.turkey.quick.rider.auth.AuthenticatedRider;
 import com.turkey.quick.rider.domain.OperatingStatus;
+import com.turkey.quick.rider.dto.RiderDeliveryRequestDetailResponse;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestSummaryResponse;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -36,10 +37,11 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.geo.Point;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("라이더 콜(배차 대기 요청) 목록 조회 서비스(#55)")
+@DisplayName("라이더 콜(배차 대기 요청) 목록·상세 조회 서비스(#55/#57)")
 class RiderDeliveryRequestServiceTest {
 
     @InjectMocks
@@ -229,6 +231,75 @@ class RiderDeliveryRequestServiceTest {
 
             assertThat(result).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
                     .containsExactly(olderOrder.getId(), newerOrder.getId());
+        }
+    }
+
+    @Nested
+    @DisplayName("상세 조회(#57)")
+    class GetDeliveryRequestTest {
+
+        @Test
+        @DisplayName("라이더 운행 상태가 AVAILABLE이 아니면 403으로 거부한다")
+        void shouldRejectWhenRiderNotAvailable() {
+            assertThatThrownBy(() -> service.getDeliveryRequest(rider(OperatingStatus.BUSY), 1024L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("AVAILABLE");
+        }
+
+        @Test
+        @DisplayName("존재하지 않는 주문이면 404로 거부한다")
+        void shouldRejectWhenOrderNotFound() {
+            given(deliveryOrderRepository.findById(1024L)).willReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.getDeliveryRequest(rider(OperatingStatus.AVAILABLE), 1024L))
+                    .isInstanceOf(BusinessException.class)
+                    .satisfies(e -> assertThat(((BusinessException) e).getStatus()).isEqualTo(HttpStatus.NOT_FOUND));
+        }
+
+        @Test
+        @DisplayName("이미 배차되어 WAITING이 아닌 주문이면 404로 거부한다")
+        void shouldRejectWhenOrderNotWaiting() {
+            DeliveryOrder assigned = order(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"), LocalDateTime.now());
+            ReflectionTestUtils.setField(assigned, "status", OrderStatus.ASSIGNED);
+            given(deliveryOrderRepository.findById(assigned.getId())).willReturn(Optional.of(assigned));
+
+            assertThatThrownBy(() -> service.getDeliveryRequest(rider(OperatingStatus.AVAILABLE), assigned.getId()))
+                    .isInstanceOf(BusinessException.class)
+                    .satisfies(e -> assertThat(((BusinessException) e).getStatus()).isEqualTo(HttpStatus.NOT_FOUND));
+        }
+
+        @Test
+        @DisplayName("WAITING 주문에 예상 운임 스냅샷이 없으면 데이터 정합성 오류로 취급한다")
+        void shouldRejectWhenEstimateSnapshotMissing() {
+            DeliveryOrder waiting = order(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"), LocalDateTime.now());
+            given(deliveryOrderRepository.findById(waiting.getId())).willReturn(Optional.of(waiting));
+            given(orderFareSnapshotRepository.findByOrder_IdAndFareType(waiting.getId(), FareType.ESTIMATE))
+                    .willReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.getDeliveryRequest(rider(OperatingStatus.AVAILABLE), waiting.getId()))
+                    .isInstanceOf(IllegalStateException.class);
+        }
+
+        @Test
+        @DisplayName("정상 조회 시 상세 주소는 비우고, 소요시간을 거리로부터 계산해 반환한다")
+        void shouldReturnDetailWithoutDetailAddressAndComputedMinutes() {
+            DeliveryOrder waiting = order(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"), LocalDateTime.now());
+            OrderFareSnapshot estimate = estimateSnapshot(waiting, 6400L);
+            given(deliveryOrderRepository.findById(waiting.getId())).willReturn(Optional.of(waiting));
+            given(orderFareSnapshotRepository.findByOrder_IdAndFareType(waiting.getId(), FareType.ESTIMATE))
+                    .willReturn(Optional.of(estimate));
+            given(deliveryService.estimateMinutes(waiting.getStraightDistanceMeters())).willReturn(2);
+
+            RiderDeliveryRequestDetailResponse result =
+                    service.getDeliveryRequest(rider(OperatingStatus.AVAILABLE), waiting.getId());
+
+            assertThat(result.deliveryId()).isEqualTo(waiting.getId());
+            assertThat(result.pickup().detailAddress()).isNull();
+            assertThat(result.destination().detailAddress()).isNull();
+            assertThat(result.pickup().roadAddress()).isEqualTo("픽업지 도로명");
+            assertThat(result.estimatedMinutes()).isEqualTo(2);
+            assertThat(result.estimatedFare().totalFare()).isEqualTo(6400L);
+            assertThat(result.expectedSettlementAmount()).isEqualTo(6400L);
         }
     }
 }

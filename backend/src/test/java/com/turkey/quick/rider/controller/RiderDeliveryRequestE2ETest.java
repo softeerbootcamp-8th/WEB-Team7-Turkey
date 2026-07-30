@@ -41,7 +41,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * #55 「퀵 요청 목록 보기」의 완료 조건(정상 흐름 + 예외 흐름)을 실제 HTTP 로 검증한다.
+ * #55 「퀵 요청 목록 보기」·#57 「퀵 요청 상세사항 보기」의 완료 조건(정상 흐름 + 예외 흐름)을
+ * 실제 HTTP 로 검증한다.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")
@@ -114,18 +115,21 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
         return new HttpEntity<>(headers);
     }
 
-    private void saveWaitingOrderWithFareSnapshot() {
+    private DeliveryOrder saveWaitingOrderWithFareSnapshot() {
         FarePolicy policy = farePolicyRepository.save(
                 FarePolicy.create("v1", 3000L, 100, 130L, 30000, LocalDateTime.now().minusDays(1)));
+        String uniqueSuffix = String.valueOf(System.nanoTime() % 100_000_000L);
         Member customer = memberRepository.save(
-                Member.create("e2e_rider_requests_customer", "hash", "고객", "01044445555", MemberRole.CUSTOMER));
-        DeliveryOrder order = DeliveryOrder.request(customer, "req-e2e-55", ItemType.SMALL_PARCEL, 1000,
+                Member.create("e2e_rider_requests_customer_" + uniqueSuffix, "hash", "고객", "010" + uniqueSuffix,
+                        MemberRole.CUSTOMER));
+        DeliveryOrder order = DeliveryOrder.request(customer, "req-e2e-" + System.nanoTime(), ItemType.SMALL_PARCEL, 1000,
                 Address.of("픽업지 도로명", "상세", "12345", new BigDecimal("37.5010000"), new BigDecimal("127.0010000")),
                 Address.of("도착지 도로명", "상세", "54321", new BigDecimal("37.6000000"), new BigDecimal("127.1000000")),
                 Contact.of("보내는사람", "01011112222"), Contact.of("받는사람", "01033334444"));
         DeliveryOrder saved = deliveryOrderRepository.save(order);
         orderFareSnapshotRepository.save(
                 OrderFareSnapshot.create(saved, policy, FareType.ESTIMATE, "v1", 1000, 3000L, 130L, 0L));
+        return saved;
     }
 
     @Test
@@ -157,6 +161,51 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
         var response = rest.exchange(ENDPOINT, HttpMethod.GET, withCookie(cookie), ApiResponse.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(response.getBody().success()).isFalse();
+    }
+
+    @Test
+    void AVAILABLE_라이더가_상세를_조회하면_200과_상세주소_없는_정보를_반환한다() {
+        saveRider("e2e_rider_requests03", "p@ssw0rd", "01011119999", true);
+        DeliveryOrder order = saveWaitingOrderWithFareSnapshot();
+        String cookie = loginAndGetSessionCookie("e2e_rider_requests03", "p@ssw0rd");
+
+        var response = rest.exchange(ENDPOINT + "/" + order.getId(), HttpMethod.GET, withCookie(cookie), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().success()).isTrue();
+        Map<?, ?> data = (Map<?, ?>) response.getBody().data();
+        assertThat(data.get("deliveryId")).isEqualTo(order.getId().intValue());
+        Map<?, ?> pickup = (Map<?, ?>) data.get("pickup");
+        assertThat(pickup.get("detailAddress")).isNull();
+    }
+
+    @Test
+    void 상세_조회_시_세션_쿠키가_없으면_401을_반환한다() {
+        var response = rest.exchange(ENDPOINT + "/1", HttpMethod.GET, withCookie(null), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void 상세_조회_시_라이더_운행_상태가_AVAILABLE이_아니면_403을_반환한다() {
+        saveRider("e2e_rider_requests04", "p@ssw0rd", "01022224444", false);
+        DeliveryOrder order = saveWaitingOrderWithFareSnapshot();
+        String cookie = loginAndGetSessionCookie("e2e_rider_requests04", "p@ssw0rd");
+
+        var response = rest.exchange(ENDPOINT + "/" + order.getId(), HttpMethod.GET, withCookie(cookie), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    void 존재하지_않는_배송요청_상세를_조회하면_404를_반환한다() {
+        saveRider("e2e_rider_requests05", "p@ssw0rd", "01033335555", true);
+        String cookie = loginAndGetSessionCookie("e2e_rider_requests05", "p@ssw0rd");
+
+        var response = rest.exchange(ENDPOINT + "/999999999", HttpMethod.GET, withCookie(cookie), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(response.getBody().success()).isFalse();
     }
 }

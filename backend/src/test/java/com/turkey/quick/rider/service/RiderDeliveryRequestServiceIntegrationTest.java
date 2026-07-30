@@ -1,7 +1,9 @@
 package com.turkey.quick.rider.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.turkey.quick.common.exception.BusinessException;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
 import com.turkey.quick.member.repository.MemberRepository;
@@ -18,6 +20,7 @@ import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
 import com.turkey.quick.rider.auth.AuthenticatedRider;
 import com.turkey.quick.rider.domain.OperatingStatus;
 import com.turkey.quick.rider.domain.RiderProfile;
+import com.turkey.quick.rider.dto.RiderDeliveryRequestDetailResponse;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestSummaryResponse;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
@@ -31,6 +34,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -181,5 +185,44 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         RiderDeliveryRequestSummaryResponse summary = result.stream()
                 .filter(r -> r.deliveryId().equals(order.getId())).findFirst().orElseThrow();
         assertThat(summary.expectedSettlementAmount()).isEqualTo(3130L);
+    }
+
+    @Test
+    @DisplayName("[#57] WAITING 주문 상세를 조회하면 상세 주소 없이 반환된다")
+    void shouldReturnDetailForWaitingOrder() {
+        DeliveryOrder order = saveWaitingOrder(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"));
+
+        RiderDeliveryRequestDetailResponse result = riderDeliveryRequestService.getDeliveryRequest(
+                authenticatedRider(OperatingStatus.AVAILABLE), order.getId());
+
+        assertThat(result.deliveryId()).isEqualTo(order.getId());
+        assertThat(result.pickup().roadAddress()).isEqualTo("픽업지 도로명");
+        assertThat(result.pickup().detailAddress()).isNull();
+        assertThat(result.destination().detailAddress()).isNull();
+        assertThat(result.estimatedFare().totalFare()).isEqualTo(3130L);
+        assertThat(result.estimatedMinutes()).isPositive();
+    }
+
+    @Test
+    @DisplayName("[#57] 이미 배차된 주문의 상세를 조회하면 404다")
+    void shouldRejectDetailForAssignedOrder() {
+        DeliveryOrder assignedTarget = saveWaitingOrder(new BigDecimal("37.5020000"), new BigDecimal("127.0020000"));
+        RiderProfile assignedRiderProfile = saveRiderProfile("integration_rider03", "01066665555");
+        assignedTarget.assign(assignedRiderProfile);
+        deliveryOrderRepository.save(assignedTarget);
+
+        assertThatThrownBy(() -> riderDeliveryRequestService.getDeliveryRequest(
+                authenticatedRider(OperatingStatus.AVAILABLE), assignedTarget.getId()))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getStatus()).isEqualTo(HttpStatus.NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("[#57] 존재하지 않는 주문 ID를 조회하면 404다")
+    void shouldRejectDetailForNonExistentOrder() {
+        assertThatThrownBy(() -> riderDeliveryRequestService.getDeliveryRequest(
+                authenticatedRider(OperatingStatus.AVAILABLE), 999_999_999L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getStatus()).isEqualTo(HttpStatus.NOT_FOUND));
     }
 }
