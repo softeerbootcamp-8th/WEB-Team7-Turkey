@@ -1,6 +1,8 @@
 package com.turkey.quick.order.domain;
 
+import java.util.Arrays;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 배송 주문의 상태 흐름.
@@ -81,4 +83,20 @@ public enum OrderStatus {
             case WAITING, COMPLETED, CANCELED -> false;
         };
     }
+
+    /**
+     * {@link #isTrackable()} 인 상태들. 쿼리의 {@code in} 절에 넣기 위한 것이다.
+     *
+     * <p><b>목록을 다시 적지 않고 위 switch 에서 파생시킨다.</b> 두 곳에 적으면 상태가 늘었을 때
+     * 한쪽만 고쳐지고, 그 결과는 "구독은 되는데 위치가 발행되지 않는" 배송이다 — 증상이
+     * "지도가 안 움직인다"라서 원인을 찾기 어렵다.
+     */
+    public static Set<OrderStatus> trackableStatuses() {
+        return TRACKABLE;
+    }
+
+    /** enum 상수가 만들어진 뒤에 초기화되므로 {@code values()} 와 {@code isTrackable()} 을 쓸 수 있다. */
+    private static final Set<OrderStatus> TRACKABLE = Arrays.stream(values())
+            .filter(OrderStatus::isTrackable)
+            .collect(Collectors.toUnmodifiableSet());
 }

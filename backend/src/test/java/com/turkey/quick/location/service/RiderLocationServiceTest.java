@@ -8,6 +8,7 @@ import com.turkey.quick.location.dto.LocationUpdateOutcome;
 import com.turkey.quick.location.dto.RiderLocationSnapshot;
 import com.turkey.quick.location.dto.RiderLocationUpdateRequest;
 import com.turkey.quick.location.dto.RiderLocationUpdateResponse;
+import com.turkey.quick.location.sse.RecordingTrackingEventPublisher;
 import com.turkey.quick.rider.domain.OperatingStatus;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -34,7 +35,8 @@ class RiderLocationServiceTest {
     private static final BigDecimal LONGITUDE = new BigDecimal("127.0276");
 
     private final InMemoryRiderLocationStore store = new InMemoryRiderLocationStore();
-    private final RiderLocationService service = new RiderLocationService(store);
+    private final RecordingTrackingEventPublisher publisher = new RecordingTrackingEventPublisher();
+    private final RiderLocationService service = new RiderLocationService(store, publisher);
 
     /** 한 테스트 안에서 여러 요청의 측정 시각 순서를 정확히 통제하기 위해 기준 시각을 고정한다. */
     private final Instant baseNow = Instant.now();
@@ -92,13 +94,12 @@ class RiderLocationServiceTest {
         }
 
         @Test
-        @DisplayName("BUSY 여도 이 이슈에서는 저장까지만 한다")
-        void storesWithoutPublishingWhenBusy() {
-            // BUSY 라이더의 좌표를 배정 주문 구독자에게 발행하는 것은 #78 이다.
+        @DisplayName("BUSY 면 저장하고 구독자에게 발행한다")
+        void storesAndPublishesWhenBusy() {
             RiderLocationUpdateResponse response = updateAsBusy(request("37.4979", 0));
 
             assertThat(storedLatitude()).isEqualByComparingTo("37.4979");
-            assertThat(response.published()).isFalse();
+            assertThat(response.published()).isTrue();
         }
     }
 
@@ -291,7 +292,7 @@ class RiderLocationServiceTest {
             RiderLocationSnapshot winner = new RiderLocationSnapshot(
                     new BigDecimal("37.5000"), LONGITUDE, baseNow.atZone(ZoneOffset.UTC).toLocalDateTime(), null);
             var racingStore = new StoreLosingRaceAfterFind(winner);
-            var racingService = new RiderLocationService(racingStore);
+            var racingService = new RiderLocationService(racingStore, publisher);
 
             RiderLocationUpdateResponse response =
                     racingService.update(RIDER_ID, OperatingStatus.BUSY, request("37.4979", 10));
@@ -335,13 +336,82 @@ class RiderLocationServiceTest {
     class Response {
 
         @Test
-        @DisplayName("수용한 요청은 갱신됨·미전파·ACCEPTED 로 응답한다")
+        @DisplayName("수용한 요청은 갱신됨·전파됨·ACCEPTED 로 응답한다")
         void describesAcceptedUpdate() {
+            RiderLocationUpdateResponse response = updateAsBusy(request("37.4979", 0));
+
+            assertThat(response.applied()).isTrue();
+            assertThat(response.published()).isTrue();
+            assertThat(response.reason()).isEqualTo(LocationUpdateOutcome.ACCEPTED);
+        }
+
+        @Test
+        @DisplayName("진행 중 배송이 없으면 갱신은 되고 전파는 false 다")
+        void reportsUnpublishedWithoutInProgressDelivery() {
+            // AVAILABLE 라이더의 30초 주기 위치가 대부분 이 경우다. published 를 배달 보장이나
+            // "고객이 보고 있음"으로 읽으면 이 정상 상태를 실패로 오해한다.
+            publisher.withoutInProgressDelivery();
+
             RiderLocationUpdateResponse response = updateAsBusy(request("37.4979", 0));
 
             assertThat(response.applied()).isTrue();
             assertThat(response.published()).isFalse();
             assertThat(response.reason()).isEqualTo(LocationUpdateOutcome.ACCEPTED);
+        }
+    }
+
+    @Nested
+    @DisplayName("구독자 전파")
+    class Publishing {
+
+        @Test
+        @DisplayName("수용한 좌표만 발행한다")
+        void publishesAcceptedLocation() {
+            updateAsBusy(request("37.4979", 0));
+
+            assertThat(publisher.published())
+                    .extracting(RiderLocationSnapshot::latitude)
+                    .containsExactly(new BigDecimal("37.4979000"));
+        }
+
+        @Test
+        @DisplayName("폐기한 좌표는 발행하지 않는다")
+        void doesNotPublishDiscardedLocation() {
+            // 값 자체를 믿을 수 없는 경우다. 발행하면 고객 지도가 잘못된 좌표로 튄다.
+            updateAsBusy(request("37.4979", 120));                 // STALE
+            updateAsBusy(request("37.4979", 0, "150"));             // LOW_ACCURACY
+
+            assertThat(publisher.published()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("중복 판정은 저장만 하고 발행하지 않는다")
+        void doesNotPublishDuplicate() {
+            // 정지한 라이더가 주기마다 만들어 낸다. 같은 좌표를 고객 지도에 다시 밀 이유가 없다.
+            updateAsBusy(request("37.4979", 30));
+            publisher.published();
+
+            var response = updateAsBusy(new RiderLocationUpdateRequest(
+                    new BigDecimal("37.49791"), LONGITUDE, baseNow.minusSeconds(20), null));
+
+            assertThat(response.reason()).isEqualTo(LocationUpdateOutcome.DUPLICATE);
+            assertThat(response.published()).isFalse();
+            assertThat(publisher.published()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("발행이 예외를 던져도 위치 갱신은 성공한다")
+        void survivesPublishFailure() {
+            // 이 경로가 깨지면 Redis·MySQL 장애가 고객 추적을 넘어 배차 후보 검색(#83)이 쓰는
+            // 최신 위치 갱신까지 같이 죽인다. 그래서 발행 실패는 삼키고 200 을 돌려준다.
+            publisher.throwing(new IllegalStateException("Redis 장애"));
+
+            RiderLocationUpdateResponse response = updateAsBusy(request("37.4979", 0));
+
+            assertThat(response.applied()).isTrue();
+            assertThat(response.published()).isFalse();
+            assertThat(response.reason()).isEqualTo(LocationUpdateOutcome.ACCEPTED);
+            assertThat(storedLatitude()).isEqualByComparingTo("37.4979");
         }
     }
 }

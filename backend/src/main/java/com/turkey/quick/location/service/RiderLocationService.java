@@ -5,6 +5,7 @@ import com.turkey.quick.location.dto.LocationUpdateOutcome;
 import com.turkey.quick.location.dto.RiderLocationSnapshot;
 import com.turkey.quick.location.dto.RiderLocationUpdateRequest;
 import com.turkey.quick.location.dto.RiderLocationUpdateResponse;
+import com.turkey.quick.location.sse.TrackingEventPublisher;
 import com.turkey.quick.rider.domain.OperatingStatus;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -25,6 +26,12 @@ import org.springframework.stereotype.Service;
  * 통과할 수 있고, 그 결과는 "TTL 10분짜리 위치가 한 번 더 저장됨"이라 감내 가능하다.
  * 따라서 트랜잭션 경계도 없다 — {@code @Transactional} 을 붙이면 위치 전송마다 아무 일도 하지
  * 않는 DB 트랜잭션이 열린다.
+ *
+ * <p><b>단 팬아웃 경로는 DB 를 읽는다</b>(#78). {@code TrackingEventPublisher} 구현이 "이 라이더의
+ * 진행 중 배송"을 찾아 그 주문 채널로 발행하기 때문이다. 이 서비스 자체에는 여전히 트랜잭션이
+ * 없고, 그래서 <b>"커밋 후 발행"이 구조적으로 성립한다</b> — 리포지토리 호출이 각자 트랜잭션을
+ * 열고 끝낸 뒤 발행이 그 밖에서 일어난다. <b>여기에 {@code @Transactional} 을 붙이게 되는 날에는
+ * 발행 시점을 다시 봐야 한다.</b>
  *
  * <p>거리·속도 기반 중복·이상 이동 필터는 여기 없다(#82). 반면 <b>측정 시각 비교는 여기</b>
  * 있다 — #81 흐름 ③ 이고, 트래픽 최적화가 아니라 "최신 위치"라는 값의 정합성 문제다.
@@ -48,6 +55,7 @@ public class RiderLocationService {
             EnumSet.of(OperatingStatus.AVAILABLE, OperatingStatus.BUSY);
 
     private final RiderLocationStore riderLocationStore;
+    private final TrackingEventPublisher trackingEventPublisher;
 
     /**
      * @param riderId         세션에서 얻은 라이더 식별자(= member_id)
@@ -78,8 +86,33 @@ public class RiderLocationService {
             return respond(riderId, LocationUpdateOutcome.NON_MONOTONIC);
         }
 
-        LocationUpdateOutcome outcome = LocationFilter.decide(previous, next);
-        return respond(riderId, applyToStore(riderId, next, outcome));
+        LocationUpdateOutcome outcome = applyToStore(riderId, next, LocationFilter.decide(previous, next));
+        return respond(riderId, outcome, publish(riderId, next, outcome));
+    }
+
+    /**
+     * 저장까지 성공한 위치를 구독자에게 팬아웃한다(#78 흐름 ④⑤).
+     *
+     * <p>{@code ACCEPTED} 만 발행한다({@link LocationUpdateOutcome#shouldPublish()}) — 정지한
+     * 라이더의 {@code DUPLICATE} 는 저장(TTL 갱신)만 하고 전파하지 않는다. 고객 지도에 같은 좌표를
+     * 다시 밀 이유가 없다.
+     *
+     * <p><b>발행 실패가 위치 갱신을 실패시키면 안 된다.</b> 구현이 예외를 던지지 않기로 계약돼
+     * 있지만 여기서 한 번 더 잡는다 — 이 경로가 깨지면 고객 추적뿐 아니라 배차 후보 검색(#83)이
+     * 쓰는 최신 위치 갱신까지 같이 죽는다. 그 대가는 이벤트 한 건 유실이고, 다음 이벤트
+     * (BUSY 5초 주기)와 재연결 스냅샷이 복구한다.
+     */
+    private boolean publish(Long riderId, RiderLocationSnapshot next, LocationUpdateOutcome outcome) {
+        if (!outcome.shouldPublish()) {
+            return false;
+        }
+        try {
+            return trackingEventPublisher.publish(riderId, next);
+        } catch (RuntimeException e) {
+            log.warn("event=LOCATION_PUBLISH_FAILED riderId={} reason={}",
+                    riderId, e.getClass().getSimpleName(), e);
+            return false;
+        }
     }
 
     /**
@@ -135,12 +168,15 @@ public class RiderLocationService {
      * 만들어 내므로 info 로 두면 정상 동작이 로그를 채워 진짜 문제가 묻힌다. 정상 갱신은 남기지 않는다.
      */
     private RiderLocationUpdateResponse respond(Long riderId, LocationUpdateOutcome outcome) {
+        return respond(riderId, outcome, false);
+    }
+
+    private RiderLocationUpdateResponse respond(Long riderId, LocationUpdateOutcome outcome, boolean published) {
         if (outcome == LocationUpdateOutcome.DUPLICATE) {
             log.debug("event=LOCATION_NOT_PUBLISHED riderId={} reason={}", riderId, outcome);
         } else if (!outcome.shouldStore()) {
             log.info("event=LOCATION_DISCARDED riderId={} reason={}", riderId, outcome);
         }
-        // published 는 SSE 발행(#78)이 붙기 전까지 항상 false 다.
-        return RiderLocationUpdateResponse.of(outcome, false);
+        return RiderLocationUpdateResponse.of(outcome, published);
     }
 }
