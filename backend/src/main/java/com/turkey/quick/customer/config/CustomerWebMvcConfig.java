@@ -29,6 +29,6 @@ public class CustomerWebMvcConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new CustomerSessionInterceptor(sessionStore, memberRepository, cookieSecure))
                 .addPathPatterns("/api/customer/session")
-                .addPathPatterns("/api/customer/points");
+                .addPathPatterns("/api/customer/points/**");
     }
 }
