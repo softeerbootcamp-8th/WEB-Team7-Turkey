@@ -11,6 +11,8 @@ import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.member.repository.MemberTermAgreementRepository;
 import com.turkey.quick.member.repository.TermRepository;
 import com.turkey.quick.member.service.VerificationCodeStore;
+import com.turkey.quick.payment.domain.PointWallet;
+import com.turkey.quick.payment.repository.PointWalletRepository;
 import com.turkey.quick.rider.domain.RiderProfile;
 import com.turkey.quick.rider.dto.RiderSignupRequest;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
@@ -39,6 +41,7 @@ public class RiderSignupService {
     private final RiderProfileRepository riderProfileRepository;
     private final TermRepository termRepository;
     private final MemberTermAgreementRepository memberTermAgreementRepository;
+    private final PointWalletRepository pointWalletRepository;
     private final VerificationCodeStore verificationCodeStore;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
@@ -77,6 +80,7 @@ public class RiderSignupService {
         }
 
         riderProfileRepository.save(RiderProfile.create(member));
+        pointWalletRepository.save(PointWallet.create(member));
 
         List<MemberTermAgreement> agreements = agreedTerms.stream()
                 .map(term -> MemberTermAgreement.create(member, term, true))

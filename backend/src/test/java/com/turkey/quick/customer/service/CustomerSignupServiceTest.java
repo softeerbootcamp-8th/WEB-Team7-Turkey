@@ -19,6 +19,8 @@ import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.member.repository.MemberTermAgreementRepository;
 import com.turkey.quick.member.repository.TermRepository;
 import com.turkey.quick.member.service.InMemoryVerificationCodeStore;
+import com.turkey.quick.payment.domain.PointWallet;
+import com.turkey.quick.payment.repository.PointWalletRepository;
 import java.lang.reflect.Field;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -40,6 +42,7 @@ class CustomerSignupServiceTest {
     private MemberRepository memberRepository;
     private TermRepository termRepository;
     private MemberTermAgreementRepository memberTermAgreementRepository;
+    private PointWalletRepository pointWalletRepository;
     private InMemoryVerificationCodeStore verificationCodeStore;
     private CustomerSignupService customerSignupService;
 
@@ -48,9 +51,11 @@ class CustomerSignupServiceTest {
         memberRepository = mock(MemberRepository.class);
         termRepository = mock(TermRepository.class);
         memberTermAgreementRepository = mock(MemberTermAgreementRepository.class);
+        pointWalletRepository = mock(PointWalletRepository.class);
         verificationCodeStore = new InMemoryVerificationCodeStore();
         customerSignupService = new CustomerSignupService(
-                memberRepository, termRepository, memberTermAgreementRepository, verificationCodeStore);
+                memberRepository, termRepository, memberTermAgreementRepository,
+                pointWalletRepository, verificationCodeStore);
 
         when(memberRepository.existsByLoginId(any())).thenReturn(false);
         when(memberRepository.existsByPhoneNumber(any())).thenReturn(false);
@@ -99,6 +104,40 @@ class CustomerSignupServiceTest {
         Member saved = captor.getValue();
         assertThat(saved.getPasswordHash()).isNotEqualTo("p@ssw0rd");
         assertThat(new BCryptPasswordEncoder().matches("p@ssw0rd", saved.getPasswordHash())).isTrue();
+    }
+
+    @Test
+    void 정상_가입하면_포인트_지갑을_생성한다() {
+        issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
+        when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of());
+
+        customerSignupService.signup(request(List.of()));
+
+        ArgumentCaptor<PointWallet> captor = ArgumentCaptor.forClass(PointWallet.class);
+        verify(pointWalletRepository).save(captor.capture());
+        assertThat(captor.getValue().getBalance()).isZero();
+    }
+
+    @Test
+    void 아이디_또는_휴대전화_중복으로_가입에_실패하면_포인트_지갑을_만들지_않는다() {
+        when(memberRepository.existsByLoginId(LOGIN_ID)).thenReturn(true);
+
+        assertThatThrownBy(() -> customerSignupService.signup(request(List.of())))
+                .isInstanceOf(BusinessException.class);
+
+        verify(pointWalletRepository, never()).save(any());
+    }
+
+    @Test
+    void DB_유니크_제약_위반으로_가입에_실패하면_포인트_지갑을_만들지_않는다() {
+        issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
+        when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of());
+        when(memberRepository.save(any())).thenThrow(new DataIntegrityViolationException("uk_member_login_id"));
+
+        assertThatThrownBy(() -> customerSignupService.signup(request(List.of())))
+                .isInstanceOf(BusinessException.class);
+
+        verify(pointWalletRepository, never()).save(any());
     }
 
     @Test
