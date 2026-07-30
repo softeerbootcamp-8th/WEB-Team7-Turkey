@@ -217,3 +217,6 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   `getDeliveryRequests`와 같은 방식(`@RequestAttribute`)으로 추가 필요
 - 라이더 콜 목록(`GET /api/rider/requests`, #55)에 `radiusMeters` 상한이 없고 페이지네이션도
   없음 — WAITING 주문이 크게 늘어나는 시점(다도시 동시 운영 등)에 성능 문제가 되면 계약을 다시 열어야 함
+- 라이더 콜 상세(`GET /api/rider/requests/{deliveryId}`, #57)가 물품 무게·수량을 제공하지 못함 —
+  `delivery_order`에 관련 컬럼이 없음(`itemType` 열거형만 존재). 화면에서 실제로 필요해지면 스키마
+  변경(Flyway 마이그레이션)과 주문 생성(REQ-ORD-002) 쪽 값 저장까지 함께 논의해야 함
