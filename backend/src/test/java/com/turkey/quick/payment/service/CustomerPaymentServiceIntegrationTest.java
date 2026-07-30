@@ -166,7 +166,6 @@ class CustomerPaymentServiceIntegrationTest extends IntegrationTestSupport {
                 try {
                     // 조회 시점을 최대한 겹치게 해서 "둘 다 없다고 판단하는" 창을 만든다.
                     startTogether.await();
-                    Thread.sleep(RandomUtils.nextInt(10, 150));
                     customerPaymentService.chargePointRequest(request(), customerId);
                     successCount.incrementAndGet();
                 } catch (InterruptedException e) {
@@ -195,11 +194,6 @@ class CustomerPaymentServiceIntegrationTest extends IntegrationTestSupport {
         assertThat(successCount.get())
                 .as("적어도 한 요청은 성공해야 한다")
                 .isGreaterThanOrEqualTo(1);
-
-        System.out.println("=== 최종 결과 ===");
-        System.out.println("성공 스레드 수: " + successCount.get());
-        System.out.println("실패 스레드 수: " + failureCount.get());
-
     }
 
     @Test

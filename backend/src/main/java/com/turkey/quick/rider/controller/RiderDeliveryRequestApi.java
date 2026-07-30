@@ -1,6 +1,8 @@
 package com.turkey.quick.rider.controller;
 
 import com.turkey.quick.common.response.ApiResponse;
+import com.turkey.quick.rider.auth.AuthenticatedRider;
+import com.turkey.quick.rider.auth.RiderSessionInterceptor;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestAcceptResponse;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestDetailResponse;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestSummaryResponse;
@@ -12,6 +14,7 @@ import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
@@ -35,9 +38,14 @@ public interface RiderDeliveryRequestApi {
 
     @Operation(summary = "배차 대기 콜 목록",
             description = "AVAILABLE 인 라이더에게 수락 가능한 WAITING 요청을 반환한다. "
-                    + "라이더 최신 위치(Redis GEO) 기준 반경으로 거르며, 위치가 없으면 거리 필드는 null 이다.")
+                    + "라이더 최신 위치(Redis GEO) 기준 반경으로 거르며, 위치가 없으면 거리 필드는 null 이다. "
+                    + "(#55) 라이더 식별을 위한 인증 파라미터가 이 계약에 빠져 있었어 추가함 — "
+                    + "다른 세 메서드(상세/수락/넘기기)는 각자 이슈에서 채운다.")
     @GetMapping
     ApiResponse<List<RiderDeliveryRequestSummaryResponse>> getDeliveryRequests(
+            @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
+            AuthenticatedRider rider,
+
             @Parameter(description = "검색 반경(m)", example = "3000")
             @RequestParam(defaultValue = "3000") int radiusMeters,
 
@@ -47,9 +55,20 @@ public interface RiderDeliveryRequestApi {
             @RequestParam(defaultValue = "DISTANCE") String sort);
 
     @Operation(summary = "배차 대기 콜 상세",
-            description = "수락 판단에 필요한 거리·운임·좌표를 조회한다. 이미 다른 라이더가 가져갔으면 404 다.")
+            description = "수락 판단에 필요한 거리·운임·소요시간·좌표를 조회한다. "
+                    + "존재하지 않거나 이미 다른 라이더가 가져갔거나 취소된 주문이면 404 다. "
+                    + "(#57) 라이더 식별을 위한 인증 파라미터를 이 메서드에도 추가함(#55와 같은 이유).")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200", description = "상세 조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404", description = "존재하지 않거나 더 이상 WAITING 이 아닌 주문")
+    })
     @GetMapping("/{deliveryId}")
     ApiResponse<RiderDeliveryRequestDetailResponse> getDeliveryRequest(
+            @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
+            AuthenticatedRider rider,
+
             @Parameter(description = "배송요청 식별자", example = "1024")
             @PathVariable Long deliveryId);
 

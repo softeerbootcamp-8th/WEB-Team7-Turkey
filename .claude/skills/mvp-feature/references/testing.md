@@ -133,10 +133,32 @@ class DeliveryOrderE2ETest extends IntegrationTestSupport { ... }
 - **주의: 개발용과 같은 `turkey` 스키마를 공유한다**(사람 확인, 2026-07-29). 즉 `./gradlew test`를
   돌리면 **로컬에서 손으로 넣어 둔 개발 데이터가 지워진다.** 남겨야 할 로컬 데이터가 있으면 먼저 백업한다.
 
-Redis는 다르다. 세션·인증번호 저장소는 컨테이너의 Redis 대신 인메모리 테스트 대체를 `@TestConfiguration`
-+ `@Primary`로 끼운다(`InMemorySessionStore`, `InMemoryVerificationCodeStore`). 기존 E2E 테스트가
-그 형태이니 그대로 따른다. 그래서 **실제 Redis TTL 만료 동작은 아직 검증되지 않는다** — 그 한계는
-`CLAUDE.md`의 「확인이 필요한 항목」에 이미 올라가 있다.
+### Redis도 컨테이너에 붙는다 (2026-07-29 변경)
+
+**통합·E2E는 실제 Redis를 쓴다.** 예전에는 인메모리 대체(`InMemorySessionStore` 등)를 `@TestConfiguration`
++ `@Primary`로 끼웠는데, 그러면 대체 구현의 자료구조만 확인하는 셈이어서 TTL 만료·자료구조 동작·저장
+형태를 하나도 보장하지 못했다. MySQL을 H2에서 옮긴 것과 같은 이유다.
+
+- **단위 테스트는 여전히 인메모리 대체를 쓴다.** `new InMemorySessionStore()`처럼 직접 만들어 넣는다.
+  단위 테스트가 컨테이너를 요구하면 위 층 구분표(단위: 스프링 없음, DB 없음)가 무너진다.
+- **E2E는 `@TestConfiguration`으로 Redis 저장소를 덮지 않는다.** `SessionStore`·`VerificationCodeStore`·
+  `RiderLocationStore`를 그냥 주입받아 쓰고, 저장 형태를 확인해야 하면 `StringRedisTemplate`으로
+  실제 키를 읽는다(그게 실제 Redis로 바꿔서 얻는 이득이다).
+- 외부 벤더 대체(`FakeSmsSender`)는 그대로 `@Primary`로 끼운다. 이건 Redis와 무관하다.
+- **테스트는 개발용과 다른 로직 DB(`database: 1`)를 쓴다.** MySQL은 개발 스키마를 공유해 테스트가
+  개발 데이터를 지우지만, Redis 세션이 지워지면 브라우저에서 매번 다시 로그인해야 해서 비용이 크다.
+  같은 엔진이므로 검증 충실도는 동일하다.
+- 정리는 `IntegrationTestSupport`가 `RedisCleaner`로 `FLUSHDB`까지 수행한다. 실제 Redis는 값이
+  프로세스보다 오래 살아 **앞 테스트의 세션·인증번호·위치가 다음 테스트로 샌다.** 특히
+  `DatabaseCleaner`의 TRUNCATE가 AUTO_INCREMENT를 1로 리셋해 모든 테스트의 첫 회원이 같은
+  `member_id`를 받으므로, member id로 키를 만드는 저장소는 반드시 오염된다(#82에서 실제로 물렸다).
+
+> ⚠️ **개발 PC에 Redis를 직접 설치하지 않는다.** 호스트 Redis는 `127.0.0.1:6379`에, 컨테이너는
+> `*:6379`에 바인딩하는데 **더 구체적인 호스트 쪽이 이긴다.** 그러면 `localhost`로 붙는 애플리케이션과
+> 테스트가 컨테이너가 아니라 호스트 인스턴스에 **조용히** 연결된다 — 2026-07-29에 실제로 그 상태로
+> 테스트가 돌고 있었다(호스트 8.8.0 vs 컨테이너 7.4). 설정을 다시 읽는 것으로는 알 수 없어서,
+> `RedisCleaner`가 연결된 인스턴스의 `redis_version`을 확인해 이 상황을 실패로 만든다.
+> `lsof -nP -iTCP:6379 -sTCP:LISTEN`으로 누가 잡고 있는지 볼 수 있다.
 
 ### 무엇을 쓰나
 
@@ -203,7 +225,6 @@ Redis는 다르다. 세션·인증번호 저장소는 컨테이너의 Redis 대�
 실행부터 unique 제약으로 깨진다. 저장소의 기존 E2E가 전부 이 형태다(`CustomerSessionE2ETest` 참고).
 
 ```java
-/** 로컬 Redis 없이 돌리기 위해 SessionStore를 인메모리 테스트 대체로 교체한다. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
                 properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")
@@ -215,15 +236,8 @@ class DeliveryOrderE2ETest extends IntegrationTestSupport {
     @Autowired
     private MemberRepository memberRepository;
 
-    @TestConfiguration
-    static class FakeInfraConfig {
-
-        @Bean
-        @Primary
-        InMemorySessionStore sessionStore() {
-            return new InMemorySessionStore();
-        }
-    }
+    // Redis 저장소는 덮지 않는다 — 실제 컨테이너 Redis 를 쓴다(위 「Redis도 컨테이너에 붙는다」).
+    // 외부 벤더 대체(SmsSender)가 필요하면 그것만 @TestConfiguration + @Primary 로 끼운다.
 
     @Test
     @DisplayName("고객이 배송요청을 생성하고 조회하면 WAITING 상태로 보인다")
