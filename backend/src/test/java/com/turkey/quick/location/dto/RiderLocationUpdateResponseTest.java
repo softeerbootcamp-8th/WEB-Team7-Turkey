@@ -10,9 +10,10 @@ import org.junit.jupiter.api.Test;
 class RiderLocationUpdateResponseTest {
 
     @Test
-    @DisplayName("수용한 위치는 갱신됐다고 응답한다")
-    void reportsAppliedOnAccept() {
-        RiderLocationUpdateResponse response = RiderLocationUpdateResponse.accept(false);
+    @DisplayName("정상 갱신은 저장됐다고 응답한다")
+    void reportsAppliedOnAccepted() {
+        RiderLocationUpdateResponse response =
+                RiderLocationUpdateResponse.of(LocationUpdateOutcome.ACCEPTED, false);
 
         assertThat(response.applied()).isTrue();
         assertThat(response.published()).isFalse();
@@ -22,26 +23,43 @@ class RiderLocationUpdateResponseTest {
     @Test
     @DisplayName("전파까지 했으면 published 가 참이다")
     void reportsPublishedWhenPropagated() {
-        // #82 의 "저장은 하되 전파하지 않음"을 표현하려고 두 값을 나눠 뒀다.
-        assertThat(RiderLocationUpdateResponse.accept(true).published()).isTrue();
+        assertThat(RiderLocationUpdateResponse.of(LocationUpdateOutcome.ACCEPTED, true).published())
+                .isTrue();
     }
 
     @Test
-    @DisplayName("폐기한 위치는 전파되지 않는다")
-    void neverPublishesDiscardedLocation() {
+    @DisplayName("중복은 저장됐지만 전파되지 않았다고 응답한다")
+    void reportsStoredButNotPublishedOnDuplicate() {
+        // #82 의 핵심 상태다. applied 와 published 를 나눠 둔 이유가 이것이다.
         RiderLocationUpdateResponse response =
-                RiderLocationUpdateResponse.discard(LocationUpdateOutcome.STALE);
+                RiderLocationUpdateResponse.of(LocationUpdateOutcome.DUPLICATE, false);
 
-        assertThat(response.applied()).isFalse();
+        assertThat(response.applied()).isTrue();
         assertThat(response.published()).isFalse();
-        assertThat(response.reason()).isEqualTo(LocationUpdateOutcome.STALE);
+        assertThat(response.reason()).isEqualTo(LocationUpdateOutcome.DUPLICATE);
     }
 
     @Test
-    @DisplayName("ACCEPTED 를 폐기 사유로 쓸 수 없다")
-    void rejectsAcceptedAsDiscardReason() {
-        // applied=false 인데 reason=ACCEPTED 인 응답은 읽는 쪽을 속인다.
-        assertThatThrownBy(() -> RiderLocationUpdateResponse.discard(LocationUpdateOutcome.ACCEPTED))
+    @DisplayName("폐기한 판정은 저장되지 않았다고 응답한다")
+    void reportsNotAppliedOnDiscardedOutcomes() {
+        for (var outcome : new LocationUpdateOutcome[]{
+                LocationUpdateOutcome.STALE,
+                LocationUpdateOutcome.LOW_ACCURACY,
+                LocationUpdateOutcome.NON_MONOTONIC,
+                LocationUpdateOutcome.IMPLAUSIBLE_SPEED}) {
+            RiderLocationUpdateResponse response = RiderLocationUpdateResponse.of(outcome, false);
+
+            assertThat(response.applied()).as("%s", outcome).isFalse();
+            assertThat(response.published()).as("%s", outcome).isFalse();
+        }
+    }
+
+    @Test
+    @DisplayName("전송 대상이 아닌 판정을 전송했다고 응답할 수 없다")
+    void rejectsPublishedFlagOnNonPublishableOutcome() {
+        // applied·published 를 호출자가 직접 정하게 두면 reason 과 어긋난 조합이 만들어진다.
+        assertThatThrownBy(() ->
+                RiderLocationUpdateResponse.of(LocationUpdateOutcome.DUPLICATE, true))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 }

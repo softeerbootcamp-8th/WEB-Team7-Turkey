@@ -1,12 +1,15 @@
 ---
-title: 로컬 개발 환경 (DB)
+title: 로컬 개발 환경 (DB · Redis)
 status: draft
 ---
 
-# 로컬 개발 환경 (DB)
+# 로컬 개발 환경 (DB · Redis)
 
 로컬 개발 DB는 **Docker 컨테이너의 MySQL 8.4** 를 사용한다. 배포(EC2)와 같은 엔진·버전·문자셋·타임존으로 맞춰,
 스키마와 타입 문제를 배포가 아니라 로컬에서 잡는 것이 목적이다.
+
+**Redis 도 같은 컨테이너 구성에 포함된다**(`redis:7.4`). 통합·E2E 테스트도 이 컨테이너에 붙는다
+(2026-07-29 변경 — 그 전에는 인메모리 대체를 썼다). 아래 「Redis」 절 참고.
 
 ## 왜 H2 를 걷어냈나
 
@@ -57,6 +60,46 @@ JPA 는 `ddl-auto: validate` 로 스키마를 검증만 한다(스키마 생성�
 
 JDBC URL 에는 `?tinyInt1isBit=false` 가 붙어 있다. 이걸 빼면 위에서 설명한 `BIT` / `TINYINT`
 불일치로 기동이 실패한다. 배포 환경의 `DB_URL` 에도 같은 파라미터가 적용돼 있다.
+
+## Redis
+
+`docker compose up -d` 가 MySQL 과 함께 `redis:7.4` 컨테이너(`turkey-redis-local`)도 띄운다.
+
+| 항목 | 값 |
+|---|---|
+| Host / Port | `localhost:6379` |
+| 개발용 로직 DB | `0` (기본값) |
+| **테스트용 로직 DB** | `1` (`application-integration.yml`) |
+
+용도는 4가지로 한정된다(`CLAUDE.md` 「확정된 결정」): 세션 저장 / 라이더 최신 위치 / GEO 위치 검색 /
+휴대전화 인증번호. 배포는 ElastiCache 를 쓴다.
+
+### 개발 PC 에 Redis 를 직접 설치하지 않는다
+
+**이게 이 절에서 가장 중요하다.** Homebrew 등으로 설치한 Redis 는 `127.0.0.1:6379` 에 바인딩하고
+컨테이너는 `*:6379` 에 바인딩하는데, **더 구체적인 호스트 쪽이 이긴다.** 그러면 `localhost:6379` 로
+붙는 애플리케이션과 테스트가 컨테이너가 아니라 호스트 인스턴스에 **조용히** 연결된다.
+
+2026-07-29 에 실제로 그 상태로 테스트가 돌고 있었다 — 호스트 8.8.0 vs 컨테이너 7.4.10. H2 로 통과하고
+MySQL 에서 깨졌던 것과 같은 종류의 문제다. 통합·E2E 의 `RedisCleaner` 가 연결된 인스턴스의
+`redis_version` 을 확인해 이 상황을 테스트 실패로 만든다.
+
+이미 설치돼 있다면 지운다:
+
+```bash
+lsof -nP -iTCP:6379 -sTCP:LISTEN     # 누가 잡고 있는지 확인
+brew services stop redis && brew uninstall redis
+docker compose up -d redis
+docker exec turkey-redis-local redis-cli INFO server | grep redis_version   # 7.4.x 여야 한다
+```
+
+### 테스트가 개발 데이터에 미치는 영향
+
+- **MySQL**: 개발용과 같은 `turkey` 스키마를 공유하므로 `./gradlew test` 가 **개발 데이터를 지운다**
+  (`DatabaseCleaner` 가 매 테스트 전 TRUNCATE).
+- **Redis**: 테스트는 로직 DB `1` 을 쓰고 `FLUSHDB` 하므로 **개발용 DB `0` 은 지워지지 않는다.**
+  세션이 날아가면 브라우저에서 매번 다시 로그인해야 해서 MySQL 과 다르게 분리했다.
+  `RedisCleaner` 는 로직 DB 가 `0` 이면 `FLUSHDB` 를 거부한다.
 
 ## DB 초기화 (스키마를 처음부터 다시 만들기)
 

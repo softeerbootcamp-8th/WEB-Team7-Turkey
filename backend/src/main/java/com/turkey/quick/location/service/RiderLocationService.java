@@ -65,38 +65,64 @@ public class RiderLocationService {
             throw new BusinessException(HttpStatus.CONFLICT, NOT_OPERATING_MESSAGE);
         }
 
-        LocationUpdateOutcome outcome = LocationAcceptancePolicy.evaluate(request, Instant.now());
-        if (!outcome.isAccepted()) {
-            return discard(riderId, outcome);
+        LocationUpdateOutcome policyOutcome = LocationAcceptancePolicy.evaluate(request, Instant.now());
+        if (!policyOutcome.shouldStore()) {
+            return respond(riderId, policyOutcome);
         }
 
-        RiderLocationSnapshot snapshot = request.toSnapshot();
-        if (isOutOfOrder(riderId, snapshot.measuredAt())) {
-            return discard(riderId, LocationUpdateOutcome.NON_MONOTONIC);
+        RiderLocationSnapshot next = request.toSnapshot();
+        // 이전 위치는 한 번만 읽어 단조성 검사와 필터에 함께 쓴다.
+        RiderLocationSnapshot previous = riderLocationStore.find(riderId).orElse(null);
+
+        if (isOutOfOrder(previous, next.measuredAt())) {
+            return respond(riderId, LocationUpdateOutcome.NON_MONOTONIC);
         }
 
-        riderLocationStore.save(riderId, snapshot);
-        // published 는 SSE 발행(#78)이 붙기 전까지 항상 false 다.
-        return RiderLocationUpdateResponse.accept(false);
+        LocationUpdateOutcome outcome = LocationFilter.decide(previous, next);
+        applyToStore(riderId, next, outcome);
+        return respond(riderId, outcome);
     }
 
     /**
      * 이전 최신 위치보다 과거이거나 <b>같은</b> 시각이면 순서가 어긋난 것으로 본다.
      * 같은 시각까지 막는 이유: 동일 좌표 재전송이라 덮어써도 값은 같은데 Redis 쓰기만 늘어난다.
      */
-    private boolean isOutOfOrder(Long riderId, LocalDateTime measuredAt) {
-        return riderLocationStore.find(riderId)
-                .map(RiderLocationSnapshot::measuredAt)
-                .filter(previous -> !measuredAt.isAfter(previous))
-                .isPresent();
+    private boolean isOutOfOrder(RiderLocationSnapshot previous, LocalDateTime measuredAt) {
+        return previous != null && !measuredAt.isAfter(previous.measuredAt());
     }
 
     /**
-     * 폐기는 실내 측위·탭 복귀처럼 정상 운행 중에도 일어나므로 warn 이 아니라 info 다.
-     * warn 으로 두면 정상 동작이 경고 로그를 채워 진짜 문제가 묻힌다.
+     * 판정에 따라 저장 방식이 셋으로 갈린다.
+     *
+     * <ul>
+     *   <li>{@code ACCEPTED} — 새 좌표로 갱신한다.</li>
+     *   <li>{@code DUPLICATE} — <b>좌표는 그대로 두고 TTL 만 갱신한다.</b> 새 좌표로 덮으면
+     *       기준선이 조금씩 전진해서, 느리게 움직이는 라이더가 영원히 전송 대상이 되지 않는다.</li>
+     *   <li>그 밖 — 아무것도 쓰지 않는다. 값 자체를 믿을 수 없는 경우다.</li>
+     * </ul>
      */
-    private RiderLocationUpdateResponse discard(Long riderId, LocationUpdateOutcome outcome) {
-        log.info("event=LOCATION_DISCARDED riderId={} reason={}", riderId, outcome);
-        return RiderLocationUpdateResponse.discard(outcome);
+    private void applyToStore(Long riderId, RiderLocationSnapshot next, LocationUpdateOutcome outcome) {
+        if (outcome == LocationUpdateOutcome.DUPLICATE) {
+            riderLocationStore.refreshTtl(riderId);
+            return;
+        }
+        if (outcome.shouldStore()) {
+            riderLocationStore.save(riderId, next);
+        }
+    }
+
+    /**
+     * 로그 레벨을 판정별로 나눈다. 버린 값은 info — 실내 측위·탭 복귀처럼 정상 운행 중에도
+     * 일어나지만 데이터를 버렸다는 사실은 남길 가치가 있다. 중복은 debug — 정지한 라이더가 주기마다
+     * 만들어 내므로 info 로 두면 정상 동작이 로그를 채워 진짜 문제가 묻힌다. 정상 갱신은 남기지 않는다.
+     */
+    private RiderLocationUpdateResponse respond(Long riderId, LocationUpdateOutcome outcome) {
+        if (outcome == LocationUpdateOutcome.DUPLICATE) {
+            log.debug("event=LOCATION_NOT_PUBLISHED riderId={} reason={}", riderId, outcome);
+        } else if (!outcome.shouldStore()) {
+            log.info("event=LOCATION_DISCARDED riderId={} reason={}", riderId, outcome);
+        }
+        // published 는 SSE 발행(#78)이 붙기 전까지 항상 false 다.
+        return RiderLocationUpdateResponse.of(outcome, false);
     }
 }

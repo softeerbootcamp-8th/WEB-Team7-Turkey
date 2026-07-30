@@ -60,6 +60,12 @@ public class RedisRiderLocationStore implements RiderLocationStore {
                 .flatMap(RedisRiderLocationStore::decode);
     }
 
+    @Override
+    public boolean refreshTtl(Long riderId) {
+        // EXPIRE 는 키가 없으면 0(false)을 돌려준다 — 값을 새로 만들지 않는다.
+        return Boolean.TRUE.equals(redisTemplate.expire(key(riderId), LATEST_LOCATION_TTL));
+    }
+
     private static String key(Long riderId) {
         return KEY_FORMAT.formatted(riderId);
     }

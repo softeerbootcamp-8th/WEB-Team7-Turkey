@@ -3,9 +3,7 @@ package com.turkey.quick.location.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
 
-import com.turkey.quick.common.auth.InMemorySessionStore;
 import com.turkey.quick.common.response.ApiResponse;
-import com.turkey.quick.location.service.InMemoryRiderLocationStore;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
 import com.turkey.quick.member.repository.MemberRepository;
@@ -20,10 +18,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -34,8 +29,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * 로컬 Redis 없이 돌리기 위해 SessionStore·RiderLocationStore 를 인메모리 테스트 대체로
- * 교체한다(RiderSessionE2ETest 와 동일한 이유).
+ * 세션과 최신 위치를 실제 로컬 Docker Redis 에서 검증한다(2026-07-29 결정). 테스트 사이의 정리는
+ * {@code IntegrationTestSupport} 가 MySQL·Redis 양쪽을 비우는 것으로 처리한다.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
                 properties = "spring.autoconfigure.exclude=")
@@ -60,22 +55,6 @@ class RiderLocationE2ETest extends IntegrationTestSupport {
 
     @Autowired
     private PlatformTransactionManager transactionManager;
-
-    @TestConfiguration
-    static class FakeInfraConfig {
-
-        @Bean
-        @Primary
-        InMemorySessionStore sessionStore() {
-            return new InMemorySessionStore();
-        }
-
-        @Bean
-        @Primary
-        InMemoryRiderLocationStore riderLocationStore() {
-            return new InMemoryRiderLocationStore();
-        }
-    }
 
     /**
      * 운행 상태를 인자로 받는 이유: RiderProfile.create 는 UNAVAILABLE 로 만들어지고, 운행 상태를
