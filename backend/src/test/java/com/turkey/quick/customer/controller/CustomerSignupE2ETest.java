@@ -56,19 +56,13 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
     private MemberTermAgreementRepository memberTermAgreementRepository;
 
     @Autowired
-    private InMemoryVerificationCodeStore verificationCodeStore;
+    private VerificationCodeStore verificationCodeStore;
 
     @Autowired
     private PointWalletRepository pointWalletRepository;
 
     @TestConfiguration
     static class FakeInfraConfig {
-
-        @Bean
-        @Primary
-        InMemoryVerificationCodeStore verificationCodeStore() {
-            return new InMemoryVerificationCodeStore();
-        }
 
         @Bean
         @Primary
@@ -102,7 +96,7 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
         String phoneNumber = "010-1111-2222";
         rest.postForEntity(PHONE_VERIFICATION_ENDPOINT,
                 Map.of("phoneNumber", phoneNumber, "purpose", VerificationPurpose.SIGNUP), ApiResponse.class);
-        String code = verificationCodeStore.savedCode(VerificationPurpose.SIGNUP, "01011112222");
+        String code = verificationCodeStore.getCode(VerificationPurpose.SIGNUP, "01011112222");
         var confirmResponse = rest.postForEntity(PHONE_VERIFICATION_CONFIRM_ENDPOINT,
                 Map.of("phoneNumber", phoneNumber, "purpose", VerificationPurpose.SIGNUP, "code", code), ApiResponse.class);
         String token = (String) ((Map<?, ?>) confirmResponse.getBody().data()).get("verificationToken");

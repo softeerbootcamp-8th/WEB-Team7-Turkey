@@ -61,7 +61,7 @@ public class CustomerPaymentController implements CustomerPointApi {
             AuthenticatedCustomer customer,
 
             @Valid @RequestBody PointChargeRequest request) {
-        return null;
+        return ApiResponse.ok(customerPaymentService.chargePointRequest(request, customer.memberId()));
     }
 
     @Override

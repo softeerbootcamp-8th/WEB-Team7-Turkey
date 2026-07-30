@@ -2,7 +2,7 @@ package com.turkey.quick.customer.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.turkey.quick.common.auth.InMemorySessionStore;
+import com.turkey.quick.common.auth.SessionStore;
 import com.turkey.quick.common.response.ApiResponse;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
@@ -12,10 +12,8 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Primary;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -39,17 +37,10 @@ class CustomerLoginE2ETest extends IntegrationTestSupport {
     private MemberRepository memberRepository;
 
     @Autowired
-    private InMemorySessionStore sessionStore;
+    private SessionStore sessionStore;
 
-    @TestConfiguration
-    static class FakeInfraConfig {
-
-        @Bean
-        @Primary
-        InMemorySessionStore sessionStore() {
-            return new InMemorySessionStore();
-        }
-    }
+    @Autowired
+    private StringRedisTemplate redisTemplate;
 
     private Member saveCustomer(String loginId, String rawPassword, String phoneNumber) {
         return memberRepository.save(
@@ -75,7 +66,11 @@ class CustomerLoginE2ETest extends IntegrationTestSupport {
         assertThat(cookie).containsIgnoringCase("SameSite=Lax");
 
         String sessionId = cookie.split(";")[0].substring("SESSION_ID=".length());
-        assertThat(sessionStore.get(sessionId)).containsEntry("role", "CUSTOMER");
+        // 실제 Redis 에 세션이 이 형태로 저장됐는지 확인한다. 인메모리 대체를 쓸 때는 대체 구현의
+        // 자료구조만 보는 셈이어서 저장 형태를 전혀 보장하지 못했다. 키 형식은 RedisSessionStore 의
+        // 내부지만 "세션에 무엇이 담기는가"는 docs/03-erd.md 5절이 정한 계약이라 검증할 가치가 있다.
+        assertThat(redisTemplate.opsForHash().get("session:" + sessionId, "role")).isEqualTo("CUSTOMER");
+        assertThat(sessionStore.findMemberId(sessionId)).isPresent();
     }
 
     @Test
