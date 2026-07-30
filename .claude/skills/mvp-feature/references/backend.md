@@ -53,8 +53,14 @@ Repository → Service → DTO → Controller 순으로 만든다.
 
 ### Controller
 
-`@RestController`, `@RequestMapping("/api/...")`. 반환은 항상 `ApiResponse<T>`로 감싼다
-(`common/response/ApiResponse.java`의 `ok` / `fail`).
+**명세(인터페이스)와 구현(클래스)을 분리한다**(Discussion #245, 팀 합의 완료).
+`{도메인}Api` 인터페이스에 `@Tag`·`@RequestMapping`·`@Operation`·매핑 애노테이션·검증 애노테이션(`@Valid`,
+`@NotBlank` 등)을 전부 얹고, 컨트롤러 클래스는 `@RestController`(+ 필요하면 `@RequiredArgsConstructor`,
+`@Validated`)만 붙여 그 인터페이스를 `implements`한다. 클래스 쪽 메서드는 `@Override`만 달고 애노테이션 없는
+평범한 파라미터를 받는다. 새 컨트롤러는 처음부터 이 형태로 만든다(컨트롤러에 애노테이션을 직접 다는 옛
+방식으로 되돌아가지 않는다).
+
+반환은 항상 `ApiResponse<T>`로 감싼다(`common/response/ApiResponse.java`의 `ok` / `fail`).
 
 경로는 액터를 앞에 둔다: `/api/customer/...`, `/api/rider/...`. 공용은 `/api/...`.
 동적 세그먼트는 프론트와 맞춰 `{deliveryId}`를 쓴다.
@@ -64,19 +70,16 @@ Repository → Service → DTO → Controller 순으로 만든다.
 ## springdoc — 문서화가 곧 프론트 계약이다
 
 이 저장소의 프론트 API 클라이언트는 `/v3/api-docs`에서 **자동 생성**된다.
-즉 컨트롤러에 붙인 어노테이션이 그대로 프론트의 타입과 훅 이름이 된다.
+즉 인터페이스에 붙인 어노테이션이 그대로 프론트의 타입과 훅 이름이 된다.
 어노테이션을 대충 달면 프론트에 `postApiCustomerDeliveries` 같은 이름과 `unknown` 타입이 생긴다.
 
-컨트롤러 클래스에는 `@Tag`를, 메서드에는 `@Operation`을 반드시 단다.
+인터페이스 타입에는 `@Tag`를, 메서드에는 `@Operation`을 반드시 단다.
 
 ```java
+// CustomerDeliveryApi.java — 명세
 @Tag(name = "customer-delivery", description = "고객 배송요청")
-@RestController
 @RequestMapping("/api/customer/deliveries")
-@RequiredArgsConstructor
-public class CustomerDeliveryController {
-
-    private final DeliveryOrderService deliveryOrderService;
+public interface CustomerDeliveryApi {
 
     @Operation(summary = "배송요청 생성", description = "고객이 새 배송요청을 등록한다. 진행 중 요청이 있으면 거부된다.")
     @ApiResponses({
@@ -85,8 +88,18 @@ public class CustomerDeliveryController {
     })
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResponse<DeliveryCreateResponse> create(
-            @Valid @RequestBody DeliveryCreateRequest request) {
+    ApiResponse<DeliveryCreateResponse> create(@Valid @RequestBody DeliveryCreateRequest request);
+}
+
+// CustomerDeliveryController.java — 구현
+@RestController
+@RequiredArgsConstructor
+public class CustomerDeliveryController implements CustomerDeliveryApi {
+
+    private final DeliveryOrderService deliveryOrderService;
+
+    @Override
+    public ApiResponse<DeliveryCreateResponse> create(DeliveryCreateRequest request) {
         return ApiResponse.ok(DeliveryCreateResponse.from(deliveryOrderService.create(request)));
     }
 }
@@ -104,6 +117,14 @@ public class CustomerDeliveryController {
 - DTO record 필드에는 `@Schema(description = "...", example = "...")`를 단다.
   프론트에서 이 설명이 JSDoc으로 따라간다.
 - 문서가 바뀌었으면 프론트를 다시 생성해야 한다 → 단계 4.
+- **파라미터 제약(`@NotNull`, `@Valid` 등)은 인터페이스 메서드에만 적고, 구현체 쪽에서 강화하지 않는다.**
+  Jakarta Bean Validation은 하위 타입(구현체)이 상위 타입(인터페이스)의 파라미터 제약을 재정의·추가하는
+  것을 금지한다(리스코프 치환 원칙, 위반 시 `ConstraintDeclarationException`). 인터페이스에만 제약을
+  선언하면 "재정의" 자체가 성립하지 않으므로 이 문제가 생기지 않는다.
+  `@RequestBody @Valid`는 `RequestResponseBodyMethodProcessor`가 처리하는 별도 경로라 이 규칙과 무관하게
+  항상 동작한다. `@RequestParam @NotBlank`처럼 파라미터에 직접 건 제약은 Spring 6.1(Boot 3.2)부터 메서드
+  검증(AOP)이 걸리므로, 이 경로를 쓰는 컨트롤러 클래스에는 지금처럼 `@Validated`를 유지한다
+  (`LoginIdController` 참고). 자세한 배경은 Discussion #245.
 
 ## 예외 처리
 
