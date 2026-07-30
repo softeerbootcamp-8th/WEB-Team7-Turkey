@@ -17,6 +17,8 @@ import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.member.repository.MemberTermAgreementRepository;
 import com.turkey.quick.member.repository.TermRepository;
 import com.turkey.quick.member.service.InMemoryVerificationCodeStore;
+import com.turkey.quick.payment.domain.PointWallet;
+import com.turkey.quick.payment.repository.PointWalletRepository;
 import com.turkey.quick.rider.domain.OperatingStatus;
 import com.turkey.quick.rider.domain.RiderProfile;
 import com.turkey.quick.rider.dto.RiderSignupRequest;
@@ -46,6 +48,7 @@ class RiderSignupServiceTest {
     private RiderProfileRepository riderProfileRepository;
     private TermRepository termRepository;
     private MemberTermAgreementRepository memberTermAgreementRepository;
+    private PointWalletRepository pointWalletRepository;
     private InMemoryVerificationCodeStore verificationCodeStore;
     private RiderSignupService riderSignupService;
 
@@ -55,10 +58,11 @@ class RiderSignupServiceTest {
         riderProfileRepository = mock(RiderProfileRepository.class);
         termRepository = mock(TermRepository.class);
         memberTermAgreementRepository = mock(MemberTermAgreementRepository.class);
+        pointWalletRepository = mock(PointWalletRepository.class);
         verificationCodeStore = new InMemoryVerificationCodeStore();
         riderSignupService = new RiderSignupService(
                 memberRepository, riderProfileRepository, termRepository, memberTermAgreementRepository,
-                verificationCodeStore);
+                pointWalletRepository, verificationCodeStore);
 
         when(memberRepository.existsByLoginId(any())).thenReturn(false);
         when(memberRepository.existsByPhoneNumber(any())).thenReturn(false);
@@ -121,6 +125,18 @@ class RiderSignupServiceTest {
     }
 
     @Test
+    void 정상_가입하면_포인트_지갑을_생성한다() {
+        issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
+        when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of());
+
+        riderSignupService.signup(request(List.of()));
+
+        ArgumentCaptor<PointWallet> captor = ArgumentCaptor.forClass(PointWallet.class);
+        verify(pointWalletRepository).save(captor.capture());
+        assertThat(captor.getValue().getBalance()).isZero();
+    }
+
+    @Test
     void 정상_가입하면_동의한_약관마다_동의_이력을_저장한다() {
         issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
         when(termRepository.findByActiveTrueAndTargetRoleIn(any()))
@@ -145,6 +161,7 @@ class RiderSignupServiceTest {
 
         verify(memberRepository, never()).save(any());
         verify(riderProfileRepository, never()).save(any());
+        verify(pointWalletRepository, never()).save(any());
     }
 
     @Test
@@ -177,6 +194,7 @@ class RiderSignupServiceTest {
 
         verify(memberRepository, never()).save(any());
         verify(riderProfileRepository, never()).save(any());
+        verify(pointWalletRepository, never()).save(any());
     }
 
     @Test
@@ -191,5 +209,6 @@ class RiderSignupServiceTest {
                 .isEqualTo(HttpStatus.CONFLICT);
 
         verify(riderProfileRepository, never()).save(any());
+        verify(pointWalletRepository, never()).save(any());
     }
 }
