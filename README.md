@@ -14,11 +14,6 @@ Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실�
 
 주문 생성부터 배차, 라이더 위치 추적, 배송 완료 및 정산까지 퀵서비스의 핵심 흐름을 구현합니다.
 
-
-<br>
-
-## [[프로젝트 기획서|https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/180]]
-
 <br>
 
 ## 🎯 프로젝트 목표
@@ -261,7 +256,7 @@ External Map API
 
 ## 📚 상세 문서
 
-* [서비스 기획서](링크를-입력해주세요)
+* [서비스 기획서](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/180)
 * [Frontend README](./frontend/README.md)
 * [Backend README](frontend/README.md)
 * [API 명세](링크를-입력해주세요)
