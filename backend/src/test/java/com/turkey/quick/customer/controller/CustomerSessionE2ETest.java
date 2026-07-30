@@ -2,7 +2,7 @@ package com.turkey.quick.customer.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.turkey.quick.common.auth.InMemorySessionStore;
+import com.turkey.quick.common.auth.SessionStore;
 import com.turkey.quick.common.response.ApiResponse;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
@@ -12,10 +12,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -41,17 +38,7 @@ class CustomerSessionE2ETest extends IntegrationTestSupport {
     private MemberRepository memberRepository;
 
     @Autowired
-    private InMemorySessionStore sessionStore;
-
-    @TestConfiguration
-    static class FakeInfraConfig {
-
-        @Bean
-        @Primary
-        InMemorySessionStore sessionStore() {
-            return new InMemorySessionStore();
-        }
-    }
+    private SessionStore sessionStore;
 
     private Member saveCustomer(String loginId, String rawPassword, String phoneNumber) {
         return memberRepository.save(
