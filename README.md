@@ -17,6 +17,10 @@ Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실�
 
 <br>
 
+## [[프로젝트 기획서|https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/180]]
+
+<br>
+
 ## 🎯 프로젝트 목표
 
 * 위치 기반 주변 라이더 검색
@@ -25,6 +29,11 @@ Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실�
 * 안전한 배송 상태 전이 관리
 * 배송 완료와 라이더 정산의 트랜잭션 처리
 * 네트워크 단절 및 장애 상황을 고려한 배송 흐름 설계
+
+<br>
+
+## 서비스 아키텍처
+![architecture_img](./imgs/architecture.png)
 
 <br>
 
@@ -288,8 +297,8 @@ External Map API
 
 | 이름   | 역할       | GitHub       | 담당        |
 | ---- | -------- | ------------ | --------- |
-| 팀원 1 | Frontend | [GitHub](링크) | 고객 서비스    |
-| 팀원 2 | Frontend | [GitHub](링크) | 라이더 서비스   |
+| 팀원 1 | Backend | [GitHub](링크) | 고객 서비스    |
+| 팀원 2 | Backend | [GitHub](링크) | 라이더 서비스   |
 | 팀원 3 | Backend  | [GitHub](링크) | 배송·배차     |
 | 팀원 4 | Backend  | [GitHub](링크) | 위치·실시간 통신 |
 | 팀원 5 | Backend  | [GitHub](링크) | 결제·정산     |
