@@ -27,6 +27,25 @@ public final class TrackingStreamPolicy {
     public static final int MAX_CONNECTIONS_PER_ORDER = 3;
 
     /**
+     * {@code SseEmitter} 하나가 유지되는 시간. <b>반드시 명시해야 하는 값이다.</b>
+     *
+     * <p>{@code new SseEmitter()} 로 만들면 timeout 이 null 이고, 그러면
+     * {@code ResponseBodyEmitterReturnValueHandler} → {@code DeferredResult(null)} →
+     * {@code StandardServletAsyncWebRequest} 가 {@code setTimeout} 을 호출하지 않아
+     * <b>Tomcat 기본값 30초</b>({@code Connector.asyncTimeout})가 적용된다. 더 나쁜 것은
+     * <b>그 30초가 쓰기로 갱신되지 않는다</b>는 점이다 — Tomcat 은 연결 시작 시각
+     * ({@code AsyncStateMachine.asyncStart} 에서만 대입되는 {@code lastAsyncStart})만 보므로,
+     * BUSY 라이더가 5초마다 이벤트를 밀어 넣어도 30초에 끊긴다. 로컬에서 이벤트 두세 개를 받아
+     * 보고 "동작한다"고 판단하기 쉬운 함정이다.
+     *
+     * <p>5분인 이유는 성능이 아니라 <b>보안</b>이다. 세션 TTL 은 로그인 시점 2시간 고정이고
+     * 슬라이딩이 없는데(#27), 인터셉터는 연결 시점에 한 번만 돈다. 즉 세션이 만료되거나
+     * 로그아웃한 뒤에도 <b>이 시간만큼 위치가 계속 흐른다</b> — 재연결이 유일한 재인가 시점이다.
+     * 무한({@code 0L})은 두지 않는다.
+     */
+    public static final Duration EMITTER_TIMEOUT = Duration.ofMinutes(5);
+
+    /**
      * 이 시간 동안 갱신되지 않은 연결 기록은 죽은 것으로 보고 걷어낸다.
      *
      * <p>heartbeat 3회 누락 분량이다. <b>이 값이 연결 수 집계의 자기치유 장치다</b> — 인스턴스가

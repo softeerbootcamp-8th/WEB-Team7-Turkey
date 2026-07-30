@@ -59,6 +59,15 @@ public class TrackingConnection {
     }
 
     /**
+     * 감싼 emitter. 두 곳에서만 필요하다 — 컨트롤러가 스프링에 반환할 때, 그리고 생명주기 콜백
+     * ({@code onCompletion}/{@code onTimeout}/{@code onError})을 등록할 때다. <b>전송에는 쓰지
+     * 않는다</b> — 그러면 이 클래스가 감싸 둔 실패 격리를 우회한다.
+     */
+    public SseEmitter emitter() {
+        return emitter;
+    }
+
+    /**
      * @param json 이미 직렬화된 JSON 문자열. 객체를 받아 스프링 컨버터에 맡기지 않는 이유는
      *             <b>발행된 페이로드를 파싱 없이 그대로 흘려보내기 위해서</b>다(#78). 타입에 따라
      *             컨버터가 갈리면 같은 메서드가 문자열은 그대로, 객체는 JSON 으로 쓰는 두 동작을
