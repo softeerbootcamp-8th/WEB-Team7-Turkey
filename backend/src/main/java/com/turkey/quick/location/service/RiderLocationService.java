@@ -79,13 +79,18 @@ public class RiderLocationService {
         }
 
         LocationUpdateOutcome outcome = LocationFilter.decide(previous, next);
-        applyToStore(riderId, next, outcome);
-        return respond(riderId, outcome);
+        return respond(riderId, applyToStore(riderId, next, outcome));
     }
 
     /**
      * 이전 최신 위치보다 과거이거나 <b>같은</b> 시각이면 순서가 어긋난 것으로 본다.
      * 같은 시각까지 막는 이유: 동일 좌표 재전송이라 덮어써도 값은 같은데 Redis 쓰기만 늘어난다.
+     *
+     * <p>이 검사는 {@code saveIfNewer}(#250)가 원자적으로 같은 판정을 하므로 정합성에는 필요하지
+     * 않다. 그래도 남긴 이유는 <b>비용</b>이다(사람 확인, 2026-07-29). {@code previous} 는 #82
+     * 필터 때문에 어차피 읽으므로 이 검사는 공짜인데, 통과시키면 Redis 왕복이 한 번 더 든다.
+     * 순서가 어긋난 요청 대부분을 여기서 끊고, {@code saveIfNewer} 는 이 검사와 쓰기 사이에 다른
+     * 인스턴스가 끼어드는 좁은 창만 막는 최종 방어선으로 둔다.
      */
     private boolean isOutOfOrder(RiderLocationSnapshot previous, LocalDateTime measuredAt) {
         return previous != null && !measuredAt.isAfter(previous.measuredAt());
@@ -95,20 +100,33 @@ public class RiderLocationService {
      * 판정에 따라 저장 방식이 셋으로 갈린다.
      *
      * <ul>
-     *   <li>{@code ACCEPTED} — 새 좌표로 갱신한다.</li>
+     *   <li>{@code ACCEPTED} — 새 좌표로 갱신한다. 단 <b>조건부</b>다(#250).</li>
      *   <li>{@code DUPLICATE} — <b>좌표는 그대로 두고 TTL 만 갱신한다.</b> 새 좌표로 덮으면
      *       기준선이 조금씩 전진해서, 느리게 움직이는 라이더가 영원히 전송 대상이 되지 않는다.</li>
      *   <li>그 밖 — 아무것도 쓰지 않는다. 값 자체를 믿을 수 없는 경우다.</li>
      * </ul>
+     *
+     * @return 실제 저장 결과를 반영한 판정. 조건부 갱신이 거절하면 {@code ACCEPTED} 가
+     *         {@code NON_MONOTONIC} 으로 뒤집힌다 — 응답의 {@code applied} 가 판정에서
+     *         파생되므로({@code RiderLocationUpdateResponse#of}) 저장하지 못한 요청에
+     *         {@code applied=true} 를 돌려주지 않기 위해서다
      */
-    private void applyToStore(Long riderId, RiderLocationSnapshot next, LocationUpdateOutcome outcome) {
+    private LocationUpdateOutcome applyToStore(Long riderId, RiderLocationSnapshot next,
+                                               LocationUpdateOutcome outcome) {
         if (outcome == LocationUpdateOutcome.DUPLICATE) {
             riderLocationStore.refreshTtl(riderId);
-            return;
+            return outcome;
         }
-        if (outcome.shouldStore()) {
-            riderLocationStore.save(riderId, next);
+        // 여기 남는 shouldStore 는 ACCEPTED 뿐이다(DUPLICATE 는 위에서 처리됐다).
+        if (outcome.shouldStore() && !riderLocationStore.saveIfNewer(riderId, next)) {
+            // 사전 검사를 통과한 뒤 다른 인스턴스가 더 최신 좌표를 먼저 썼다는 뜻이다. 사유를
+            // NON_MONOTONIC 으로 통일한다(사람 확인, 2026-07-29) — 클라이언트가 보는 의미가
+            // "당신 좌표는 최신이 아니다"로 같아서, 값을 따로 두면 프론트가 처리해야 하는 계약만
+            // 늘고 정작 정상 운행에서는 거의 나오지 않는다. 대가는 로그에서 사전 검사 탈락과
+            // 경쟁 패배를 구분할 수 없다는 것이고, 경쟁 빈도를 측정해야 할 때 값을 나눈다.
+            return LocationUpdateOutcome.NON_MONOTONIC;
         }
+        return outcome;
     }
 
     /**

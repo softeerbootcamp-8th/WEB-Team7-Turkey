@@ -3,6 +3,7 @@ package com.turkey.quick.location.service;
 import com.turkey.quick.location.dto.RiderLocationSnapshot;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * <b>단위 테스트</b> 전용 인메모리 대체 구현. 스프링 컨텍스트 없이 서비스 로직만 검증할 때 쓴다
@@ -17,9 +18,28 @@ public class InMemoryRiderLocationStore implements RiderLocationStore {
 
     private final ConcurrentHashMap<Long, RiderLocationSnapshot> locations = new ConcurrentHashMap<>();
 
+    /**
+     * {@code compute} 는 ConcurrentHashMap 이 해당 키에 대해 원자적으로 실행하므로, Lua 스크립트와
+     * 같은 의미론이 된다 — 비교와 쓰기 사이에 다른 스레드가 끼어들지 못한다.
+     *
+     * <p>다만 <b>흉내내는 것은 의미론뿐이다.</b> 인스턴스가 여러 대일 때 Redis 서버 한 곳에서
+     * 직렬화되는 실제 원자성은 이 구현으로 검증되지 않는다(단위 테스트에는 스레드가 한 JVM 안에만
+     * 있으니 당연하다). 그 검증은 {@code RedisRiderLocationStoreIntegrationTest} 가 실제 Redis 로 한다.
+     */
     @Override
-    public void save(Long riderId, RiderLocationSnapshot location) {
-        locations.put(riderId, location);
+    public boolean saveIfNewer(Long riderId, RiderLocationSnapshot location) {
+        // 반환값을 인자와 비교해 판정하지 않는다 — 같은 인스턴스를 두 번 넘기면 "쓰지 않았는데
+        // 쓴 것"으로 보인다. 동시성 때문이 아니라 람다 밖으로 값을 꺼내기 위한 홀더다
+        // (compute 의 함수는 키 잠금 안에서 정확히 한 번 실행된다).
+        AtomicBoolean written = new AtomicBoolean();
+        locations.compute(riderId, (id, previous) -> {
+            if (previous != null && !location.measuredAt().isAfter(previous.measuredAt())) {
+                return previous;
+            }
+            written.set(true);
+            return location;
+        });
+        return written.get();
     }
 
     @Override

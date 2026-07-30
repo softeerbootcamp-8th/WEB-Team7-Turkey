@@ -124,14 +124,19 @@ class LocationFilterTest {
         /**
          * 거리를 먼저 재고 목표 속도가 나오도록 경과 시간을 역산한다.
          *
-         * 나노초로 <b>올림</b>하므로 실제 속도는 목표값 이하가 된다. 반올림하면 목표가 50일 때
+         * <b>밀리초</b>로 올림하므로 실제 속도는 목표값 이하가 된다. 내림·반올림하면 목표가 50일 때
          * 실제 속도가 50을 미세하게 넘어 판정이 뒤집힌다 — 부동소수로 유도한 값에서 정확한 경계
          * 등호(속도 == 50.000)는 만들 수 없다. 그래서 "상한 이하"와 "상한 초과"를 각각 검증하고,
          * 실제 속도가 의도한 쪽에 있는지 테스트 안에서 함께 단언한다.
+         *
+         * <p>나노초가 아니라 밀리초인 이유(#250): {@code RiderLocationSnapshot} 이 측정 시각을
+         * 밀리초로 절단하므로, 나노초로 올려 만든 경과 시간은 스냅샷에 들어가는 순간 다시 <b>내려
+         * 깎인다.</b> 그러면 경과가 짧아져 속도가 목표를 넘고, 올림으로 확보한 여유가 사라진다.
+         * 값 객체의 해상도와 맞춰 계산해야 역산이 성립한다.
          */
         private Duration elapsedForAtMostSpeed(RiderLocationSnapshot target, double metersPerSecond) {
             double meters = haversineMeters(origin(), target);
-            return Duration.ofNanos((long) Math.ceil(meters / metersPerSecond * 1_000_000_000.0));
+            return Duration.ofMillis((long) Math.ceil(meters / metersPerSecond * 1_000.0));
         }
 
         private double speedOf(RiderLocationSnapshot next) {
