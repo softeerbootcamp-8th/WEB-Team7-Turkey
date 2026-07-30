@@ -12,6 +12,8 @@
 UNAVAILABLE로 바꿔 배차 후보에서 제외한 뒤, 서버 세션 삭제 + 쿠키 만료를 수행한다.
 이미 만료·삭제된 세션에도 200으로 완료 처리한다(멱등). 세션 삭제·쿠키 만료는 #28과 동일하게
 컨트롤러가 담당하고, 라이더에만 있는 운행 상태 전이(도메인 규칙)만 서비스 계층(`RiderLogoutService`)으로 뺐다.
+컨트롤러는 명세(`RiderLogoutApi` 인터페이스에 `@Tag`·`@Operation`·매핑 애노테이션)와 구현(`RiderLogoutController`)을
+분리하는 팀 관례(Discussion #245, dev 스킬 업데이트)를 따른다.
 
 ### API
 
