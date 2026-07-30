@@ -153,7 +153,19 @@ WAITING → ASSIGNED → MOVING_TO_PICKUP → PICKED_UP → DELIVERING → COMPL
 
 ## 7. 실시간 — location 도메인 (SSE, Orval 제외)
 
-- **고객 추적**: `GET /api/location/stream/{orderId}` (SSE) → 라이더 위치 `{lat, lng, heading, ts}` + 상태/단계 전이 push. `TrackingMap`(현재 빈 컴포넌트)에서 소비, `useTrackingStream`으로 분리. 근거: [구현] tracking "실제 지도(SSE 실시간 위치) 연결" TODO.
+- **고객 추적**: `GET /api/customer/deliveries/{deliveryId}/tracking/stream` (SSE, `@Hidden` — Orval 이 생성하지 않는다). **#77·#78 구현 완료(2026-07-30).** `TrackingMap`(현재 빈 컴포넌트)에서 소비, `useTrackingStream`으로 분리(#196).
+  - 초안이던 `GET /api/location/stream/{orderId}` 는 **폐기**했다. 액터 우선 경로가 이 저장소 관례이고(`/api/rider/location` 도 같은 이유로 그렇게 골랐다), 무엇보다 **고객 API 는 `CustomerWebMvcConfig` 한 곳에 인증을 등록한다**는 규칙이 유지된다.
+  - **이벤트**
+    | event | 시점 | data |
+    |---|---|---|
+    | `init` | 연결 직후 1회 | `{"deliveryId":1024,"status":"DELIVERING","location":{"latitude":…,"longitude":…,"measuredAt":"2026-07-30T02:00:00","accuracyMeters":…}}` — 위치가 없으면 `"location":null` |
+    | `location` | 라이더 위치가 실제로 바뀔 때 | 위 `location` 과 같은 스냅샷 |
+    | (주석 `:hb`) | 15초마다 | `EventSource` 가 무시하므로 핸들러 불필요 |
+  - **`retry: 3000` 을 서버가 지정한다.** `EventSource` 를 쓰면 이 값이 재연결 간격이 되므로, #196 의 백오프(1→2→4→…30s)는 `EventSource` 를 직접 쓰는 한 적용되지 않는다. 둘 중 서버 값을 정본으로 한다.
+  - **프론트가 반드시 둘 것**: `measuredAt` 이 마지막으로 그린 값보다 <b>뒤로 가는 이벤트는 버린다.</b> 팬아웃 디스패치가 4스레드라 같은 채널 메시지의 순서가 뒤집힐 수 있고, 재연결 시 스냅샷이 진행 중 이벤트보다 늦게 도착하면 화면이 과거로 되돌아간다. 세 줄짜리 가드로 둘 다 막힌다.
+  - **오류는 화면에서 구분할 수 없다.** 서버는 401·404(없는 주문 또는 타인 주문)·409(추적 불가 상태)·429(연결 한도 3개 초과)·503 을 `ApiResponse` JSON 으로 주지만, 브라우저 `EventSource` 는 상태코드와 본문을 스크립트에 노출하지 않는다(`onerror` 만 발생). 그래서 **판정은 #79 스냅샷 REST 로 하고 스트림은 붙이기만 한다.** 대신 200 이 아닌 응답에는 자동 재연결하지 않으므로 무한 루프는 생기지 않는다.
+  - `id:` 를 보내지 않는다. `Last-Event-ID` 재생을 지원하지 않기로 정했으므로(재연결은 스냅샷 복구) 보내면 지키지 못할 약속이 된다.
+  - 같은 배송에 동시 연결은 **3개**까지다(탭 2개 + 재연결 중복 1).
 - **라이더 위치 발행**: 진행 중 배송 동안 위치 업로드 — **위치가 실제 변경됐을 때만** 이벤트. CANCELED 발생 시 라이더에게 push.
 - **(검토)** `/rider/requests` 신규 요청 실시간 피드도 SSE 후보 — 정책 미확정.
 
@@ -174,5 +186,5 @@ WAITING → ASSIGNED → MOVING_TO_PICKUP → PICKED_UP → DELIVERING → COMPL
 - 정산 생성 시점·실패 처리 → `complete` 트랜잭션 경계
 - 포인트 선차감 vs 결제 승인 시점 → `orders`/`points/use` 연계
 - API 멱등성 정책(중복 accept/complete 요청) → 요청 식별값 기준
-- 주소·좌표 컬럼 구조, SSE 타임아웃·재연결·heartbeat·중복 연결
+- 주소·좌표 컬럼 구조. **SSE 타임아웃·heartbeat·중복 연결 수치는 #77 에서 확정했다**(emitter 5분 / heartbeat 15초 / 연결 한도 3 / `retry` 3000ms). 재연결 정책은 위 §7 참고
 - 프론트 Origin ↔ API Origin 분리 시 CORS·쿠키(`Secure`/`HttpOnly`/`SameSite`) 설정
