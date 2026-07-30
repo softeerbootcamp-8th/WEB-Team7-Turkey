@@ -73,6 +73,7 @@ public class CustomerPaymentController implements CustomerPointApi {
             @PathVariable("pointChargeId") Long pointChargeId,
 
             @Valid @RequestBody PointChargeConfirmRequest request) {
-        return null;
+        return ApiResponse.ok(customerPaymentService.confirmPointCharge(
+                pointChargeId, request, customer.memberId()));
     }
 }

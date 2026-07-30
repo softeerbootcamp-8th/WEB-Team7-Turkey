@@ -20,12 +20,19 @@ import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.payment.domain.PaymentMethod;
 import com.turkey.quick.payment.domain.PointCharge;
 import com.turkey.quick.payment.domain.PointChargeStatus;
+import com.turkey.quick.payment.domain.PointTransaction;
+import com.turkey.quick.payment.domain.PointTransactionType;
 import com.turkey.quick.payment.domain.PointWallet;
 import com.turkey.quick.payment.dto.PointBalanceResponse;
 import com.turkey.quick.payment.dto.PointChargeRequest;
 import com.turkey.quick.payment.dto.PointChargeResponse;
+import com.turkey.quick.payment.dto.PointChargeConfirmRequest;
+import com.turkey.quick.payment.dto.PointChargeConfirmResponse;
 import com.turkey.quick.payment.repository.PointChargeRepository;
+import com.turkey.quick.payment.repository.PointTransactionRepository;
 import com.turkey.quick.payment.repository.PointWalletRepository;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -33,8 +40,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class CustomerPaymentServiceTest {
 
@@ -44,20 +53,36 @@ class CustomerPaymentServiceTest {
 
     private PointWalletRepository pointWalletRepository;
     private PointChargeRepository pointChargeRepository;
+    private PointTransactionRepository pointTransactionRepository;
     private MemberRepository memberRepository;
+    private PaymentGateway paymentGateway;
     private CustomerPaymentService customerPaymentService;
 
     @BeforeEach
     void setUp() {
         pointWalletRepository = mock(PointWalletRepository.class);
         pointChargeRepository = mock(PointChargeRepository.class);
+        pointTransactionRepository = mock(PointTransactionRepository.class);
         memberRepository = mock(MemberRepository.class);
+        paymentGateway = mock(PaymentGateway.class);
         customerPaymentService = new CustomerPaymentService(
-                pointWalletRepository, pointChargeRepository, memberRepository);
+                pointWalletRepository, pointChargeRepository, pointTransactionRepository,
+                memberRepository, paymentGateway);
     }
 
     private Member member() {
         return Member.create("cust01", "hash", "김고객", "01055556666", MemberRole.CUSTOMER);
+    }
+
+    /**
+     * 식별자가 있는 회원. 승인 로직이 {@code charge.getCustomer().getId()} 로 소유를 확인하는데
+     * {@code Member.create} 는 auto increment PK 를 채우지 않아 그대로 쓰면 NPE 가 난다.
+     * 엔터티에 setter 를 열지 않기 위해 테스트에서만 리플렉션으로 주입한다.
+     */
+    private Member memberWithId(Long memberId) {
+        Member member = member();
+        ReflectionTestUtils.setField(member, "id", memberId);
+        return member;
     }
 
     private PointChargeRequest request(long amount) {
@@ -227,6 +252,240 @@ class CustomerPaymentServiceTest {
                     customerPaymentService.chargePointRequest(request(10_500L), CUSTOMER_ID))
                     .isInstanceOf(IllegalArgumentException.class);
             verify(pointChargeRepository, never()).saveAndFlush(any(PointCharge.class));
+        }
+    }
+
+    /**
+     * 포인트 충전 모의 승인(#33).
+     *
+     * <p>이 층에서 보는 것은 <b>서비스의 판단</b>이다: 소유·금액·상태 검증 순서, 멱등 재승인,
+     * 실패 결과 처리, 그리고 성공 시 세 변경(상태·잔액·원장)이 모두 일어나는지.
+     *
+     * <p>동시 승인에서 정말 한 번만 증가하는지는 행 잠금이 하는 일이라 목으로 재현할 수 없고
+     * {@link CustomerPaymentServiceIntegrationTest} 가 검증한다.
+     */
+    @Nested
+    @DisplayName("포인트 충전 모의 승인(#33)")
+    class ConfirmPointCharge {
+
+        private static final Long CHARGE_ID = 331L;
+        private static final long AMOUNT = 30_000L;
+
+        private PointCharge pendingCharge() {
+            PointCharge charge = PointCharge.request(
+                    memberWithId(CUSTOMER_ID), REQUEST_KEY, PaymentMethod.CARD, AMOUNT, "MOCK");
+            ReflectionTestUtils.setField(charge, "id", CHARGE_ID);
+            return charge;
+        }
+
+        private PointChargeConfirmRequest confirmRequest(long amount) {
+            return new PointChargeConfirmRequest(amount, "mock_auth_test");
+        }
+
+        /** PG 가 승인해 준 상황. 승인 식별자·카드사 정보는 게이트웨이 응답에서 온다. */
+        private void gatewayApproves() {
+            when(paymentGateway.confirm(any(PaymentGateway.ConfirmCommand.class)))
+                    .thenAnswer(invocation -> {
+                        PaymentGateway.ConfirmCommand command = invocation.getArgument(0);
+                        return new PaymentGateway.Approval("mock_pay_approved",
+                                command.expectedAmount(), "MOCK", "모의결제",
+                                LocalDateTime.now(ZoneOffset.UTC));
+                    });
+        }
+
+        private void gatewayFails(PaymentGateway.PaymentGatewayException.FailureType type) {
+            when(paymentGateway.confirm(any(PaymentGateway.ConfirmCommand.class)))
+                    .thenThrow(new PaymentGateway.PaymentGatewayException(
+                            type, "MOCK_" + type, "모의 결제 실패"));
+        }
+
+        private PointWallet walletWith(long balance) {
+            PointWallet wallet = PointWallet.create(memberWithId(CUSTOMER_ID));
+            if (balance > 0) {
+                wallet.credit(balance);
+            }
+            return wallet;
+        }
+
+        @Test
+        @DisplayName("PG 가 승인하면 상태·잔액·원장이 함께 바뀐다")
+        void approvesAndCreditsWallet() {
+            // given: PENDING 충전 30,000원과 잔액 5,000원인 지갑
+            PointCharge charge = pendingCharge();
+            PointWallet wallet = walletWith(5_000L);
+            when(pointChargeRepository.findByIdForUpdate(CHARGE_ID)).thenReturn(Optional.of(charge));
+            when(pointWalletRepository.findByMemberIdForUpdate(CUSTOMER_ID))
+                    .thenReturn(Optional.of(wallet));
+            gatewayApproves();
+
+            // when: 승인을 요청하면
+            PointChargeConfirmResponse response = customerPaymentService.confirmPointCharge(
+                    CHARGE_ID, confirmRequest(AMOUNT), CUSTOMER_ID);
+
+            // then: PAID 로 전이하고 잔액이 승인 금액만큼 늘고 CHARGE 원장이 1행 남는다
+            assertThat(charge.getStatus()).isEqualTo(PointChargeStatus.PAID);
+            assertThat(charge.getApprovedAmount()).isEqualTo(AMOUNT);
+            assertThat(wallet.getBalance()).isEqualTo(35_000L);
+            assertThat(response.balanceAfter()).isEqualTo(35_000L);
+            assertThat(response.approvedAt()).isNotNull();
+
+            // 승인 식별자·카드사 정보는 PG 응답에서 온다(서버가 만들지 않는다)
+            assertThat(charge.getProviderPaymentKey()).isEqualTo("mock_pay_approved");
+            assertThat(charge.getIssuerCode()).isEqualTo("MOCK");
+
+            ArgumentCaptor<PointTransaction> ledger = ArgumentCaptor.forClass(PointTransaction.class);
+            verify(pointTransactionRepository).save(ledger.capture());
+            assertThat(ledger.getValue().getTransactionType()).isEqualTo(PointTransactionType.CHARGE);
+            assertThat(ledger.getValue().getBalanceBefore()).isEqualTo(5_000L);
+            assertThat(ledger.getValue().getBalanceAfter()).isEqualTo(35_000L);
+        }
+
+        @Test
+        @DisplayName("PG 에 넘기는 승인 금액은 요청값이 아니라 DB 의 요청 금액이다")
+        void sendsStoredAmountToGateway() {
+            PointCharge charge = pendingCharge();
+            when(pointChargeRepository.findByIdForUpdate(CHARGE_ID)).thenReturn(Optional.of(charge));
+            when(pointWalletRepository.findByMemberIdForUpdate(CUSTOMER_ID))
+                    .thenReturn(Optional.of(walletWith(0L)));
+            gatewayApproves();
+
+            customerPaymentService.confirmPointCharge(
+                    CHARGE_ID, confirmRequest(AMOUNT), CUSTOMER_ID);
+
+            ArgumentCaptor<PaymentGateway.ConfirmCommand> command =
+                    ArgumentCaptor.forClass(PaymentGateway.ConfirmCommand.class);
+            verify(paymentGateway).confirm(command.capture());
+            assertThat(command.getValue().expectedAmount()).isEqualTo(AMOUNT);
+            assertThat(command.getValue().chargeRequestKey()).isEqualTo(REQUEST_KEY);
+            assertThat(command.getValue().authToken()).isEqualTo("mock_auth_test");
+        }
+
+        @Test
+        @DisplayName("이미 승인된 충전에 다시 승인 요청이 오면 잔액을 늘리지 않고 그때 결과를 돌려준다")
+        void replayReturnsOriginalApproval() {
+            // given: 이미 승인돼 잔액이 35,000원이 된 충전과 그때의 원장
+            PointCharge charge = pendingCharge();
+            charge.approve("mock_pay_first", null, null);
+            PointWallet wallet = walletWith(35_000L);
+            PointTransaction ledger = PointTransaction.forCharge(
+                    wallet, PointTransactionType.CHARGE, AMOUNT, 5_000L, "ledger-key", charge);
+            when(pointChargeRepository.findByIdForUpdate(CHARGE_ID)).thenReturn(Optional.of(charge));
+            when(pointTransactionRepository.findByPointCharge_IdAndTransactionType(
+                    CHARGE_ID, PointTransactionType.CHARGE)).thenReturn(Optional.of(ledger));
+
+            // when: 같은 승인 요청이 다시 오면
+            PointChargeConfirmResponse response = customerPaymentService.confirmPointCharge(
+                    CHARGE_ID, confirmRequest(AMOUNT), CUSTOMER_ID);
+
+            // then: 잔액은 그대로고 원장도 새로 쓰지 않는다. 잔액은 승인 당시 값(35,000)이다.
+            // PG 도 다시 부르지 않는다 — 이미 승인된 결제를 또 승인 요청하면 안 된다
+            assertThat(response.status()).isEqualTo(PointChargeStatus.PAID);
+            assertThat(response.balanceAfter()).isEqualTo(35_000L);
+            assertThat(wallet.getBalance()).isEqualTo(35_000L);
+            verify(paymentGateway, never()).confirm(any(PaymentGateway.ConfirmCommand.class));
+            verify(pointTransactionRepository, never()).save(any(PointTransaction.class));
+            verify(pointWalletRepository, never()).findByMemberIdForUpdate(any());
+        }
+
+        @Test
+        @DisplayName("PG 가 거절하면 충전하지 않고 FAILED 로 확정한다")
+        void declineMarksChargeFailedWithoutCrediting() {
+            // given: PENDING 충전과 잔액 5,000원, 그리고 거절하는 PG
+            PointCharge charge = pendingCharge();
+            when(pointChargeRepository.findByIdForUpdate(CHARGE_ID)).thenReturn(Optional.of(charge));
+            when(pointWalletRepository.findByMemberId(CUSTOMER_ID))
+                    .thenReturn(Optional.of(walletWith(5_000L)));
+            gatewayFails(PaymentGateway.PaymentGatewayException.FailureType.DECLINED);
+
+            // when: 승인을 요청하면
+            PointChargeConfirmResponse response = customerPaymentService.confirmPointCharge(
+                    CHARGE_ID, confirmRequest(AMOUNT), CUSTOMER_ID);
+
+            // then: FAILED 로 확정되고 잔액·원장은 건드리지 않는다(예외가 아니라 정상 응답이다 —
+            // 예외면 트랜잭션이 롤백되어 FAILED 전이가 사라진다)
+            assertThat(charge.getStatus()).isEqualTo(PointChargeStatus.FAILED);
+            assertThat(charge.getFailureReason()).contains("MOCK_DECLINED");
+            assertThat(response.status()).isEqualTo(PointChargeStatus.FAILED);
+            assertThat(response.approvedAmount()).isZero();
+            assertThat(response.balanceAfter()).isEqualTo(5_000L);
+            assertThat(response.approvedAt()).isNull();
+            verify(pointTransactionRepository, never()).save(any(PointTransaction.class));
+            verify(pointWalletRepository, never()).findByMemberIdForUpdate(any());
+        }
+
+        @Test
+        @DisplayName("PG 응답을 받지 못하면 상태를 확정하지 않고 502 로 알린다")
+        void timeoutKeepsChargePending() {
+            // given: 응답이 오지 않은 상황 — 결제가 됐는지 알 수 없다
+            PointCharge charge = pendingCharge();
+            when(pointChargeRepository.findByIdForUpdate(CHARGE_ID)).thenReturn(Optional.of(charge));
+            gatewayFails(PaymentGateway.PaymentGatewayException.FailureType.TIMEOUT);
+
+            Throwable thrown = catchThrowable(() -> customerPaymentService.confirmPointCharge(
+                    CHARGE_ID, confirmRequest(AMOUNT), CUSTOMER_ID));
+
+            // then: FAILED 로 못 박지 않는다. 실제로 결제된 건을 실패로 확정하면 되돌릴 수 없다
+            assertThat(thrown).isInstanceOf(BusinessException.class);
+            assertThat(((BusinessException) thrown).getStatus()).isEqualTo(HttpStatus.BAD_GATEWAY);
+            assertThat(charge.getStatus()).isEqualTo(PointChargeStatus.PENDING);
+            verify(pointTransactionRepository, never()).save(any(PointTransaction.class));
+        }
+
+        @Test
+        @DisplayName("결제 금액이 요청 금액과 다르면 400 으로 거부한다")
+        void rejectsAmountMismatch() {
+            when(pointChargeRepository.findByIdForUpdate(CHARGE_ID))
+                    .thenReturn(Optional.of(pendingCharge()));
+
+            // when & then: 30,000원 요청에 100원을 승인시키려는 시도
+            Throwable thrown = catchThrowable(() -> customerPaymentService.confirmPointCharge(
+                    CHARGE_ID, confirmRequest(100L), CUSTOMER_ID));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class);
+            assertThat(((BusinessException) thrown).getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+            verify(pointTransactionRepository, never()).save(any(PointTransaction.class));
+        }
+
+        @Test
+        @DisplayName("남의 충전 건은 403 으로 거부한다")
+        void rejectsOtherCustomersCharge() {
+            when(pointChargeRepository.findByIdForUpdate(CHARGE_ID))
+                    .thenReturn(Optional.of(pendingCharge()));
+
+            // when & then: 다른 고객(99)이 같은 충전 건을 승인시키려는 시도
+            Throwable thrown = catchThrowable(() -> customerPaymentService.confirmPointCharge(
+                    CHARGE_ID, confirmRequest(AMOUNT), 99L));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class);
+            assertThat(((BusinessException) thrown).getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("존재하지 않는 충전 건은 404 로 거부한다")
+        void rejectsMissingCharge() {
+            when(pointChargeRepository.findByIdForUpdate(CHARGE_ID)).thenReturn(Optional.empty());
+
+            Throwable thrown = catchThrowable(() -> customerPaymentService.confirmPointCharge(
+                    CHARGE_ID, confirmRequest(AMOUNT), CUSTOMER_ID));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class);
+            assertThat(((BusinessException) thrown).getStatus()).isEqualTo(HttpStatus.NOT_FOUND);
+        }
+
+        @Test
+        @DisplayName("PENDING·PAID 가 아닌 상태는 409 로 거부한다")
+        void rejectsNonPendingStatus() {
+            // given: 이미 실패로 확정된 충전
+            PointCharge charge = pendingCharge();
+            charge.fail("앞선 모의 결제 실패");
+            when(pointChargeRepository.findByIdForUpdate(CHARGE_ID)).thenReturn(Optional.of(charge));
+
+            Throwable thrown = catchThrowable(() -> customerPaymentService.confirmPointCharge(
+                    CHARGE_ID, confirmRequest(AMOUNT), CUSTOMER_ID));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class);
+            assertThat(((BusinessException) thrown).getStatus()).isEqualTo(HttpStatus.CONFLICT);
+            verify(pointTransactionRepository, never()).save(any(PointTransaction.class));
         }
     }
 }
