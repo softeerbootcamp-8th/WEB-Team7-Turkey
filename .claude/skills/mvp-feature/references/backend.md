@@ -54,11 +54,38 @@ Repository → Service → DTO → Controller 순으로 만든다.
 ### Controller
 
 **명세(인터페이스)와 구현(클래스)을 분리한다**(Discussion #245, 팀 합의 완료).
-`{도메인}Api` 인터페이스에 `@Tag`·`@RequestMapping`·`@Operation`·매핑 애노테이션·검증 애노테이션(`@Valid`,
-`@NotBlank` 등)을 전부 얹고, 컨트롤러 클래스는 `@RestController`(+ 필요하면 `@RequiredArgsConstructor`,
-`@Validated`)만 붙여 그 인터페이스를 `implements`한다. 클래스 쪽 메서드는 `@Override`만 달고 애노테이션 없는
-평범한 파라미터를 받는다. 새 컨트롤러는 처음부터 이 형태로 만든다(컨트롤러에 애노테이션을 직접 다는 옛
-방식으로 되돌아가지 않는다).
+나누는 기준은 **"문서에만 쓰이나, 실제 동작에 영향을 주나"**다.
+
+- `{도메인}Api` 인터페이스 — **순수 문서화 애노테이션만** 둔다.
+  `@Tag`, `@Operation`, `@ApiResponses`, `@Parameter`, swagger `@RequestBody`
+  (`io.swagger.v3.oas.annotations.parameters.RequestBody`).
+  메서드 파라미터는 타입과 이름만 적고 애노테이션을 붙이지 않는다.
+- `{도메인}Controller` 클래스 — `@RestController`(+ `@RequiredArgsConstructor`, 필요하면 `@Validated`)로
+  그 인터페이스를 `implements`하고, **동작에 영향을 주는 애노테이션은 전부 여기에 둔다.**
+  - 매핑: `@RequestMapping`, `@GetMapping`, `@PostMapping`, `@PatchMapping`, `@ResponseStatus` …
+  - 바인딩: `@PathVariable`, `@RequestParam`, `@RequestBody`, `@RequestAttribute`
+  - 검증: `@Valid`, `@NotBlank` 등 파라미터 제약
+  - 메서드에는 `@Override`를 단다.
+
+이렇게 나누는 이유는 두 가지다. 첫째, 요청을 라우팅하고 파라미터를 채우는 애노테이션이 **로직과 같은
+파일에서 보인다** — 수십 줄짜리 설명 문자열 사이에 묻히지 않는다. 둘째, 인터페이스에 Bean Validation
+제약이 하나도 없으므로 구현체가 제약을 "재정의"하는 상황 자체가 성립하지 않아
+`ConstraintDeclarationException`(HV000151)이 날 여지가 없다.
+springdoc은 상위 타입의 애노테이션을 함께 읽으므로 문서는 정상 생성된다.
+현재 형태의 실례는 `CustomerPointApi` / `CustomerPaymentController`, `RiderPointApi` / `RiderPaymentController`다.
+
+주의 두 가지:
+
+- 매핑이 구현체에만 있으므로 컨트롤러가 **JDK 동적 프록시**로 감싸이면 매핑이 유실되어 404가 난다.
+  Spring Boot는 CGLIB 프록시가 기본이라 보통 문제없지만, `spring.aop.proxy-target-class=false`를 쓰는
+  경우에는 확인이 필요하다.
+- `@RequestParam @NotBlank`처럼 파라미터에 직접 건 제약은 Spring 6.1(Boot 3.2)부터 메서드 검증(AOP)으로
+  걸린다. 그런 제약을 쓰는 구현 클래스에는 `@Validated`를 붙인다(`LoginIdController` 참고).
+  `@RequestBody @Valid`는 `RequestResponseBodyMethodProcessor`가 처리하는 별도 경로라 `@Validated` 없이도 동작한다.
+
+`CustomerDeliveryApi`·`LoginIdApi`처럼 **인터페이스에 매핑·검증까지 얹은 옛 파일이 남아 있다.**
+동작에는 문제가 없으니 이번 이슈 범위가 아니면 건드리지 않는다. 다만 그 파일을 손보게 되면 위 형태로 옮기고,
+새 컨트롤러는 처음부터 위 형태로 만든다.
 
 반환은 항상 `ApiResponse<T>`로 감싼다(`common/response/ApiResponse.java`의 `ok` / `fail`).
 
@@ -76,30 +103,34 @@ Repository → Service → DTO → Controller 순으로 만든다.
 인터페이스 타입에는 `@Tag`를, 메서드에는 `@Operation`을 반드시 단다.
 
 ```java
-// CustomerDeliveryApi.java — 명세
+// CustomerDeliveryApi.java — 명세(문서 전용)
 @Tag(name = "customer-delivery", description = "고객 배송요청")
-@RequestMapping("/api/customer/deliveries")
 public interface CustomerDeliveryApi {
 
-    @Operation(summary = "배송요청 생성", description = "고객이 새 배송요청을 등록한다. 진행 중 요청이 있으면 거부된다.")
+    @Operation(
+            operationId = "createCustomerDelivery",
+            summary = "배송요청 생성",
+            description = "고객이 새 배송요청을 등록한다. 진행 중 요청이 있으면 거부된다.")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "생성 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "진행 중 배송요청이 이미 있음")
     })
-    @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    ApiResponse<DeliveryCreateResponse> create(@Valid @RequestBody DeliveryCreateRequest request);
+    ApiResponse<DeliveryCreateResponse> createDelivery(DeliveryCreateRequest request);
 }
 
-// CustomerDeliveryController.java — 구현
+// CustomerDeliveryController.java — 구현(매핑·바인딩·검증)
 @RestController
 @RequiredArgsConstructor
+@RequestMapping("/api/customer/deliveries")
 public class CustomerDeliveryController implements CustomerDeliveryApi {
 
     private final DeliveryOrderService deliveryOrderService;
 
     @Override
-    public ApiResponse<DeliveryCreateResponse> create(DeliveryCreateRequest request) {
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<DeliveryCreateResponse> createDelivery(
+            @Valid @RequestBody DeliveryCreateRequest request) {
         return ApiResponse.ok(DeliveryCreateResponse.from(deliveryOrderService.create(request)));
     }
 }
@@ -107,8 +138,15 @@ public class CustomerDeliveryController implements CustomerDeliveryApi {
 
 주의할 점:
 
+- **`@Operation(operationId = "...")`을 반드시 명시한다.** 생략하면 springdoc이 컨트롤러 메서드명으로
+  이름을 만들고, 겹치면 뒤에 오는 쪽에 `_1`을 붙인다 — 그 배정은 스캔 순서에 달려 있어
+  `useRiderLogin`이던 훅이 조용히 `useLogin1`로 바뀐다. `OpenApiOperationIdE2ETest`가 누락·중복·`_1`
+  접미사를 모두 막고 있으므로 빠뜨리면 테스트가 깨진다.
+  이름에는 액터를 넣는다: `customerLogin`, `riderLogin`, `getCustomerPointBalance`.
+- **인터페이스만 만들어서는 `/v3/api-docs`에 아무것도 나오지 않는다.** springdoc은 빈으로 등록된
+  컨트롤러를 스캔하므로, 구현체가 있어야 문서와 Orval 훅이 생긴다.
 - `@Tag`의 `name`이 Orval의 **파일 분리 단위**다 (`mode: 'tags-split'`).
-  백엔드 패키지 구조와 대응되도록 `customer-delivery`, `rider-matching`처럼 케밥케이스로 일관되게 붙인다.
+  백엔드 패키지 구조와 대응되도록 `customer-delivery`, `rider-point`처럼 케밥케이스로 일관되게 붙인다.
   같은 도메인 컨트롤러가 여러 개면 같은 태그명을 공유한다.
 - 프로젝트의 `com.turkey.quick.common.response.ApiResponse`와 springdoc의
   `io.swagger.v3.oas.annotations.responses.ApiResponse`는 **이름이 겹친다.**
@@ -116,15 +154,9 @@ public class CustomerDeliveryController implements CustomerDeliveryApi {
   (에러 코드가 자명하면 `@Operation`만으로 충분하다. 겹침을 피하려고 프로젝트 응답 타입을 바꾸지는 않는다.)
 - DTO record 필드에는 `@Schema(description = "...", example = "...")`를 단다.
   프론트에서 이 설명이 JSDoc으로 따라간다.
+- 요청 예시(`@ExampleObject`)는 swagger `@RequestBody`로 인터페이스 쪽에 단다. 문서용이라 구현체의
+  Spring `@RequestBody`와 역할이 겹치지 않는다 — 같은 이름의 서로 다른 애노테이션이므로 임포트를 확인한다.
 - 문서가 바뀌었으면 프론트를 다시 생성해야 한다 → 단계 4.
-- **파라미터 제약(`@NotNull`, `@Valid` 등)은 인터페이스 메서드에만 적고, 구현체 쪽에서 강화하지 않는다.**
-  Jakarta Bean Validation은 하위 타입(구현체)이 상위 타입(인터페이스)의 파라미터 제약을 재정의·추가하는
-  것을 금지한다(리스코프 치환 원칙, 위반 시 `ConstraintDeclarationException`). 인터페이스에만 제약을
-  선언하면 "재정의" 자체가 성립하지 않으므로 이 문제가 생기지 않는다.
-  `@RequestBody @Valid`는 `RequestResponseBodyMethodProcessor`가 처리하는 별도 경로라 이 규칙과 무관하게
-  항상 동작한다. `@RequestParam @NotBlank`처럼 파라미터에 직접 건 제약은 Spring 6.1(Boot 3.2)부터 메서드
-  검증(AOP)이 걸리므로, 이 경로를 쓰는 컨트롤러 클래스에는 지금처럼 `@Validated`를 유지한다
-  (`LoginIdController` 참고). 자세한 배경은 Discussion #245.
 
 ## 예외 처리
 
@@ -184,6 +216,13 @@ public class GlobalExceptionHandler {
 Spring Security를 쓰지 않는다. 쿠키 기반 서버 세션(Redis 저장)을 필터/인터셉터로 직접 처리한다.
 `common/auth/`는 아직 비어 있다. 인증이 필요한 엔드포인트인데 세션 배선이 없다면
 **추측해서 만들지 말고** 단계 2에서 사람에게 확인한다 — 인가 방식은 이슈 하나가 임의로 정할 사안이 아니다.
+
+인증 주체는 인터셉터(`CustomerSessionInterceptor` / `RiderSessionInterceptor`)가 request attribute에 담아 둔
+`AuthenticatedCustomer` / `AuthenticatedRider`를 **구현체에서 `@RequestAttribute`로** 받는다.
+`customerId`·`riderId`를 요청 파라미터나 바디로 받지 않는다 — 받으면 남의 자원을 지목할 수 있는 통로가 된다.
+이 파라미터는 클라이언트가 채울 수 없으므로 스웨거 문서에도 노출되지 않는다.
+새 경로는 `CustomerWebMvcConfig` / `RiderWebMvcConfig`의 `addPathPatterns`에 등록해야 인증이 걸린다
+(Spring Security 미사용이라 선언적 자동 적용이 없다).
 
 ## 검증
 
