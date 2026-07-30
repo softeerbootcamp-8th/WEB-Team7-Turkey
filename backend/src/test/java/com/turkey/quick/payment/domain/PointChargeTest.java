@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class PointChargeTest {
@@ -96,7 +97,8 @@ class PointChargeTest {
                 .isInstanceOf(IllegalStateException.class);
     }
     @Test
-    void 승인_응답을_기록하면_상태는_PENDING_그대로고_승인식별자만_남는다() {
+    @DisplayName("승인 응답을 기록하면 상태는 PENDING 그대로고 승인 식별자만 남는다")
+    void recordsApprovalKeyWithoutChangingStatus() {
         PointCharge charge = pending(10_000L);
 
         boolean recorded = charge.markApprovalReceived("pay-key-1");
@@ -110,7 +112,8 @@ class PointChargeTest {
     }
 
     @Test
-    void 이미_기록된_승인식별자는_다른_값으로_덮이지_않는다() {
+    @DisplayName("이미 기록된 승인 식별자는 다른 값으로 덮이지 않는다")
+    void doesNotOverwriteRecordedApprovalKey() {
         PointCharge charge = pending(10_000L);
         charge.markApprovalReceived("pay-key-first");
 
@@ -122,7 +125,8 @@ class PointChargeTest {
     }
 
     @Test
-    void 같은_승인식별자를_다시_기록하면_성공으로_본다() {
+    @DisplayName("같은 승인 식별자를 다시 기록하면 성공으로 본다")
+    void treatsSameApprovalKeyAsRecorded() {
         PointCharge charge = pending(10_000L);
         charge.markApprovalReceived("pay-key-1");
 
@@ -130,7 +134,8 @@ class PointChargeTest {
     }
 
     @Test
-    void 승인은_이미_기록된_승인식별자를_덮어쓰지_않는다() {
+    @DisplayName("승인은 이미 기록된 승인 식별자를 덮어쓰지 않는다")
+    void approveKeepsRecordedApprovalKey() {
         PointCharge charge = pending(10_000L);
         charge.markApprovalReceived("pay-key-first");
 
