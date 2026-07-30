@@ -11,7 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 목록 조회(#55)만 구현한다. 상세(#57)·수락(#56)·넘기기는 각자 이슈에서 채운다
+ * 목록 조회(#55)·상세 조회(#57)를 구현한다. 수락(#56)·넘기기는 각자 이슈에서 채운다
  * ({@code RiderPaymentController}와 같은 방식으로 나머지는 스켈레톤으로 남긴다).
  */
 @RestController
@@ -27,8 +27,9 @@ public class RiderDeliveryRequestController implements RiderDeliveryRequestApi {
     }
 
     @Override
-    public ApiResponse<RiderDeliveryRequestDetailResponse> getDeliveryRequest(Long deliveryId) {
-        return null;
+    public ApiResponse<RiderDeliveryRequestDetailResponse> getDeliveryRequest(
+            AuthenticatedRider rider, Long deliveryId) {
+        return ApiResponse.ok(riderDeliveryRequestService.getDeliveryRequest(rider, deliveryId));
     }
 
     @Override

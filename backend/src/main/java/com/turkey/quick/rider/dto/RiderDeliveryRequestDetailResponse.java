@@ -30,6 +30,9 @@ public record RiderDeliveryRequestDetailResponse(
         @Schema(description = "픽업지-도착지 직선거리(m)", example = "3200")
         Integer straightDistanceMeters,
 
+        @Schema(description = "예상 소요시간(분)", example = "12")
+        Integer estimatedMinutes,
+
         @Schema(description = "고객에게 청구된 예상 운임 분해")
         FareBreakdownResponse estimatedFare,
 
