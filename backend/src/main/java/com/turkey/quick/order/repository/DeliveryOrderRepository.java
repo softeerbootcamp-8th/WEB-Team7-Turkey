@@ -5,6 +5,7 @@ import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.TrackableDelivery;
 import java.util.Optional;
 import java.util.Set;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -80,4 +81,5 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
             """)
     Optional<TrackableDelivery> findInProgressByRiderId(@Param("riderId") Long riderId,
                                                        @Param("statuses") Set<OrderStatus> statuses);
+    List<DeliveryOrder> findByStatus(OrderStatus status);
 }

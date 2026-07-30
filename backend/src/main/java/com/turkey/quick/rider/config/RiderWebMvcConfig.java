@@ -33,9 +33,10 @@ public class RiderWebMvcConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new RiderSessionInterceptor(sessionStore, memberRepository, riderProfileRepository, cookieSecure))
-                .addPathPatterns(
-                        "/api/rider/session",   // #50
-                        "/api/rider/location"   // #236
-                );
+                .addPathPatterns("/api/rider/session",
+                                 "/api/rider/requests",
+                                 "/api/rider/requests/**",
+                                 "/api/rider/location"   
+                                );
     }
 }

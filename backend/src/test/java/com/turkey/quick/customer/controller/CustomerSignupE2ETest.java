@@ -12,7 +12,9 @@ import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.member.repository.MemberTermAgreementRepository;
 import com.turkey.quick.member.repository.TermRepository;
 import com.turkey.quick.member.service.FakeSmsSender;
-import com.turkey.quick.member.service.VerificationCodeStore;
+import com.turkey.quick.member.service.InMemoryVerificationCodeStore;
+import com.turkey.quick.payment.domain.PointWallet;
+import com.turkey.quick.payment.repository.PointWalletRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -55,6 +57,9 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
 
     @Autowired
     private VerificationCodeStore verificationCodeStore;
+
+    @Autowired
+    private PointWalletRepository pointWalletRepository;
 
     @TestConfiguration
     static class FakeInfraConfig {
@@ -111,6 +116,9 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
         assertThat(response.getBody()).extracting("data").asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
                 .containsEntry("loginId", "e2e_user01");
         assertThat(memberRepository.existsByLoginId("e2e_user01")).isTrue();
+        Long memberId = memberRepository.findByLoginId("e2e_user01").orElseThrow().getId();
+        PointWallet wallet = pointWalletRepository.findById(memberId).orElseThrow();
+        assertThat(wallet.getBalance()).isZero();
     }
 
     @Test
