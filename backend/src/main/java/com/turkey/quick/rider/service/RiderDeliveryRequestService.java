@@ -15,10 +15,14 @@ import com.turkey.quick.order.service.DeliveryService;
 import com.turkey.quick.rider.auth.AuthenticatedRider;
 import com.turkey.quick.rider.domain.DeliveryRequestSort;
 import com.turkey.quick.rider.domain.OperatingStatus;
+import com.turkey.quick.rider.dto.RiderDeliveryRequestAcceptResponse;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestDetailResponse;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestSummaryResponse;
+import com.turkey.quick.rider.repository.RiderProfileRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -27,6 +31,7 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.geo.Point;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -45,6 +50,7 @@ public class RiderDeliveryRequestService {
     private final DeliveryOrderRepository deliveryOrderRepository;
     private final OrderFareSnapshotRepository orderFareSnapshotRepository;
     private final RiderGeoRepository riderGeoRepository;
+    private final RiderProfileRepository riderProfileRepository;
     private final DeliveryService deliveryService;
 
     /**
@@ -151,6 +157,91 @@ public class RiderDeliveryRequestService {
                 toFareBreakdownResponse(estimate),
                 estimate.getTotalFare(),
                 order.getRequestedAt());
+    }
+
+    /**
+     * 배차 대기(WAITING) 배송요청을 라이더가 수락해 확정한다(#56, ADR-006).
+     *
+     * <p><b>동작 순서</b>
+     * <ol>
+     *   <li>라이더가 AVAILABLE 상태인지 검사한다(위반 시 403) — 세션 정보 기준 1차 검사일 뿐,
+     *       최종 판정은 아래 조건부 UPDATE가 한다(세션과 DB 사이에 시차가 있을 수 있어서다).</li>
+     *   <li><b>주문 조건부 UPDATE</b>: {@code UPDATE delivery_order SET status=ASSIGNED, ... WHERE
+     *       order_id=:deliveryId AND status='WAITING'}. 영향 행이 0이면 이 요청이 배차 경쟁에서
+     *       졌거나(다른 라이더가 먼저 확정) 주문이 취소됐거나 존재하지 않는다는 뜻이다 — 주문을
+     *       다시 조회해 정확한 사유로 예외를 던진다(존재하지 않으면 404, 취소/이미 배차면 409).
+     *       같은 라이더가 서로 다른 두 주문을 동시에 수락하면 이 UPDATE 자체는 성공할 수 있지만
+     *       {@code uk_delivery_active_rider} UNIQUE 위반으로 커밋 시점에 막히므로, 그 예외도
+     *       여기서 409로 바꿔 던진다.</li>
+     *   <li><b>라이더 조건부 UPDATE</b>: {@code UPDATE rider_profile SET operating_status=BUSY ...
+     *       WHERE member_id=:riderId AND operating_status='AVAILABLE'}. 반드시 주문 UPDATE
+     *       *다음에* 실행한다 — 두 UPDATE의 잠금 순서를 항상 "주문 → 라이더"로 고정해 데드락을
+     *       피하는 게 ADR-006이 정한 팀 컨벤션이다. 영향 행이 0이면 이 라이더가 이미 다른 배송을
+     *       수행 중이라는 뜻이며(예: 같은 라이더가 다른 주문을 먼저 수락함), 409로 실패하면서
+     *       메서드 전체가 예외를 던지므로 방금 성공했던 주문 UPDATE도 트랜잭션과 함께 롤백된다
+     *       (부분 성공 없음 — ADR-006 핵심 요구사항).</li>
+     *   <li>두 UPDATE가 모두 성공하면 주문을 다시 조회해 최신 상태(ASSIGNED, 배차 시각)로 응답을
+     *       구성한다.</li>
+     * </ol>
+     *
+     * @param rider 세션 인증을 통과해 이미 식별된 현재 라이더
+     * @param deliveryId 수락할 배송요청 식별자
+     * @return 배차 확정 결과(주문 ASSIGNED, 라이더 BUSY, 배차 시각)
+     */
+    @Transactional
+    public RiderDeliveryRequestAcceptResponse acceptDeliveryRequest(AuthenticatedRider rider, Long deliveryId) {
+        requireAvailable(rider);
+
+        LocalDateTime assignedAt = LocalDateTime.now(ZoneOffset.UTC);
+        int orderUpdated;
+        try {
+            orderUpdated = deliveryOrderRepository.assignIfWaiting(deliveryId, rider.memberId(), assignedAt);
+        } catch (DataIntegrityViolationException e) {
+            // 같은 라이더가 다른 주문과 동시에 경쟁해 uk_delivery_active_rider 를 위반한 경우다
+            // (ADR-006 "한 라이더 두 주문" 테이블 차원 백스톱).
+            throw new BusinessException(HttpStatus.CONFLICT,
+                    "라이더가 이미 다른 배송을 수행 중이라 배차를 확정할 수 없습니다.");
+        }
+        if (orderUpdated == 0) {
+            throw notWaitingException(deliveryId);
+        }
+
+        int riderUpdated = riderProfileRepository.markBusyIfAvailable(rider.memberId());
+        if (riderUpdated == 0) {
+            // 주문 UPDATE 는 이미 성공했지만, 여기서 예외를 던져 트랜잭션 전체를 롤백시킨다
+            // (ADR-006: 둘 다 1행일 때만 커밋, 부분 성공 금지).
+            throw new BusinessException(HttpStatus.CONFLICT,
+                    "라이더가 이미 다른 배송을 수행 중이라 배차를 확정할 수 없습니다.");
+        }
+
+        DeliveryOrder assigned = deliveryOrderRepository.findById(deliveryId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "방금 배차 확정한 주문을 다시 조회할 수 없습니다. orderId=" + deliveryId));
+
+        return new RiderDeliveryRequestAcceptResponse(
+                assigned.getId(), assigned.getStatus(), OperatingStatus.BUSY, assigned.getAssignedAt());
+    }
+
+    /**
+     * 주문 조건부 UPDATE가 0행이었을 때, 재조회로 정확한 실패 사유를 구분한다(ADR-006: "조건부
+     * UPDATE는 0행만 돌려주고 이유는 알려주지 않으니, 실패 시 현재 상태를 재조회해 사유를
+     * 구분한다"). 존재하지 않으면 404, 취소됐거나 이미 배차됐으면 409다.
+     */
+    private BusinessException notWaitingException(Long deliveryId) {
+        return deliveryOrderRepository.findById(deliveryId)
+                .<BusinessException>map(order -> switch (order.getStatus()) {
+                    case CANCELED -> new BusinessException(HttpStatus.CONFLICT,
+                            "배송요청이 취소되어 배차를 확정할 수 없습니다.");
+                    // OrderStatus.canTransitionTo 상 WAITING으로 되돌아가는 전이가 없어 이 분기는
+                    // 정상 흐름에서는 도달하지 않는다. switch 완전성 때문에 값을 채워야 해서,
+                    // "이미 배차됨"처럼 잘못된 사유를 주지 않도록 재시도 안내로 방어만 해 둔다.
+                    case WAITING -> new BusinessException(HttpStatus.CONFLICT,
+                            "배차 확정에 실패했습니다. 다시 시도해 주세요.");
+                    default -> new BusinessException(HttpStatus.CONFLICT,
+                            "이미 다른 라이더가 배차를 확정했습니다.");
+                })
+                .orElseGet(() -> new BusinessException(HttpStatus.NOT_FOUND,
+                        "존재하지 않는 배송요청입니다. deliveryId=" + deliveryId));
     }
 
     /** 배차 전에는 상세 주소(동·호수)를 노출하지 않는다 — 목록 응답과 같은 정책. */

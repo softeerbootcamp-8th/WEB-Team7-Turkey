@@ -3,11 +3,12 @@ package com.turkey.quick.order.repository;
 import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.TrackableDelivery;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -83,4 +84,24 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
     Optional<TrackableDelivery> findInProgressByRiderId(@Param("riderId") Long riderId,
                                                        @Param("statuses") Set<OrderStatus> statuses);
     List<DeliveryOrder> findByStatus(OrderStatus status);
+
+    /**
+     * 배차 확정(#56)의 첫 번째 조건부 UPDATE(ADR-006 Compare-And-Set). WAITING인 행만
+     * ASSIGNED로 바꾸고, 영향 행 수(0 또는 1)로 "이 요청이 배차 경쟁에서 이겼는가"를 판정한다.
+     * 항상 {@link com.turkey.quick.rider.repository.RiderProfileRepository#markBusyIfAvailable}
+     * 보다 먼저 호출한다(ADR-006이 고정한 잠금 순서: 주문 → 라이더, 데드락 회피).
+     *
+     * <p>이 WHERE 조건은 "한 주문에 여러 라이더"만 막는다 — 서로 다른 주문(행)끼리는 이 조건이
+     * 서로를 전혀 모르기 때문에, 같은 라이더가 서로 다른 두 주문을 동시에 수락하면 이 UPDATE
+     * 자체는 (각자 자기 행 기준으로) 둘 다 성공할 수 있다. 그 대신 {@code uk_delivery_active_rider}
+     * UNIQUE 제약이 테이블 전체에서 "한 라이더는 진행 중 주문 1건" 을 강제하므로, 두 번째 UPDATE가
+     * 커밋되는 시점에 충돌을 일으켜 {@link org.springframework.dao.DataIntegrityViolationException}
+     * 으로 막힌다(ADR-006 "한 라이더 두 주문" 테이블 차원 백스톱). 호출부에서 이 예외를 잡아
+     * 409로 변환해야 한다.
+     */
+    @Modifying(clearAutomatically = true)
+    @Query(value = "UPDATE delivery_order SET status = 'ASSIGNED', assigned_rider_id = :riderId, "
+            + "assigned_at = :assignedAt WHERE order_id = :orderId AND status = 'WAITING'", nativeQuery = true)
+    int assignIfWaiting(@Param("orderId") Long orderId, @Param("riderId") Long riderId,
+                        @Param("assignedAt") LocalDateTime assignedAt);
 }
