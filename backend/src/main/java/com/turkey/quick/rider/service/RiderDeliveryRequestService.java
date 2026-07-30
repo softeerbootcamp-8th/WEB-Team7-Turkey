@@ -2,16 +2,20 @@ package com.turkey.quick.rider.service;
 
 import com.turkey.quick.common.exception.BusinessException;
 import com.turkey.quick.location.repository.RiderGeoRepository;
+import com.turkey.quick.order.domain.Address;
 import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.FareType;
 import com.turkey.quick.order.domain.OrderFareSnapshot;
 import com.turkey.quick.order.domain.OrderStatus;
+import com.turkey.quick.order.dto.AddressResponse;
+import com.turkey.quick.order.dto.FareBreakdownResponse;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
 import com.turkey.quick.order.service.DeliveryService;
 import com.turkey.quick.rider.auth.AuthenticatedRider;
 import com.turkey.quick.rider.domain.DeliveryRequestSort;
 import com.turkey.quick.rider.domain.OperatingStatus;
+import com.turkey.quick.rider.dto.RiderDeliveryRequestDetailResponse;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestSummaryResponse;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -98,6 +102,71 @@ public class RiderDeliveryRequestService {
 
         summaries.sort(comparatorFor(sort, riderPosition.isPresent()));
         return summaries;
+    }
+
+    /**
+     * 배차 대기(WAITING) 배송요청 하나의 상세정보를 조회한다(#57).
+     *
+     * <p><b>동작 순서</b>
+     * <ol>
+     *   <li>라이더가 AVAILABLE 상태인지 검사한다(위반 시 403).</li>
+     *   <li>{@code deliveryId}로 주문을 조회한다. 존재하지 않거나 상태가 WAITING이 아니면
+     *       (이미 배차됐거나 취소됨) 404로 취급한다 — 배차 가능 여부만 라이더에게 의미가 있으므로
+     *       "없다"와 "더 이상 대상이 아니다"를 구분해 알려주지 않는다.</li>
+     *   <li>그 주문의 예상 운임 스냅샷(ESTIMATE)을 조회한다. 없으면 데이터 정합성 오류
+     *       ({@link IllegalStateException}) — 목록 조회와 같은 불변식이다.</li>
+     *   <li>상세 응답으로 변환한다. 픽업지·도착지는 도로명 주소만 포함하고 상세 주소(동·호수)는
+     *       비운다 — 배차 확정 전에는 고객 개인정보를 노출하지 않는다는 계약(#55/#57 공통 정책).
+     *       예상 소요시간은 저장된 직선거리를 {@link DeliveryService#estimateMinutes(int)}로
+     *       환산해 계산한다(별도로 저장하지 않는다).</li>
+     * </ol>
+     *
+     * @param rider 세션 인증을 통과해 이미 식별된 현재 라이더
+     * @param deliveryId 조회할 배송요청 식별자
+     * @return 상세정보. 주문이 없거나 WAITING이 아니면 {@link BusinessException}(404).
+     */
+    @Transactional(readOnly = true)
+    public RiderDeliveryRequestDetailResponse getDeliveryRequest(AuthenticatedRider rider, Long deliveryId) {
+        requireAvailable(rider);
+
+        DeliveryOrder order = deliveryOrderRepository.findById(deliveryId)
+                .filter(candidate -> candidate.getStatus() == OrderStatus.WAITING)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
+                        "배차 가능한 배송요청이 아닙니다. deliveryId=" + deliveryId));
+
+        OrderFareSnapshot estimate = orderFareSnapshotRepository
+                .findByOrder_IdAndFareType(order.getId(), FareType.ESTIMATE)
+                .orElseThrow(() -> new IllegalStateException(
+                        "배송요청에 예상 운임 스냅샷이 없습니다. orderId=" + order.getId()));
+
+        int estimatedMinutes = deliveryService.estimateMinutes(order.getStraightDistanceMeters());
+
+        return new RiderDeliveryRequestDetailResponse(
+                order.getId(),
+                order.getItemType(),
+                toAddressResponseWithoutDetail(order.getPickup()),
+                toAddressResponseWithoutDetail(order.getDestination()),
+                order.getStraightDistanceMeters(),
+                estimatedMinutes,
+                toFareBreakdownResponse(estimate),
+                estimate.getTotalFare(),
+                order.getRequestedAt());
+    }
+
+    /** 배차 전에는 상세 주소(동·호수)를 노출하지 않는다 — 목록 응답과 같은 정책. */
+    private AddressResponse toAddressResponseWithoutDetail(Address address) {
+        return new AddressResponse(address.getRoadAddress(), null, address.getPostalCode(),
+                address.getLatitude(), address.getLongitude());
+    }
+
+    private FareBreakdownResponse toFareBreakdownResponse(OrderFareSnapshot snapshot) {
+        return new FareBreakdownResponse(
+                snapshot.getPolicyVersion(),
+                snapshot.getCalculationDistanceMeters(),
+                snapshot.getBaseFare(),
+                snapshot.getDistanceFare(),
+                snapshot.getItemSurcharge(),
+                snapshot.getTotalFare());
     }
 
     private void requireAvailable(AuthenticatedRider rider) {
