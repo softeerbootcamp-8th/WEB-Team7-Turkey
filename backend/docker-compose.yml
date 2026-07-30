@@ -39,6 +39,12 @@ services:
     container_name: turkey-redis-local
     ports:
       - "6379:6379"
+    # 주의: 개발 PC 에 Redis 를 직접 설치하지 않는다(Homebrew 등). 호스트 Redis 는
+    # 127.0.0.1:6379 에 바인딩하고 컨테이너는 *:6379 에 바인딩하는데, 더 구체적인 호스트 쪽이
+    # 이기기 때문이다. 그러면 localhost:6379 로 붙는 애플리케이션·테스트가 컨테이너가 아니라
+    # 호스트 인스턴스에 **조용히** 연결된다 — 2026-07-29 에 실제로 그 상태로 테스트가 돌고
+    # 있었다(호스트 8.8.0 vs 컨테이너 7.4). H2 로 통과하고 MySQL 에서 깨졌던 것과 같은 종류의
+    # 문제라, 통합·E2E 테스트의 RedisCleaner 가 연결된 인스턴스의 버전을 확인해 이 상황을 막는다.
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

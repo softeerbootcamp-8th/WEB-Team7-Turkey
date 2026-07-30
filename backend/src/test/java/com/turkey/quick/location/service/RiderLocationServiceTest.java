@@ -140,6 +140,12 @@ class RiderLocationServiceTest {
     @DisplayName("측정 시각 단조성")
     class Monotonicity {
 
+        /**
+         * 기준 좌표에서 약 55m 북쪽. 최소 이동 거리(20m)를 넘으면서 30초에 1.85 m/s 라 허용 속도
+         * 안이다 — #82 필터가 붙은 뒤로는 픽스처 좌표도 물리적으로 가능한 값이어야 한다.
+         */
+        private static final String NEARBY = "37.4984";
+
         @Test
         @DisplayName("이전 위치가 없으면 첫 좌표를 받아들인다")
         void acceptsFirstFix() {
@@ -153,7 +159,7 @@ class RiderLocationServiceTest {
         void keepsLatestWhenOlderFixArrives() {
             updateAsBusy(request("37.4979", 20));
 
-            RiderLocationUpdateResponse response = updateAsBusy(request("37.9999", 40));
+            RiderLocationUpdateResponse response = updateAsBusy(request(NEARBY, 40));
 
             assertThat(response.reason()).isEqualTo(LocationUpdateOutcome.NON_MONOTONIC);
             assertThat(response.applied()).isFalse();
@@ -167,7 +173,7 @@ class RiderLocationServiceTest {
             // 같은 좌표 재전송이라 덮어써도 값은 같지만 Redis 쓰기만 늘어난다.
             updateAsBusy(request("37.4979", 20));
 
-            RiderLocationUpdateResponse response = updateAsBusy(request("37.9999", 20));
+            RiderLocationUpdateResponse response = updateAsBusy(request(NEARBY, 20));
 
             assertThat(response.reason()).isEqualTo(LocationUpdateOutcome.NON_MONOTONIC);
             assertThat(storedLatitude()).isEqualByComparingTo("37.4979");
@@ -178,10 +184,95 @@ class RiderLocationServiceTest {
         void updatesLatestWhenNewerFixArrives() {
             updateAsBusy(request("37.4979", 40));
 
-            RiderLocationUpdateResponse response = updateAsBusy(request("37.9999", 10));
+            RiderLocationUpdateResponse response = updateAsBusy(request(NEARBY, 10));
 
             assertThat(response.reason()).isEqualTo(LocationUpdateOutcome.ACCEPTED);
-            assertThat(storedLatitude()).isEqualByComparingTo("37.9999");
+            assertThat(storedLatitude()).isEqualByComparingTo(NEARBY);
+        }
+    }
+
+    @Nested
+    @DisplayName("중복·이상 이동 필터")
+    class Filtering {
+
+        /** 위도 +0.0001도 ≈ 11m — 최소 이동 거리(20m) 미만. */
+        private static final String SMALL_STEP = "0.0001";
+
+        private RiderLocationUpdateRequest movedNorth(int steps, long secondsAgo) {
+            BigDecimal latitude = new BigDecimal("37.4979")
+                    .add(new BigDecimal(SMALL_STEP).multiply(BigDecimal.valueOf(steps)));
+            return new RiderLocationUpdateRequest(latitude, LONGITUDE, baseNow.minusSeconds(secondsAgo), null);
+        }
+
+        @Test
+        @DisplayName("의미 있게 움직이면 저장하고 전송 대상이 된다")
+        void publishesRealMovement() {
+            updateAsBusy(movedNorth(0, 30));
+
+            var response = updateAsBusy(movedNorth(5, 20));   // 약 55m
+
+            assertThat(response.reason()).isEqualTo(LocationUpdateOutcome.ACCEPTED);
+            assertThat(response.applied()).isTrue();
+            assertThat(storedLatitude()).isEqualByComparingTo(movedNorth(5, 20).latitude());
+        }
+
+        @Test
+        @DisplayName("최소 이동 거리 미만이면 저장은 되고 전송 대상은 아니다")
+        void storesButDoesNotPublishSmallMovement() {
+            updateAsBusy(movedNorth(0, 30));
+
+            var response = updateAsBusy(movedNorth(1, 20));   // 약 11m
+
+            assertThat(response.reason()).isEqualTo(LocationUpdateOutcome.DUPLICATE);
+            assertThat(response.applied()).isTrue();
+            assertThat(response.published()).isFalse();
+        }
+
+        @Test
+        @DisplayName("최소 이동 거리 미만일 때 좌표는 그대로 두고 TTL 만 갱신한다")
+        void keepsBaselineOnSmallMovement() {
+            // 새 좌표로 덮으면 기준선이 조금씩 전진해, 느리게 움직이는 라이더가 영원히 전송
+            // 대상이 되지 않는다. 아래 누적 이동 테스트가 그 결과를 검증한다.
+            updateAsBusy(movedNorth(0, 30));
+
+            updateAsBusy(movedNorth(1, 20));
+
+            assertThat(storedLatitude()).isEqualByComparingTo(movedNorth(0, 30).latitude());
+        }
+
+        @Test
+        @DisplayName("느린 이동도 누적되면 전송 대상이 된다")
+        void publishesOnceSlowMovementAccumulates() {
+            // 이 테스트가 "중복이면 좌표를 덮지 않는다"의 존재 이유다. 매번 11m 씩 움직이는
+            // 라이더는 직전 대비로는 항상 최소 이동 거리 미만이지만, 기준선이 고정돼 있으므로
+            // 누적 22m 가 되는 순간 전송 대상이 된다. 기준선을 전진시키면 영원히 전송되지 않는다.
+            updateAsBusy(movedNorth(0, 30));
+
+            assertThat(updateAsBusy(movedNorth(1, 25)).reason())
+                    .isEqualTo(LocationUpdateOutcome.DUPLICATE);
+            assertThat(updateAsBusy(movedNorth(2, 20)).reason())
+                    .isEqualTo(LocationUpdateOutcome.ACCEPTED);
+        }
+
+        @Test
+        @DisplayName("이상 속도는 저장하지 않고 기준선을 오염시키지 않는다")
+        void doesNotStoreImplausibleMovement() {
+            updateAsBusy(request("37.4979", 20));
+
+            // 10초 만에 위도 1도(약 111km) 이동 → 약 11,100 m/s
+            var response = updateAsBusy(request("38.4979", 10));
+
+            assertThat(response.reason()).isEqualTo(LocationUpdateOutcome.IMPLAUSIBLE_SPEED);
+            assertThat(response.applied()).isFalse();
+            assertThat(storedLatitude()).isEqualByComparingTo("37.4979");
+        }
+
+        @Test
+        @DisplayName("첫 좌표는 필터를 통과한다")
+        void acceptsFirstFixWithoutBaseline() {
+            var response = updateAsBusy(request("37.4979", 10));
+
+            assertThat(response.reason()).isEqualTo(LocationUpdateOutcome.ACCEPTED);
         }
     }
 

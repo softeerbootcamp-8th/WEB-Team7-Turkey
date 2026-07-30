@@ -8,7 +8,7 @@ import com.turkey.quick.member.domain.MemberRole;
 import com.turkey.quick.member.domain.VerificationPurpose;
 import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.member.service.FakeSmsSender;
-import com.turkey.quick.member.service.InMemoryVerificationCodeStore;
+import com.turkey.quick.member.service.VerificationCodeStore;
 import com.turkey.quick.support.IntegrationTestSupport;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -42,16 +42,10 @@ class PhoneVerificationE2ETest extends IntegrationTestSupport {
     private FakeSmsSender smsSender;
 
     @Autowired
-    private InMemoryVerificationCodeStore verificationCodeStore;
+    private VerificationCodeStore verificationCodeStore;
 
     @TestConfiguration
     static class FakeInfraConfig {
-
-        @Bean
-        @Primary
-        InMemoryVerificationCodeStore verificationCodeStore() {
-            return new InMemoryVerificationCodeStore();
-        }
 
         @Bean
         @Primary
@@ -127,7 +121,7 @@ class PhoneVerificationE2ETest extends IntegrationTestSupport {
     void 발급된_인증번호로_확인하면_200과_토큰을_반환한다() {
         var phoneNumber = "010-3333-4444";
         rest.postForEntity(ENDPOINT, Map.of("phoneNumber", phoneNumber, "purpose", VerificationPurpose.SIGNUP), ApiResponse.class);
-        String code = verificationCodeStore.savedCode(VerificationPurpose.SIGNUP, "01033334444");
+        String code = verificationCodeStore.getCode(VerificationPurpose.SIGNUP, "01033334444");
 
         var confirmRequest = Map.of("phoneNumber", phoneNumber, "purpose", VerificationPurpose.SIGNUP, "code", code);
         var response = rest.postForEntity(CONFIRM_ENDPOINT, confirmRequest, ApiResponse.class);
