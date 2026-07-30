@@ -11,7 +11,9 @@ import com.turkey.quick.member.domain.VerificationPurpose;
 import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.member.repository.MemberTermAgreementRepository;
 import com.turkey.quick.member.repository.TermRepository;
-import com.turkey.quick.member.service.VerificationCodeStore;
+import com.turkey.quick.member.service.InMemoryVerificationCodeStore;
+import com.turkey.quick.payment.domain.PointWallet;
+import com.turkey.quick.payment.repository.PointWalletRepository;
 import com.turkey.quick.rider.domain.OperatingStatus;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
@@ -54,7 +56,20 @@ class RiderSignupE2ETest extends IntegrationTestSupport {
     private MemberTermAgreementRepository memberTermAgreementRepository;
 
     @Autowired
-    private VerificationCodeStore verificationCodeStore;
+    private InMemoryVerificationCodeStore verificationCodeStore;
+
+    @Autowired
+    private PointWalletRepository pointWalletRepository;
+
+    @TestConfiguration
+    static class FakeInfraConfig {
+
+        @Bean
+        @Primary
+        InMemoryVerificationCodeStore verificationCodeStore() {
+            return new InMemoryVerificationCodeStore();
+        }
+    }
 
     @AfterEach
     void 만든_약관을_정리한다() {
@@ -89,6 +104,8 @@ class RiderSignupE2ETest extends IntegrationTestSupport {
         assertThat(member.getRole()).isEqualTo(MemberRole.RIDER);
         var profile = riderProfileRepository.findById(member.getId()).orElseThrow();
         assertThat(profile.getOperatingStatus()).isEqualTo(OperatingStatus.UNAVAILABLE);
+        PointWallet wallet = pointWalletRepository.findById(member.getId()).orElseThrow();
+        assertThat(wallet.getBalance()).isZero();
     }
 
     @Test
