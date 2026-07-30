@@ -12,8 +12,10 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
  * 라이더 전용 API에 세션 인증 인터셉터를 배선한다({@code CustomerWebMvcConfig}, #27과 동일한
- * 이유). 지금은 이 이슈(#50)가 만드는 /api/rider/session 하나만 등록한다 — 로그인·회원가입은
- * 인증이 필요 없는 공개 API다.
+ * 이유). 로그인·회원가입은 인증이 필요 없는 공개 API라 등록하지 않는다.
+ *
+ * 새 라이더 전용 API를 추가하면 여기 addPathPatterns 에도 등록해야 인증이 걸린다
+ * (CLAUDE.md 「확정된 결정」— 등록을 빠뜨리면 그 API는 인증 없이 열린 채로 배포된다).
  */
 @Configuration
 @RequiredArgsConstructor
@@ -29,6 +31,6 @@ public class RiderWebMvcConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new RiderSessionInterceptor(sessionStore, memberRepository, riderProfileRepository, cookieSecure))
-                .addPathPatterns("/api/rider/session");
+                .addPathPatterns("/api/rider/session", "/api/rider/requests", "/api/rider/requests/**");
     }
 }
