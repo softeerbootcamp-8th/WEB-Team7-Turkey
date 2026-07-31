@@ -15,6 +15,7 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
 
   # --- 비동기 응답(SSE) 타임아웃 ---
   # 이 값은 SSE 동작을 바꾸지 않는다 — SseEmitter 를 타임아웃 인자로 만들면 그 값이 이겨서
