@@ -312,6 +312,22 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   않은 건"을 뜻한다(#33). 사실상 `APPROVING` 상태를 enum 값 없이 표현한 것이라 PENDING 의 의미가 둘이다
 - `PointChargeApprover.alreadyApprovedResponse` 가 트랜잭션 밖에서 조회한 엔터티를 인자로 받는다(#33).
   현재는 단순 getter 만 써서 안전하지만 연관을 건드리면 `LazyInitializationException` 이 난다
+- **취소가 승인을 이기면 실 PG 에서 "돈은 나갔는데 CANCELED" 가 될 수 있다**(#34). `confirmPointCharge`
+  는 잠금 없이 사전 검증한 뒤 PG 를 부르는데, 그 사이 취소가 커밋되면 승인을 받아 온 뒤
+  `finalizeApproval` 이 409 로 막는다. 이때 `recordApprovalReceived` 는 상태가 PENDING 이 아니라 아무것도
+  하지 않으므로 **승인 식별자가 DB 에 남지 않아** `status='PENDING' AND provider_payment_key IS NOT NULL`
+  대사 조건에도 걸리지 않는다. 모의 PG 는 무해하지만 실 PG 에서는 추적 불가능한 건이 된다.
+  CANCELED 에도 승인 식별자를 기록할지, claim 패턴으로 취소를 막을지 미결. **`APPROVING` 상태를
+  추가하는 것만으로는 안 풀린다** — 경쟁 창이 PG 호출 앞에 있어서, PG 호출 <b>전에</b> 상태를
+  선점해야 닫힌다(검토 내용은 워크로그 `2026-07-31-34-point-charge-cancel.md` 부록). 모의 PG 로는
+  검증할 수 없어 MVP 에서는 감수하고 실 PG 벤더 선정 시점에 판단한다
+- **오래 PENDING 인 충전 요청을 정리할 방법이 없다**(#34 에서 범위 밖으로 뺌). 결제창을 열어 둔 채
+  브라우저를 닫으면 취소 요청이 오지 않아 그 건은 영구히 PENDING 이다. 만료 스케줄러를 둘지, 둔다면
+  기준(요청 후 N분)과 실 PG 결제 조회 API 와의 관계를 정해야 한다
+- **`point_charge.failure_reason` 이 FAILED·CANCELED 두 의미를 겸한다**(#34, 사람 확인). CANCELED 전용
+  사유 컬럼을 두지 않고 재사용하기로 했다 — 마이그레이션이 없고 승인 전 취소 사유는 사실상 고정값
+  하나이기 때문이다. **값을 해석할 때 반드시 `status` 를 함께 봐야 한다.** 사유별 집계가 붙으면
+  전용 컬럼으로 나눌지 재검토
 - `RiderDeliveryRequestApi`의 `getDeliveryRequest`/`acceptDeliveryRequest`/`skipDeliveryRequest`
   세 메서드에 라이더 식별 파라미터(`AuthenticatedRider`)가 빠져 있음(#55) — #56/#57 구현 시
   `getDeliveryRequests`와 같은 방식(`@RequestAttribute`)으로 추가 필요
