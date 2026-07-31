@@ -180,10 +180,21 @@ public class PointCharge {
         this.failureReason = failureReason;
     }
 
-    /** 결제 취소: PENDING → CANCELED. (승인 전 사용자/시스템 취소) */
-    public void cancel() {
+    /**
+     * 결제 취소: PENDING → CANCELED. (승인 전 사용자/시스템 취소, #34)
+     *
+     * <p>사유를 {@code failure_reason} 에 담는다 — CANCELED 전용 컬럼을 따로 두지 않았다.
+     * {@code ck_point_charge_state_values} 는 금액·시각 컬럼만 검사하고 사유 컬럼은 상태와 묶지
+     * 않으므로 제약 위반이 아니다. 대신 <b>이 컬럼 하나가 두 의미를 겸한다</b> — 값을 해석할 때는
+     * 반드시 {@code status} 를 함께 봐야 한다(FAILED 면 PG 거절 사유, CANCELED 면 취소 사유).
+     *
+     * <p>{@code refund_reason} 은 PAID 이후 환불 전용이라 여기 쓰지 않는다. 승인 전 취소는 되돌릴
+     * 결제가 없어 환불과 다른 사건이다.
+     */
+    public void cancel(String cancelReason) {
         requireStatus(PointChargeStatus.PENDING, "취소");
         this.status = PointChargeStatus.CANCELED;
+        this.failureReason = cancelReason;
     }
 
     /** 전액 환불: PAID → REFUNDED. refunded_amount = approved_amount. */

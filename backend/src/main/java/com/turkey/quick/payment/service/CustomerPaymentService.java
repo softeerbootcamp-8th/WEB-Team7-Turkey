@@ -7,6 +7,7 @@ import com.turkey.quick.payment.domain.PointCharge;
 import com.turkey.quick.payment.domain.PointChargeStatus;
 import com.turkey.quick.payment.domain.PointWallet;
 import com.turkey.quick.payment.dto.PointBalanceResponse;
+import com.turkey.quick.payment.dto.PointChargeCancelResponse;
 import com.turkey.quick.payment.dto.PointChargeConfirmRequest;
 import com.turkey.quick.payment.dto.PointChargeConfirmResponse;
 import com.turkey.quick.payment.dto.PointChargeRequest;
@@ -36,6 +37,12 @@ public class CustomerPaymentService {
     private static final long MIN_CHARGE_AMOUNT = 1_000L;
     private static final long MAX_CHARGE_AMOUNT = 1_000_000L;
     private static final long CHARGE_AMOUNT_UNIT = 1_000L;
+
+    /**
+     * 승인 전 취소 사유(#34). 클라이언트가 보내지 않고 서버가 채운다 —
+     * 근거는 {@link #cancelPointCharge} 주석. {@code failure_reason} 은 255자다.
+     */
+    private static final String CUSTOMER_CANCEL_REASON = "고객이 결제를 취소했습니다.";
 
     private final PointWalletRepository pointWalletRepository;
     private final PointChargeRepository pointChargeRepository;
@@ -205,6 +212,98 @@ public class CustomerPaymentService {
                     approval.providerPaymentKey(), approval.approvedAmount(), e);
             throw e;
         }
+    }
+
+    /**
+     * 포인트 충전 취소(CUS-POINT-004, #34).
+     *
+     * <p>결제창에서 사용자가 결제를 포기했을 때 PENDING 충전 요청을 CANCELED 로 종료시킨다.
+     * <b>잔액과 원장은 건드리지 않는다</b> — 승인된 적이 없으므로 되돌릴 증액이 없다.
+     *
+     * <p><b>승인과 달리 이 메서드에는 {@code @Transactional} 이 있다.</b> 승인은 PG 호출을 트랜잭션
+     * 밖에 두려고 파사드와 {@link PointChargeApprover} 로 쪼갰지만, 취소는 <b>외부 호출이 없다</b>.
+     * 승인 전이라 PG 에는 취소할 결제 자체가 존재하지 않기 때문이다({@code PaymentGateway.cancel}
+     * 은 PAID 이후 망 취소·환불용이고 이 경로에서 부르지 않는다). 외부 호출이 없으면 트랜잭션을
+     * 나눌 이유도 없어, {@code chargePointRequest} 와 같은 모양으로 한 트랜잭션에 둔다.
+     *
+     * <p><b>잠그고 읽는다</b>({@code findByIdForUpdate}). 취소와 승인이 같은 충전 건에 동시에 들어올
+     * 수 있는데, 잠그지 않으면 둘 다 PENDING 을 읽고 취소는 CANCELED 로, 승인은 PAID 로 각각
+     * 진행한다. 잠금이 둘을 직렬화하므로 진 쪽은 상태 재확인에서 걸린다 — 승인이 이기면 취소가
+     * 409 를, 취소가 이기면 승인이 409 를 받는다. 잠금 순서 규칙({@code point_charge} →
+     * {@code point_wallet})도 그대로 지킨다.
+     *
+     * <p><b>상태별 처리</b>는 셋으로 갈린다:
+     *
+     * <ul>
+     *   <li>{@code PENDING} → CANCELED 로 전이. 정상 경로다.
+     *   <li>{@code CANCELED}·{@code FAILED} → 전이하지 않고 <b>200 으로 현재 상태를 돌려준다</b>(멱등).
+     *       둘 다 "요청이 종료됐고 잔액은 변하지 않았다"는 이 API 의 성공 조건을 이미 만족한다.
+     *       따닥 클릭이나 네트워크 재시도가 오류로 보이지 않게 하려는 것이고,
+     *       {@code confirmPointCharge} 가 이미 PAID 인 건을 200 으로 돌려주는 것과 같은 판단이다.
+     *   <li>{@code PAID}·{@code REFUNDED} → 409. 이슈의 "이미 완료된 충전 요청은 실패 또는 취소
+     *       상태로 변경하지 않는다"에 해당한다. 돈이 이미 움직였으므로 취소가 아니라 <b>환불</b>로
+     *       풀어야 하는 사건이고, 환불은 아직 구현돼 있지 않다(#33 「일부러 하지 않은 것」).
+     * </ul>
+     *
+     * <p><b>남은 위험</b>(#34, MVP 에서는 감수한다): 승인은 잠금 없이 사전 검증한 뒤 PG 를 부르므로,
+     * 그 사이에 이 취소가 커밋되면 승인은 PG 응답을 받아 온 뒤 409 로 막히고 <b>승인 식별자가 DB 에
+     * 남지 않는다</b> — 대사 조건에도 걸리지 않는 추적 불가 건이 된다. 모의 PG 는 돈이 움직이지 않아
+     * 무해하다. 실 PG 를 붙일 때는 PG 호출 <b>전에</b> 상태를 선점(claim)해야 닫힌다 — 상태 값을
+     * 늘리는 것만으로는 경쟁 창이 그대로다. 워크로그 {@code 2026-07-31-34-point-charge-cancel.md} 참조.
+     *
+     * <p><b>사유는 서버가 채운다</b>(사람 확인). 요청 바디를 받지 않는다 — 모의 결제에서 승인 전
+     * 취소의 사유는 "사용자가 결제를 포기했다" 하나뿐이라 클라이언트가 알려 줄 정보가 없고,
+     * 임의 문자열이 DB 로 들어오는 통로를 만들지 않는 편이 낫다. 실 PG 를 붙이면 PG 가 주는
+     * 취소 코드를 서버가 여기에 채우게 된다.
+     *
+     * @param pointChargeId 취소 대상 충전 식별자
+     * @param customerId    세션에서 확인된 고객 식별자
+     * @throws BusinessException 404 없음 / 403 본인 아님 / 409 취소할 수 없는 상태
+     */
+    @Transactional
+    public PointChargeCancelResponse cancelPointCharge(Long pointChargeId, Long customerId) {
+        PointCharge pointCharge = pointChargeRepository.findByIdForUpdate(pointChargeId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
+                        "존재하지 않는 충전 요청입니다."));
+
+        // 소유 확인. customer 는 LAZY 프록시지만 식별자 접근은 조회를 유발하지 않는다.
+        if (!pointCharge.getCustomer().getId().equals(customerId)) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "본인의 충전 요청이 아닙니다.");
+        }
+
+        if (pointCharge.getStatus() == PointChargeStatus.PENDING) {
+            // PENDING 인데 승인 식별자가 있다 = PG 승인은 받았는데 반영이 끊긴 건이다(#33).
+            // 취소로 덮으면 "돈은 나갔는데 CANCELED" 가 되어 대사 대상에서 사라진다.
+            if (pointCharge.getProviderPaymentKey() != null) {
+                throw new BusinessException(HttpStatus.CONFLICT,
+                        "결제 확인 중인 충전 요청입니다. 잠시 후 결제 내역을 확인해 주세요.");
+            }
+            pointCharge.cancel(CUSTOMER_CANCEL_REASON);
+            log.info("[포인트-충전취소] pointChargeId={}, customerId={}, requestedAmount={}",
+                    pointChargeId, customerId, pointCharge.getRequestedAmount());
+        } else if (pointCharge.getStatus() != PointChargeStatus.CANCELED
+                && pointCharge.getStatus() != PointChargeStatus.FAILED) {
+            throw new BusinessException(HttpStatus.CONFLICT,
+                    "취소할 수 없는 상태입니다. status=" + pointCharge.getStatus());
+        }
+
+        return new PointChargeCancelResponse(
+                pointCharge.getId(),
+                pointCharge.getStatus(),
+                pointCharge.getRequestedAmount(),
+                currentBalance(customerId),
+                pointCharge.getFailureReason());
+    }
+
+    /**
+     * 취소 응답에 실을 현재 잔액. 지갑이 없으면 정합성 오류다 — 지갑은 회원가입 때 함께 생성된다.
+     * 취소는 잔액을 바꾸지 않으므로 이 값은 취소 전 잔액과 같아야 한다.
+     */
+    private long currentBalance(Long customerId) {
+        return pointWalletRepository.findByMemberId(customerId)
+                .map(PointWallet::getBalance)
+                .orElseThrow(() -> new IllegalStateException(
+                        "지갑 정보가 없습니다. memberId=" + customerId));
     }
 
     /**

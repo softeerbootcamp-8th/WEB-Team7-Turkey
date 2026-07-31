@@ -5,6 +5,7 @@ import com.turkey.quick.customer.auth.AuthenticatedCustomer;
 import com.turkey.quick.customer.auth.CustomerSessionInterceptor;
 import com.turkey.quick.payment.domain.PointTransactionType;
 import com.turkey.quick.payment.dto.PointBalanceResponse;
+import com.turkey.quick.payment.dto.PointChargeCancelResponse;
 import com.turkey.quick.payment.dto.PointChargeConfirmRequest;
 import com.turkey.quick.payment.dto.PointChargeConfirmResponse;
 import com.turkey.quick.payment.dto.PointChargeRequest;
@@ -163,4 +164,39 @@ public interface CustomerPointApi {
             Long pointChargeId,
 
             PointChargeConfirmRequest request);
+
+    @Operation(
+            operationId = "cancelCustomerPointCharge",
+            summary = "포인트 충전 취소",
+            description = "결제창에서 결제를 포기했을 때 PENDING 충전을 CANCELED 로 종료한다"
+                    + "(CUS-POINT-004). 잔액과 원장은 변하지 않는다 — 승인된 적이 없으므로 되돌릴 "
+                    + "증액이 없고, PG 호출도 없다(승인 전이라 취소할 결제가 존재하지 않는다). "
+                    + "취소 사유는 서버가 채운다. 승인 전 취소의 사유는 하나뿐이라 요청 바디를 받지 "
+                    + "않으며, 사유는 point_charge.failure_reason 에 저장된다(CANCELED 전용 컬럼 없음 — "
+                    + "값을 해석할 때 status 를 함께 봐야 한다). "
+                    + "이미 CANCELED 또는 FAILED 인 건에 다시 취소 요청이 오면 상태를 바꾸지 않고 "
+                    + "200 으로 현재 상태를 돌려준다(멱등) — 둘 다 '요청이 종료됐고 잔액은 변하지 "
+                    + "않았다'는 성공 조건을 이미 만족하기 때문이다. "
+                    + "반면 PAID·REFUNDED 는 409 다. 돈이 이미 움직였으므로 취소가 아니라 환불로 "
+                    + "풀어야 하는 사건이고, 환불은 아직 구현돼 있지 않다.")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200",
+                    description = "취소 성공 · 이미 종료된 건(CANCELED/FAILED)의 멱등 응답"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401", description = "미로그인 또는 세션 만료"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403", description = "본인의 충전 건이 아님"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404", description = "존재하지 않는 충전 건"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "409",
+                    description = "취소할 수 없는 상태(PAID·REFUNDED)이거나, 앞선 승인이 반영 도중 "
+                            + "끊겨 결제 확인이 필요한 건(PENDING 이면서 승인 식별자가 이미 기록된 경우)")
+    })
+    ApiResponse<PointChargeCancelResponse> cancelPointCharge(
+            AuthenticatedCustomer customer,
+
+            @Parameter(description = "충전 식별자", example = "331")
+            Long pointChargeId);
 }
