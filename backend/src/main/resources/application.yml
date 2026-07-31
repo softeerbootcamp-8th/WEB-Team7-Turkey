@@ -14,6 +14,25 @@ spring:
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:}
 
+  # --- Redis: 세션 저장 / 라이더 최신 위치 / GEO 위치 검색 / 휴대전화 인증번호(TTL) /
+  #            SSE 이벤트 팬아웃(Pub/Sub) ---
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+  # --- 비동기 응답(SSE) 타임아웃 ---
+  # 이 값은 SSE 동작을 바꾸지 않는다 — SseEmitter 를 타임아웃 인자로 만들면 그 값이 이겨서
+  # 요청별로 적용된다(TrackingStreamPolicy.EMITTER_TIMEOUT). 그래도 명시하는 이유는 둘이다:
+  #   1. 미설정이면 Tomcat 기본값 30초가 적용된다는 함정을 설정 파일에서 읽을 수 있게 한다.
+  #      new SseEmitter() 로 만든 스트림은 이벤트가 흐르고 있어도 30초에 끊긴다(쓰기로 갱신되지
+  #      않는다).
+  #   2. 앞으로 추가되는 다른 async 엔드포인트의 기본값이 된다.
+  mvc:
+    async:
+      request-timeout: 300000    # 5분. TrackingStreamPolicy.EMITTER_TIMEOUT 과 같은 값
+
   # --- Flyway: 스키마 버전 관리 ---
   # datasource 가 채워지면 앱 기동 시 db/migration 의 마이그레이션이 자동 실행된다.
   # (지금은 datasource 가 비어 있어 Flyway 도 동작하지 않음 — 배선만 된 상태)
@@ -33,3 +52,22 @@ spring:
 
 server:
   port: 8080
+
+# --- 로그인 세션 쿠키 ---
+# Secure는 프로파일별로 다르다: 배포는 CloudFront가 HTTPS를 종단하므로 true,
+# 로컬은 http라 브라우저가 Secure 쿠키를 거부하므로 local 프로파일에서 false로 덮어쓴다.
+session:
+  cookie:
+    secure: true
+
+# --- springdoc(OpenAPI) ---
+# /v3/api-docs 의 스펙을 프론트 Orval 이 읽어 API 클라이언트를 생성한다.
+# 스펙 순서가 요청마다 바뀌면 생성물 diff 가 무의미하게 커지므로 정렬을 고정한다.
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: alpha
+    tags-sorter: alpha
+  writer-with-order-by-keys: true

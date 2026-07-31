@@ -32,8 +32,12 @@ out/
 ### OS ###
 .DS_Store
 
-### 로컬 개발용 H2 파일 DB ###
+### 로컬 개발용 H2 파일 DB (제거됨 — 로컬도 Docker MySQL 사용) ###
+### 기존 개발자 머신에 남아 있는 잔재를 실수로 커밋하지 않도록 당분간 유지한다.
 backend/data/
 
 # Local Claude Code hook scripts (personal, not shared)
 frontend/.claude/hooks/
+
+# 개인 작업 메모. 팀 공유 문서는 docs/ 와 Wiki(ADR)를 쓴다.
+/plan.md

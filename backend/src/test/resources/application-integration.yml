@@ -1,0 +1,37 @@
+# 통합·E2E 테스트용 설정: 로컬 개발과 같은 Docker MySQL 8.4 에 붙는다.
+#
+# H2(MySQL 호환 모드)를 쓰지 않는 이유는 docs/05-local-dev.md 와 같다 — 호환 모드는 MySQL 이 아니라서
+# TINYINT(1)/BIT 처리, BIGINT UNSIGNED, 생성 컬럼, 락 동작이 실제와 달라진다.
+# 테스트가 통과해도 배포에서 깨지면 테스트의 의미가 없다.
+#
+# 실행 전 컨테이너가 healthy 여야 한다:  cd backend && docker compose up -d
+#
+# 개발용과 같은 turkey 스키마를 공유한다(사람 확인, 2026-07-29). 그래서 각 테스트는
+# DatabaseCleaner 로 테이블을 비우고 시작한다 — 즉 테스트를 돌리면 로컬 개발 데이터가 지워진다.
+spring:
+  # Redis 도 MySQL 과 같이 로컬 Docker 컨테이너에 붙는다(2026-07-29 결정). 인메모리 대체로는
+  # TTL 만료·자료구조 동작이 검증되지 않아, 통과한 테스트가 배포 동작을 보장하지 못했다.
+  #
+  # 단 MySQL 과 달리 **개발용과 다른 로직 DB(index 1)** 를 쓴다. Redis 의 세션은 지워지면 개발자가
+  # 브라우저에서 다시 로그인해야 하는데, 테스트를 돌릴 때마다 그렇게 되는 것은 비용이 크다.
+  # 같은 Redis 엔진이므로 TTL·자료구조 동작의 검증 충실도는 동일하다(사람 확인).
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 1
+
+  datasource:
+    # tinyInt1isBit=false: application-local.yml / 배포 DB_URL 과 같은 값이어야 한다.
+    url: jdbc:mysql://localhost:3306/turkey?tinyInt1isBit=false
+    username: turkey
+    password: local
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false

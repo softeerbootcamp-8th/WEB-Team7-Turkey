@@ -28,21 +28,37 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 
+    // 비밀번호 해시(BCrypt)만 쓴다. spring-security-crypto는 Spring Security 본체와 무관한
+    // 단독 모듈이라 "Spring Security 사용 금지" 정책에 걸리지 않는다(CLAUDE.md).
+    implementation 'org.springframework.security:spring-security-crypto'
+
+    // 세션 저장 / 라이더 위치 / GEO 검색 / 휴대전화 인증번호(TTL) 등 휘발성 데이터 저장.
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
+    // OpenAPI 문서 자동 생성. /v3/api-docs 의 스펙을 프론트 Orval 이 그대로 읽어
+    // API 클라이언트를 생성하므로, 컨트롤러 어노테이션이 곧 프론트 계약이 된다.
+    // 버전 고정 이유: 2.8.17 은 이 조합(Boot 3.4.1 / Spring 6.2)에서 swagger-ui 리소스 핸들러가
+    // "/swagger-ui/**/*swagger-initializer.js" 패턴을 등록해 PathPatternParser 가 거부하고
+    // 애플리케이션이 아예 기동하지 못한다. 2.7.0 은 기동·문서·UI 모두 정상 동작을 확인했다.
+    // 올릴 때는 반드시 로컬 기동과 /v3/api-docs 응답을 확인하고 올린다.
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0'
+
     // DB 스키마 버전 관리. flyway-core 만 있으면 앱 기동 시 db/migration 의
     // 마이그레이션이 자동 실행된다(별도 Gradle 플러그인 불필요).
     implementation 'org.flywaydb:flyway-core'
     implementation 'org.flywaydb:flyway-mysql'
 
+    // 로컬·배포 모두 MySQL 을 사용한다(로컬은 Docker 컨테이너, docs/05-local-dev.md 참고).
     runtimeOnly 'com.mysql:mysql-connector-j'
-    // 로컬 개발 전용: 실제 MySQL 없이 뜨기 위한 파일 기반 H2(MySQL 호환 모드).
-    // application-local.yml 에서만 사용되고, 배포 프로파일은 여전히 mysql-connector-j 를 쓴다.
-    runtimeOnly 'com.h2database:h2'
 
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    // 통합·E2E 테스트는 로컬 개발과 같은 Docker MySQL 에 붙는다(위 mysql-connector-j 를 그대로 쓴다).
+    // H2 는 걷어냈다 — 호환 모드는 MySQL 이 아니라서 통과해도 배포를 보장하지 못한다(docs/05-local-dev.md).
 }
 
 tasks.named('test') {
