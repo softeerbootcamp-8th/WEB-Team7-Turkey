@@ -23,6 +23,7 @@ import com.turkey.quick.payment.domain.PointCharge;
 import com.turkey.quick.payment.domain.PointChargeStatus;
 import com.turkey.quick.payment.domain.PointWallet;
 import com.turkey.quick.payment.dto.PointBalanceResponse;
+import com.turkey.quick.payment.dto.PointChargeCancelResponse;
 import com.turkey.quick.payment.dto.PointChargeRequest;
 import com.turkey.quick.payment.dto.PointChargeResponse;
 import com.turkey.quick.payment.dto.PointChargeConfirmRequest;
@@ -465,6 +466,150 @@ class CustomerPaymentServiceTest {
             assertThat(thrown).isInstanceOf(BusinessException.class);
             assertThat(((BusinessException) thrown).getStatus()).isEqualTo(HttpStatus.CONFLICT);
             verify(paymentGateway, never()).confirm(any(PaymentGateway.ConfirmCommand.class));
+        }
+    }
+
+    /**
+     * 취소의 <b>분기 판단</b>만 본다(#34). 상태별로 전이할지, 멱등 응답할지, 409 를 던질지가 전부다.
+     *
+     * <p>실제로 CANCELED 가 커밋되는지, {@code ck_point_charge_state_values} 를 통과하는지,
+     * 승인과 동시에 들어왔을 때 잠금이 둘을 직렬화하는지는 목으로 재현할 수 없고
+     * {@link CustomerPaymentServiceIntegrationTest} 가 검증한다.
+     */
+    @Nested
+    @DisplayName("포인트 충전 취소(#34)")
+    class CancelPointCharge {
+
+        private static final Long CHARGE_ID = 332L;
+        private static final long AMOUNT = 30_000L;
+
+        private PointCharge pendingCharge() {
+            PointCharge charge = PointCharge.request(
+                    memberWithId(CUSTOMER_ID), REQUEST_KEY, PaymentMethod.CARD, AMOUNT, "MOCK");
+            ReflectionTestUtils.setField(charge, "id", CHARGE_ID);
+            return charge;
+        }
+
+        /** 취소는 잠그고 읽는다 — {@code findById} 가 아니라 {@code findByIdForUpdate} 를 스텁한다. */
+        private void chargeExists(PointCharge charge) {
+            when(pointChargeRepository.findByIdForUpdate(CHARGE_ID)).thenReturn(Optional.of(charge));
+            PointWallet wallet = PointWallet.create(member());
+            wallet.credit(12_500L);
+            when(pointWalletRepository.findByMemberId(CUSTOMER_ID)).thenReturn(Optional.of(wallet));
+        }
+
+        @Test
+        @DisplayName("PENDING 충전을 취소하면 CANCELED 로 전이하고 사유를 서버가 채운다")
+        void cancelsPendingCharge() {
+            PointCharge charge = pendingCharge();
+            chargeExists(charge);
+
+            PointChargeCancelResponse response =
+                    customerPaymentService.cancelPointCharge(CHARGE_ID, CUSTOMER_ID);
+
+            assertThat(response.status()).isEqualTo(PointChargeStatus.CANCELED);
+            assertThat(response.requestedAmount()).isEqualTo(AMOUNT);
+            assertThat(response.cancelReason()).isNotBlank();
+            // 잔액은 취소로 변하지 않는다 — 지갑을 건드리지 않았는지 응답으로 확인한다
+            assertThat(response.balance()).isEqualTo(12_500L);
+            assertThat(charge.getStatus()).isEqualTo(PointChargeStatus.CANCELED);
+        }
+
+        @Test
+        @DisplayName("승인 전 취소이므로 PG 를 부르지 않는다")
+        void neverCallsGateway() {
+            chargeExists(pendingCharge());
+
+            customerPaymentService.cancelPointCharge(CHARGE_ID, CUSTOMER_ID);
+
+            // PG 에는 취소할 결제 자체가 없다. cancel() 은 PAID 이후 망 취소용이다
+            verify(paymentGateway, never()).cancel(any(PaymentGateway.CancelCommand.class));
+            verify(paymentGateway, never()).confirm(any(PaymentGateway.ConfirmCommand.class));
+        }
+
+        @Test
+        @DisplayName("이미 취소된 건은 상태를 바꾸지 않고 200 으로 현재 상태를 돌려준다")
+        void alreadyCanceledIsIdempotent() {
+            PointCharge charge = pendingCharge();
+            charge.cancel("앞선 취소");
+            chargeExists(charge);
+
+            PointChargeCancelResponse response =
+                    customerPaymentService.cancelPointCharge(CHARGE_ID, CUSTOMER_ID);
+
+            assertThat(response.status()).isEqualTo(PointChargeStatus.CANCELED);
+            assertThat(response.cancelReason()).isEqualTo("앞선 취소");
+        }
+
+        @Test
+        @DisplayName("이미 실패한 건도 종료된 상태이므로 200 으로 돌려준다")
+        void alreadyFailedIsIdempotent() {
+            PointCharge charge = pendingCharge();
+            charge.fail("한도 초과");
+            chargeExists(charge);
+
+            PointChargeCancelResponse response =
+                    customerPaymentService.cancelPointCharge(CHARGE_ID, CUSTOMER_ID);
+
+            // "요청이 종료됐고 잔액은 변하지 않았다"를 이미 만족한다 — 사용자가 고칠 것이 없다
+            assertThat(response.status()).isEqualTo(PointChargeStatus.FAILED);
+        }
+
+        @Test
+        @DisplayName("이미 승인된 건은 409 로 거부한다")
+        void rejectsPaidCharge() {
+            PointCharge charge = pendingCharge();
+            charge.approve("mock_pay_done", null, null);
+            chargeExists(charge);
+
+            Throwable thrown = catchThrowable(
+                    () -> customerPaymentService.cancelPointCharge(CHARGE_ID, CUSTOMER_ID));
+
+            // 돈이 이미 움직였다. 취소가 아니라 환불로 풀어야 하는 사건이다
+            assertThat(thrown).isInstanceOf(BusinessException.class);
+            assertThat(((BusinessException) thrown).getStatus()).isEqualTo(HttpStatus.CONFLICT);
+            assertThat(charge.getStatus()).isEqualTo(PointChargeStatus.PAID);
+        }
+
+        @Test
+        @DisplayName("승인 식별자가 이미 기록된 PENDING 건은 409 로 막는다")
+        void rejectsChargeAwaitingReconciliation() {
+            // given: PG 승인은 받았는데 반영이 끊긴 건(#33)
+            PointCharge charge = pendingCharge();
+            charge.markApprovalReceived("mock_pay_orphan");
+            chargeExists(charge);
+
+            Throwable thrown = catchThrowable(
+                    () -> customerPaymentService.cancelPointCharge(CHARGE_ID, CUSTOMER_ID));
+
+            // CANCELED 로 덮으면 "돈은 나갔는데 취소됨" 이 되어 대사 대상에서 사라진다
+            assertThat(thrown).isInstanceOf(BusinessException.class);
+            assertThat(((BusinessException) thrown).getStatus()).isEqualTo(HttpStatus.CONFLICT);
+            assertThat(charge.getStatus()).isEqualTo(PointChargeStatus.PENDING);
+        }
+
+        @Test
+        @DisplayName("남의 충전 건은 403 으로 거부한다")
+        void rejectsOtherCustomersCharge() {
+            chargeExists(pendingCharge());
+
+            Throwable thrown = catchThrowable(
+                    () -> customerPaymentService.cancelPointCharge(CHARGE_ID, CUSTOMER_ID + 1));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class);
+            assertThat(((BusinessException) thrown).getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
+        }
+
+        @Test
+        @DisplayName("존재하지 않는 충전 건은 404 로 거부한다")
+        void rejectsMissingCharge() {
+            when(pointChargeRepository.findByIdForUpdate(CHARGE_ID)).thenReturn(Optional.empty());
+
+            Throwable thrown = catchThrowable(
+                    () -> customerPaymentService.cancelPointCharge(CHARGE_ID, CUSTOMER_ID));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class);
+            assertThat(((BusinessException) thrown).getStatus()).isEqualTo(HttpStatus.NOT_FOUND);
         }
     }
 }
