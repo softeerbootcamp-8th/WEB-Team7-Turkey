@@ -1,13 +1,96 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { useState, type FormEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-router'
+import { useCustomerLogin } from '@/api/generated/customer-login/customer-login'
+import { resolveGuestGuard, type SessionInfo } from '@/shared/auth/guard'
 import { validateRedirectSearch } from '@/shared/auth/redirectSearch'
+import { cacheAuthenticatedCustomer, ensureSessionInfo } from '@/shared/auth/session'
+import {
+  getCustomerLoginErrorMessage,
+  validateCustomerLogin,
+  type CustomerLoginFieldErrors,
+  type CustomerLoginFields,
+} from './-loginForm'
 
 export const Route = createFileRoute('/customer/login/')({
   // 가드가 보존한 원래 목적지(#195). 로그인 성공 후 이 경로로 돌려보낸다.
   validateSearch: validateRedirectSearch,
+  beforeLoad: async ({ context }) => {
+    let session: SessionInfo
+    try {
+      session = await ensureSessionInfo(context.queryClient)
+    } catch {
+      // 세션 조회 장애를 이유로 로그인 화면 진입까지 막지는 않는다.
+      return
+    }
+
+    const decision = resolveGuestGuard(session)
+    if (decision.action === 'redirect') {
+      throw redirect({ to: decision.to })
+    }
+  },
   component: CustomerLogin,
 })
 
 function CustomerLogin() {
+  const router = useRouter()
+  const queryClient = useQueryClient()
+  const search = Route.useSearch()
+  const [fields, setFields] = useState<CustomerLoginFields>({ loginId: '', password: '' })
+  const [fieldErrors, setFieldErrors] = useState<CustomerLoginFieldErrors>({})
+  const [formError, setFormError] = useState<string | null>(null)
+  const [passwordVisible, setPasswordVisible] = useState(false)
+
+  const loginMutation = useCustomerLogin({
+    mutation: {
+      onSuccess: (response) => {
+        if (!response.data) {
+          setFormError('로그인 응답을 확인할 수 없습니다. 다시 시도해 주세요.')
+          return
+        }
+
+        cacheAuthenticatedCustomer(queryClient, response.data)
+
+        if (search.redirect) {
+          router.history.push(search.redirect)
+          return
+        }
+        void router.navigate({ to: '/customer' })
+      },
+      onError: (error) => {
+        setFormError(getCustomerLoginErrorMessage(error))
+      },
+    },
+  })
+
+  function updateField(field: keyof CustomerLoginFields, value: string) {
+    setFields((current) => ({ ...current, [field]: value }))
+    setFieldErrors((current) => ({ ...current, [field]: undefined }))
+    setFormError(null)
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (loginMutation.isPending) {
+      return
+    }
+
+    const errors = validateCustomerLogin(fields)
+    setFieldErrors(errors)
+    setFormError(null)
+
+    if (Object.keys(errors).length > 0) {
+      return
+    }
+
+    loginMutation.mutate({
+      data: {
+        loginId: fields.loginId.trim(),
+        password: fields.password,
+      },
+    })
+  }
+
   return (
     <>
       {/* TopAppBar */}
@@ -24,7 +107,7 @@ function CustomerLogin() {
       </header>
 
       {/* Main Content Canvas */}
-      <main className="flex-grow flex flex-col px-container-margin pt-xl pb-safe gap-lg">
+      <main aria-label="고객 로그인" className="flex-grow flex flex-col px-container-margin pt-xl pb-safe gap-lg">
 
         {/* Welcome Area */}
         <div className="flex flex-col items-center justify-center pt-lg pb-md gap-sm">
@@ -36,25 +119,65 @@ function CustomerLogin() {
         </div>
 
         {/* Login Form */}
-        <form className="flex flex-col gap-md w-full max-w-md mx-auto">
+        <form className="flex flex-col gap-md w-full max-w-md mx-auto" onSubmit={handleSubmit} noValidate>
 
           {/* ID Input */}
           <div className="flex flex-col gap-xs">
             <label htmlFor="userId" className="text-label-md font-label-md text-on-surface-variant px-1">아이디</label>
             <div className="relative">
-              <input type="text" id="userId" placeholder="아이디를 입력해주세요" className="w-full h-[52px] bg-surface-container-lowest border border-surface-container rounded-xl px-4 text-body-lg font-body-lg focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all" />
+              <input
+                type="text"
+                id="userId"
+                name="loginId"
+                autoComplete="username"
+                value={fields.loginId}
+                onChange={(event) => updateField('loginId', event.target.value)}
+                aria-invalid={Boolean(fieldErrors.loginId)}
+                aria-describedby={fieldErrors.loginId ? 'loginId-error' : undefined}
+                placeholder="아이디를 입력해주세요"
+                className="w-full h-[52px] bg-surface-container-lowest border border-surface-container rounded-xl px-4 text-body-lg font-body-lg focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all"
+              />
             </div>
+            {fieldErrors.loginId && (
+              <p id="loginId-error" className="px-1 text-body-md text-error" role="alert">
+                {fieldErrors.loginId}
+              </p>
+            )}
           </div>
 
           {/* Password Input */}
           <div className="flex flex-col gap-xs">
             <label htmlFor="password" className="text-label-md font-label-md text-on-surface-variant px-1">비밀번호</label>
             <div className="relative">
-              <input type="password" id="password" placeholder="비밀번호를 입력해주세요" className="w-full h-[52px] bg-surface-container-lowest border border-surface-container rounded-xl px-4 text-body-lg font-body-lg focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all" />
-              <button type="button" className="absolute right-4 top-1/2 transform -translate-y-1/2 text-on-surface-variant hover:text-on-surface">
-                <span className="material-symbols-outlined text-[20px]">visibility_off</span>
+              <input
+                type={passwordVisible ? 'text' : 'password'}
+                id="password"
+                name="password"
+                autoComplete="current-password"
+                value={fields.password}
+                onChange={(event) => updateField('password', event.target.value)}
+                aria-invalid={Boolean(fieldErrors.password)}
+                aria-describedby={fieldErrors.password ? 'password-error' : undefined}
+                placeholder="비밀번호를 입력해주세요"
+                className="w-full h-[52px] bg-surface-container-lowest border border-surface-container rounded-xl px-4 pr-12 text-body-lg font-body-lg focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all"
+              />
+              <button
+                type="button"
+                className="absolute right-4 top-1/2 transform -translate-y-1/2 text-on-surface-variant hover:text-on-surface"
+                aria-label={passwordVisible ? '비밀번호 숨기기' : '비밀번호 표시'}
+                aria-pressed={passwordVisible}
+                onClick={() => setPasswordVisible((visible) => !visible)}
+              >
+                <span className="material-symbols-outlined text-[20px]">
+                  {passwordVisible ? 'visibility' : 'visibility_off'}
+                </span>
               </button>
             </div>
+            {fieldErrors.password && (
+              <p id="password-error" className="px-1 text-body-md text-error" role="alert">
+                {fieldErrors.password}
+              </p>
+            )}
           </div>
 
           {/* Options Row */}
@@ -67,9 +190,20 @@ function CustomerLogin() {
             </div>
           </div>
 
+          {formError && (
+            <p className="rounded-xl bg-error-container px-4 py-3 text-body-md text-on-error-container" role="alert">
+              {formError}
+            </p>
+          )}
+
           {/* Primary Action */}
-          <button type="submit" className="w-full h-[52px] bg-primary-container text-[#191919] text-headline-sm-mobile font-headline-sm-mobile font-bold rounded-xl mt-sm flex items-center justify-center active:scale-[0.98] transition-transform">
-            로그인
+          <button
+            type="submit"
+            disabled={loginMutation.isPending}
+            aria-busy={loginMutation.isPending}
+            className="w-full h-[52px] bg-primary-container text-[#191919] text-headline-sm-mobile font-headline-sm-mobile font-bold rounded-xl mt-sm flex items-center justify-center active:scale-[0.98] transition-transform disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {loginMutation.isPending ? '로그인 중...' : '로그인'}
           </button>
         </form>
 
