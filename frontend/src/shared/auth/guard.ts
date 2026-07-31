@@ -111,6 +111,18 @@ export function resolveGuestGuard(session: SessionInfo): GuardDecision {
   return { action: 'allow' }
 }
 
+/** 루트 랜딩(`/`) 진입. 로그인 상태라면 역할과 현재 운행 상태에 맞는 첫 화면으로 보낸다. */
+export function resolveLandingGuard(session: SessionInfo): GuardDecision {
+  if (session.role === 'CUSTOMER') {
+    return { action: 'redirect', to: CUSTOMER_HOME }
+  }
+  if (session.role === 'RIDER') {
+    const status = session.rider.operatingStatus
+    return { action: 'redirect', to: status ? RIDER_STATUS_ROUTE[status] : RIDER_HOME }
+  }
+  return { action: 'allow' }
+}
+
 /** 역할 무관 인증 가드(`account/*`). 고객·라이더 공용 화면이라 역할은 따지지 않는다. */
 export function resolveAccountGuard(session: SessionInfo, href: string): GuardDecision {
   if (session.role === null) {

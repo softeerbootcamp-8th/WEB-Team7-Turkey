@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { validateRedirectSearch } from '@/shared/auth/redirectSearch'
 
 export const Route = createFileRoute('/customer/login/')({
@@ -13,14 +13,14 @@ function CustomerLogin() {
       {/* TopAppBar */}
       <header className="bg-surface text-on-surface docked full-width top-0 border-b border-surface-container flat no shadows hover:bg-surface-container-low flex justify-between items-center w-full px-container-margin h-14 sticky z-10">
         <div className="flex items-center gap-xs">
-          <button className="p-2 -ml-2 rounded-full hover:bg-surface-variant transition-colors" aria-label="Go back">
+          <Link to="/" className="p-2 -ml-2 rounded-full hover:bg-surface-variant transition-colors" aria-label="홈으로 돌아가기">
             <span className="material-symbols-outlined text-[24px]">arrow_back</span>
-          </button>
+          </Link>
           <h1 className="text-headline-sm-mobile font-headline-sm-mobile text-on-surface font-bold">로그인</h1>
         </div>
-        <button className="text-label-lg-mobile font-label-lg-mobile text-on-surface-variant hover:text-on-surface transition-colors px-2 py-1">
+        <Link to="/customer/signup" className="text-label-lg-mobile font-label-lg-mobile text-on-surface-variant hover:text-on-surface transition-colors px-2 py-1">
           회원가입
-        </button>
+        </Link>
       </header>
 
       {/* Main Content Canvas */}

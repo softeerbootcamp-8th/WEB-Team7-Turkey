@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/customer/signup/')({
   component: CustomerSignup,
@@ -9,13 +9,13 @@ function CustomerSignup() {
     <div className="max-w-md mx-auto min-h-screen bg-surface-container-lowest relative flex flex-col shadow-sm">
       {/* TopAppBar (From JSON) */}
       <header className="bg-surface dark:bg-surface-container-lowest text-on-surface dark:text-on-surface docked full-width top-0 border-b border-surface-container dark:border-outline-variant flat no shadows flex justify-between items-center w-full px-container-margin h-14 sticky z-20">
-        <button className="text-on-surface-variant dark:text-on-secondary-container hover:bg-surface-container-low dark:hover:bg-surface-variant rounded-full w-10 h-10 flex items-center justify-center transition-colors">
+        <Link to="/customer/login" className="text-on-surface-variant dark:text-on-secondary-container hover:bg-surface-container-low dark:hover:bg-surface-variant rounded-full w-10 h-10 flex items-center justify-center transition-colors" aria-label="고객 로그인으로 돌아가기">
           <span className="material-symbols-outlined">arrow_back</span>
-        </button>
+        </Link>
         <h1 className="text-headline-sm font-headline-sm font-bold text-on-surface flex-1 text-center">회원가입</h1>
-        <button className="text-on-surface-variant dark:text-on-secondary-container hover:bg-surface-container-low dark:hover:bg-surface-variant rounded-lg px-2 h-10 flex items-center justify-center transition-colors">
+        <Link to="/" className="text-on-surface-variant dark:text-on-secondary-container hover:bg-surface-container-low dark:hover:bg-surface-variant rounded-lg px-2 h-10 flex items-center justify-center transition-colors">
           <span className="text-label-lg font-label-lg">취소</span>
-        </button>
+        </Link>
       </header>
       {/* Main Content Canvas */}
       <main className="flex-1 px-container-margin pt-lg pb-32 flex flex-col gap-xl">
