@@ -3,17 +3,36 @@ package com.turkey.quick.order.service;
 import com.turkey.quick.order.domain.FarePolicy;
 import com.turkey.quick.order.domain.FarePolicyStatus;
 import com.turkey.quick.order.domain.ItemType;
+import com.turkey.quick.common.exception.BusinessException;
+import com.turkey.quick.member.domain.Member;
+import com.turkey.quick.member.repository.MemberRepository;
+import com.turkey.quick.order.domain.Address;
+import com.turkey.quick.order.domain.Contact;
+import com.turkey.quick.order.domain.DeliveryOrder;
+import com.turkey.quick.order.domain.FareType;
 import com.turkey.quick.order.domain.ItemTypeSurcharge;
+import com.turkey.quick.order.domain.OrderFareSnapshot;
+import com.turkey.quick.order.dto.AddressRequest;
+import com.turkey.quick.order.dto.DeliveryCreateRequest;
+import com.turkey.quick.order.dto.DeliveryCreateResponse;
 import com.turkey.quick.order.dto.FareBreakdownResponse;
 import com.turkey.quick.order.dto.FareQuoteRequest;
 import com.turkey.quick.order.dto.FareQuoteResponse;
+import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.order.repository.FarePolicyRepository;
+import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
+import com.turkey.quick.payment.service.CustomerPaymentService;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Optional;
 
 @RequiredArgsConstructor
 @Service
@@ -22,9 +41,24 @@ public class DeliveryService {
     final double EARTH_RADIUS = 6371.0088;
     final int ESTIMATE_MINUTES_CONSTANT = 600;
 
+    private static final Logger log = LoggerFactory.getLogger(DeliveryService.class);
+
     private static final BigDecimal METERS_PER_KM = BigDecimal.valueOf(1000);
 
     private final FarePolicyRepository farePolicyRepository;
+    private final DeliveryOrderRepository deliveryOrderRepository;
+    private final OrderFareSnapshotRepository orderFareSnapshotRepository;
+    private final MemberRepository memberRepository;
+
+    /**
+     * 포인트 차감(#40)의 정본.
+     *
+     * <p><b>의존 방향은 order → payment 로 고정한다.</b> 반대로 payment 가 이 서비스를 주입받으면
+     * 여기서 곧바로 스프링 빈 순환이 되어 애플리케이션이 뜨지 않는다(Boot 3.4 는 순환 참조 기본
+     * 금지 — 컴파일이 아니라 기동이 실패한다). payment 쪽에서 order 를 참조하는 것은
+     * 엔터티({@code PointTransaction.deliveryOrder} 등)까지이고 서비스는 참조하지 않는다.
+     */
+    private final CustomerPaymentService customerPaymentService;
 
     /**
      * 요금 견적. 활성 정책(fare_policy)과 좌표만으로 계산하며 주문·스냅샷은 만들지 않는다.
@@ -32,12 +66,34 @@ public class DeliveryService {
      */
     @Transactional(readOnly = true)
     public FareQuoteResponse quoteFare(FareQuoteRequest request) {
+        FareCalculation calculation = calculate(
+                request.itemType(), request.pickupAddress(), request.destinationAddress());
+
+        return new FareQuoteResponse(
+                calculation.fare(), estimateMinutes(calculation.distanceMeters()));
+    }
+
+    /**
+     * 요금 산정 결과. 견적(#39)은 {@link FareBreakdownResponse} 만 있으면 되지만, 주문 생성(#37)은
+     * {@code order_fare_snapshot.fare_policy_id} FK 를 채워야 해서 <b>정책 엔터티까지</b> 필요하다.
+     * 그래서 계산 결과를 응답 DTO 가 아니라 이 레코드로 돌려주고, 두 경로가 같은 계산을 공유한다.
+     */
+    private record FareCalculation(FarePolicy policy, FareBreakdownResponse fare, int distanceMeters) {
+    }
+
+    /**
+     * 활성 정책(fare_policy)과 좌표만으로 요금을 산정한다. 주문·스냅샷은 만들지 않는다.
+     * ItemTypeSurcharge 는 지연 로딩이라 정책 조회와 같은 트랜잭션 안에서 접근해야 한다 —
+     * 호출자가 모두 {@code @Transactional} 이라는 전제가 여기에 걸려 있다.
+     */
+    private FareCalculation calculate(ItemType itemType, AddressRequest pickup,
+                                      AddressRequest destination) {
         FarePolicy activePolicy = farePolicyRepository.findByStatus(FarePolicyStatus.ACTIVE)
                 .orElseThrow(() -> new IllegalStateException("활성화된 요금 정책이 없습니다."));
 
         BigDecimal distanceKm = distance(
-                request.pickupAddress().latitude(), request.pickupAddress().longitude(),
-                request.destinationAddress().latitude(), request.destinationAddress().longitude());
+                pickup.latitude(), pickup.longitude(),
+                destination.latitude(), destination.longitude());
         int distanceMeters = toMeters(distanceKm);
 
         if (distanceMeters > activePolicy.getMaxDeliveryDistanceMeters()) {
@@ -46,10 +102,156 @@ public class DeliveryService {
                             + ", maxDeliveryDistanceMeters=" + activePolicy.getMaxDeliveryDistanceMeters());
         }
 
-        FareBreakdownResponse fare = calculateFare(activePolicy, request.itemType(), distanceMeters);
+        return new FareCalculation(activePolicy,
+                calculateFare(activePolicy, itemType, distanceMeters), distanceMeters);
+    }
 
-        int estimateMinutes = estimateMinutes(distanceMeters);
-        return new FareQuoteResponse(fare, estimateMinutes);
+    /**
+     * 배송요청 생성 + 배송요금 포인트 차감(REQ-ORD-002 #37, CUS-PAY-002 #40).
+     *
+     * <p><b>두 이슈가 한 메서드인 이유</b>: 양쪽 비고가 "하나의 상위 트랜잭션으로 처리하여 주문 생성
+     * 또는 포인트 차감 중 하나라도 실패하면 전체 롤백한다"고 명시한다. 나누면 "주문은 생겼는데
+     * 결제가 안 된" 상태나 그 반대가 만들어진다. 그래서 {@code @Transactional} 하나가 ④~⑥ 을 덮고,
+     * 차감 메서드는 {@code Propagation.MANDATORY} 라 이 트랜잭션 밖에서는 호출 자체가 실패한다.
+     *
+     * <p><b>흐름</b>(두 이슈의 처리 흐름을 합친 것)
+     *
+     * <ol>
+     *   <li>멱등 조회 — 같은 {@code requestKey} 의 주문이 이미 있으면 새로 만들지 않고 그 결과를
+     *       돌려준다. 이때 포인트도 다시 차감하지 않는다.
+     *   <li>서버가 거리·요금 재계산. 클라이언트가 보낸 {@code estimatedFare} 는 <b>대조에만</b> 쓰고
+     *       차감 금액은 항상 서버 계산값이다.
+     *   <li>주문을 WAITING 으로 저장.
+     *   <li>ESTIMATE 운임 스냅샷 저장.
+     *   <li>포인트 차감 + ORDER_USE 원장 기록.
+     * </ol>
+     *
+     * <p><b>중복·동시성은 DB 제약이 판정한다.</b> 앱에서 미리 세는 대신 제약 위반을 응답 코드로
+     * 바꾼다 — 조회 후 판단하면 그 사이에 다른 요청이 끼어드는 창이 남기 때문이다.
+     *
+     * <ul>
+     *   <li>{@code uk_delivery_customer_request} — 같은 고객·같은 요청키로 주문 2건
+     *   <li>{@code uk_delivery_active_customer} — 고객당 진행 중(WAITING~DELIVERING) 1건
+     *   <li>{@code uk_point_transaction_order_type} — 같은 주문에 ORDER_USE 두 번(이중 차감)
+     * </ul>
+     *
+     * <p>앞의 둘은 같은 INSERT 에서 터지므로 <b>둘을 구분할 수 없다.</b> 그래서 409 하나로 묶고
+     * 메시지로만 갈랐다 — 구분하려면 위반한 제약명을 예외 메시지에서 파싱해야 하는데, DB 벤더
+     * 문자열에 의존하게 되어 하지 않았다(미결로 남김).
+     *
+     * <p><b>잠금 순서</b>: 주문 INSERT → 지갑 잠금. 포인트 트랜잭션의 잠금 순서 규칙
+     * (CLAUDE.md 의 {@code point_charge} → {@code point_wallet})과 같은 결이다 — 소스 행을 먼저
+     * 잡고 지갑을 마지막에 잡는다. 지갑 잠금 보유 구간이 트랜잭션 끝까지이므로, 그 앞의 작업
+     * (요금 계산·주문 저장)을 먼저 끝내 보유 시간을 줄인다.
+     *
+     * @param request    배송요청 정보. {@code estimatedFare} 는 대조용이다.
+     * @param customerId 세션에서 확인된 고객 식별자. 요청 바디로 받지 않는다.
+     * @throws IllegalArgumentException 최대 배송 거리 초과 (→ 400)
+     * @throws IllegalStateException    활성 요금 정책 없음 · 지갑 없음 (→ 400)
+     * @throws BusinessException        409 진행 중 요청 존재·동시 재전송 / 409 요금 변경 /
+     *                                  402 포인트 부족
+     */
+    @Transactional
+    public DeliveryCreateResponse createDelivery(DeliveryCreateRequest request, Long customerId) {
+        // ① 멱등: 같은 요청키의 주문이 이미 있으면 그 결과를 그대로 돌려준다(순차 재전송).
+        //    포인트도 다시 차감하지 않는다 — 아래 저장 경로를 아예 타지 않기 때문이다.
+        Optional<DeliveryOrder> alreadyCreated =
+                deliveryOrderRepository.findByCustomer_IdAndRequestKey(customerId, request.requestKey());
+        if (alreadyCreated.isPresent()) {
+            return toResponse(alreadyCreated.get());
+        }
+
+        // ② 요금은 서버가 다시 계산한다. 요청의 estimatedFare 는 대조에만 쓴다.
+        FareCalculation calculation =
+                calculate(request.itemType(), request.pickup(), request.destination());
+        verifyFareUnchanged(request.estimatedFare(), calculation.fare().totalFare());
+
+        // 세션 인터셉터가 이미 회원 존재·역할·상태를 확인했으므로 다시 조회하지 않는다.
+        // FK 를 채우는 것이 목적이라 프록시 참조로 충분하다(chargePointRequest 와 같은 판단).
+        Member customer = memberRepository.getReferenceById(customerId);
+
+        DeliveryOrder order = DeliveryOrder.request(
+                customer,
+                request.requestKey(),
+                request.itemType(),
+                calculation.distanceMeters(),
+                toAddress(request.pickup()),
+                toAddress(request.destination()),
+                Contact.of(request.sender().name(), request.sender().phoneNumber()),
+                Contact.of(request.recipient().name(), request.recipient().phoneNumber()));
+
+        DeliveryOrder saved;
+        try {
+            // save 가 아니라 saveAndFlush 다: 지연 flush 로는 유니크 위반이 커밋 시점에 터져
+            // 아래 catch 가 잡지 못하고 500 으로 새어 나간다(#32 에서 확인한 것과 같은 이유).
+            saved = deliveryOrderRepository.saveAndFlush(order);
+        } catch (DataIntegrityViolationException e) {
+            throw new BusinessException(HttpStatus.CONFLICT,
+                    "이미 진행 중인 배송요청이 있거나 동일한 요청이 처리 중입니다.");
+        }
+
+        // ④ 주문 시점의 요금을 ESTIMATE 스냅샷으로 고정한다. 이후 정책이 바뀌어도 이 주문의
+        //    청구 근거는 여기에 남는다(라이더 정산도 이 스냅샷을 참조한다).
+        FareBreakdownResponse fare = calculation.fare();
+        orderFareSnapshotRepository.save(OrderFareSnapshot.create(
+                saved, calculation.policy(), FareType.ESTIMATE,
+                fare.policyVersion(), fare.calculationDistanceMeters(),
+                fare.baseFare(), fare.distanceFare(), fare.itemSurcharge()));
+
+        // ⑤ 포인트 차감 + ORDER_USE 원장. 실패하면 위 주문·스냅샷까지 함께 롤백된다.
+        long balanceAfter = customerPaymentService.payForOrder(
+                customerId, saved, fare.totalFare(), request.requestKey());
+
+        log.info("[배송요청-생성] deliveryId={}, customerId={}, totalFare={}, balanceAfter={}",
+                saved.getId(), customerId, fare.totalFare(), balanceAfter);
+
+        return toResponse(saved, fare);
+    }
+
+    /**
+     * 화면이 안내한 금액과 서버 재계산 금액을 대조한다(#37 예외 처리).
+     *
+     * <p><b>다르면 주문을 만들지 않는다</b>(사람 확인). 5,000원을 보고 결제 버튼을 눌렀는데
+     * 5,500원이 빠져나가는 것을 막기 위해서다. 서버 값으로 조용히 진행하는 선택지도 있었지만
+     * 그건 사용자가 동의하지 않은 금액을 결제하는 것이 된다.
+     *
+     * <p>400 이 아니라 409 인 이유: 요청 자체는 형식·값 모두 유효하고, 어긋난 것은 그 사이에 바뀐
+     * <b>서버의 요금 정책</b>이다. 이 엔드포인트의 400 은 Bean Validation 오류로 이미 많이 나가는데,
+     * 요금 변경은 사용자가 입력을 고쳐서 해결할 수 있는 종류가 아니라 화면이 요금을 다시 받아
+     * 보여줘야 하는 상황이라 섞이면 안 된다.
+     */
+    private void verifyFareUnchanged(long requestedFare, long serverFare) {
+        if (requestedFare != serverFare) {
+            throw new BusinessException(HttpStatus.CONFLICT,
+                    "배송요금이 변경되었습니다. 요금을 다시 확인해 주세요. 요청=%d, 서버=%d"
+                            .formatted(requestedFare, serverFare));
+        }
+    }
+
+    private Address toAddress(AddressRequest request) {
+        return Address.of(request.roadAddress(), request.detailAddress(), request.postalCode(),
+                request.latitude(), request.longitude());
+    }
+
+    /**
+     * 멱등 재전송의 응답. 저장된 ESTIMATE 스냅샷에서 요금을 되읽는다 — 지금 다시 계산하면
+     * 정책이 바뀐 뒤에는 <b>실제 청구된 금액과 다른 값</b>을 돌려주게 된다.
+     */
+    private DeliveryCreateResponse toResponse(DeliveryOrder order) {
+        OrderFareSnapshot snapshot = orderFareSnapshotRepository
+                .findByOrder_IdAndFareType(order.getId(), FareType.ESTIMATE)
+                .orElseThrow(() -> new IllegalStateException(
+                        "주문에 예상 운임 스냅샷이 없습니다. deliveryId=" + order.getId()));
+
+        return toResponse(order, new FareBreakdownResponse(
+                snapshot.getPolicyVersion(), snapshot.getCalculationDistanceMeters(),
+                snapshot.getBaseFare(), snapshot.getDistanceFare(), snapshot.getItemSurcharge(),
+                snapshot.getTotalFare()));
+    }
+
+    private DeliveryCreateResponse toResponse(DeliveryOrder order, FareBreakdownResponse fare) {
+        return new DeliveryCreateResponse(
+                order.getId(), order.getStatus(), order.getRequestKey(), fare, order.getRequestedAt());
     }
 
     public int estimateMinutes(int distanceMeters) {

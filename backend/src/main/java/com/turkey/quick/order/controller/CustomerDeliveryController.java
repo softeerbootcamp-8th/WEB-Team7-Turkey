@@ -1,10 +1,13 @@
 package com.turkey.quick.order.controller;
 
 import com.turkey.quick.common.response.ApiResponse;
+import com.turkey.quick.customer.auth.AuthenticatedCustomer;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.*;
 import com.turkey.quick.order.service.DeliveryService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 
@@ -19,9 +22,16 @@ public class CustomerDeliveryController implements CustomerDeliveryApi {
         return ApiResponse.ok(deliveryService.quoteFare(request));
     }
 
+    /**
+     * {@code @ResponseStatus} 를 여기에도 둔다. 인터페이스에도 있지만 그건 이 저장소에서 검증된 적이
+     * 없는 위치다 — 201 을 실제로 내보내는 다른 API({@code CustomerPaymentController})는 모두 구현체에
+     * 달고 있고, {@code references/backend.md} 도 동작에 영향을 주는 애노테이션은 구현체에 두라고 한다.
+     */
     @Override
-    public ApiResponse<DeliveryCreateResponse> createDelivery(DeliveryCreateRequest request) {
-        return null;
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<DeliveryCreateResponse> createDelivery(AuthenticatedCustomer customer,
+                                                              DeliveryCreateRequest request) {
+        return ApiResponse.ok(deliveryService.createDelivery(request, customer.memberId()));
     }
 
     @Override
