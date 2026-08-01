@@ -13,7 +13,7 @@ function RiderLogin() {
       {/* TopAppBar */}
       <header className="bg-surface text-on-surface docked full-width top-0 border-b border-surface-container flat no shadows hover:bg-surface-container-low flex justify-between items-center w-full px-container-margin h-14 sticky z-10">
         <div className="flex items-center gap-xs">
-          <Link to="/rider" className="p-2 -ml-2 rounded-full hover:bg-surface-variant transition-colors" aria-label="Go back">
+          <Link to="/" className="p-2 -ml-2 rounded-full hover:bg-surface-variant transition-colors" aria-label="홈으로 돌아가기">
             <span className="material-symbols-outlined text-[24px]">arrow_back</span>
           </Link>
           <h1 className="text-headline-sm-mobile font-headline-sm-mobile text-on-surface font-bold">라이더 로그인</h1>

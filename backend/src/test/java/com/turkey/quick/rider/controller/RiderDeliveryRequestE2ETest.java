@@ -41,8 +41,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * #55 「퀵 요청 목록 보기」·#57 「퀵 요청 상세사항 보기」의 완료 조건(정상 흐름 + 예외 흐름)을
- * 실제 HTTP 로 검증한다.
+ * #55 「퀵 요청 목록 보기」·#57 「퀵 요청 상세사항 보기」·#56 「배달 확정하기」의 완료 조건
+ * (정상 흐름 + 예외 흐름)을 실제 HTTP 로 검증한다.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")
@@ -207,5 +207,71 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(response.getBody().success()).isFalse();
+    }
+
+    @Test
+    void AVAILABLE_라이더가_배차를_확정하면_200과_ASSIGNED_BUSY_결과를_반환한다() {
+        saveRider("e2e_rider_requests06", "p@ssw0rd", "01044445556", true);
+        DeliveryOrder order = saveWaitingOrderWithFareSnapshot();
+        String cookie = loginAndGetSessionCookie("e2e_rider_requests06", "p@ssw0rd");
+
+        var response = rest.exchange(ENDPOINT + "/" + order.getId() + "/accept", HttpMethod.POST,
+                withCookie(cookie), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<?, ?> data = (Map<?, ?>) response.getBody().data();
+        assertThat(data.get("status")).isEqualTo("ASSIGNED");
+        assertThat(data.get("operatingStatus")).isEqualTo("BUSY");
+
+        DeliveryOrder persisted = deliveryOrderRepository.findById(order.getId()).orElseThrow();
+        assertThat(persisted.getStatus().name()).isEqualTo("ASSIGNED");
+    }
+
+    @Test
+    void 배차_확정_시_세션_쿠키가_없으면_401을_반환한다() {
+        var response = rest.exchange(ENDPOINT + "/1/accept", HttpMethod.POST, withCookie(null), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void 배차_확정_시_라이더_운행_상태가_AVAILABLE이_아니면_403을_반환한다() {
+        saveRider("e2e_rider_requests07", "p@ssw0rd", "01044445557", false);
+        DeliveryOrder order = saveWaitingOrderWithFareSnapshot();
+        String cookie = loginAndGetSessionCookie("e2e_rider_requests07", "p@ssw0rd");
+
+        var response = rest.exchange(ENDPOINT + "/" + order.getId() + "/accept", HttpMethod.POST,
+                withCookie(cookie), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    void 존재하지_않는_배송요청을_수락하면_404를_반환한다() {
+        saveRider("e2e_rider_requests08", "p@ssw0rd", "01044445558", true);
+        String cookie = loginAndGetSessionCookie("e2e_rider_requests08", "p@ssw0rd");
+
+        var response = rest.exchange(ENDPOINT + "/999999999/accept", HttpMethod.POST,
+                withCookie(cookie), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void 이미_배차된_배송요청을_다시_수락하면_409를_반환한다() {
+        saveRider("e2e_rider_requests09", "p@ssw0rd", "01044445559", true);
+        saveRider("e2e_rider_requests10", "p@ssw0rd", "01044445560", true);
+        DeliveryOrder order = saveWaitingOrderWithFareSnapshot();
+        String firstCookie = loginAndGetSessionCookie("e2e_rider_requests09", "p@ssw0rd");
+        String secondCookie = loginAndGetSessionCookie("e2e_rider_requests10", "p@ssw0rd");
+
+        var first = rest.exchange(ENDPOINT + "/" + order.getId() + "/accept", HttpMethod.POST,
+                withCookie(firstCookie), ApiResponse.class);
+        assertThat(first.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        var second = rest.exchange(ENDPOINT + "/" + order.getId() + "/accept", HttpMethod.POST,
+                withCookie(secondCookie), ApiResponse.class);
+        assertThat(second.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(second.getBody().success()).isFalse();
     }
 }

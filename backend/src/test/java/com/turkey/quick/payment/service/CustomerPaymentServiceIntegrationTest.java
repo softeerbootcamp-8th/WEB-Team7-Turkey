@@ -42,7 +42,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 포인트 충전 준비의 <b>DB 가 개입하는 정합성</b>을 검증한다(#32).
- *
+ *PointChargeCancelResponse
  * <p>단위 테스트({@link CustomerPaymentServiceTest})는 리포지토리를 인메모리 페이크로 바꿔 서비스의
  * 판단만 본다. 그래서 이 두 가지를 증명할 수 없다:
  *

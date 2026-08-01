@@ -73,17 +73,24 @@ public interface RiderDeliveryRequestApi {
             @PathVariable Long deliveryId);
 
     @Operation(summary = "배차 확정(콜 수락)",
-            description = "배송 WAITING→ASSIGNED + 라이더 AVAILABLE→BUSY 를 한 트랜잭션으로 처리한다. "
-                    + "요청당 라이더 1명, 라이더당 진행 배송 1건이며 경쟁 실패는 409 로 끝난다.")
+            description = "배송 WAITING→ASSIGNED + 라이더 AVAILABLE→BUSY 를 한 트랜잭션으로 처리한다(ADR-006 "
+                    + "조건부 UPDATE, 주문→라이더 순서 고정). 요청당 라이더 1명, 라이더당 진행 배송 1건이며 "
+                    + "경쟁 실패는 409 로 끝난다. (#56) 라이더 식별을 위한 인증 파라미터를 이 메서드에도 추가함.")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "200", description = "배차 확정"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404", description = "존재하지 않는 배송요청"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "409",
-                    description = "다른 라이더가 먼저 수락했거나, 라이더가 AVAILABLE 이 아님")
+                    description = "다른 라이더가 먼저 수락했거나, 취소됐거나, 라이더가 AVAILABLE 이 아니거나 "
+                            + "이미 다른 배송을 수행 중임")
     })
     @PostMapping("/{deliveryId}/accept")
     ApiResponse<RiderDeliveryRequestAcceptResponse> acceptDeliveryRequest(
+            @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
+            AuthenticatedRider rider,
+
             @Parameter(description = "배송요청 식별자", example = "1024")
             @PathVariable Long deliveryId);
 

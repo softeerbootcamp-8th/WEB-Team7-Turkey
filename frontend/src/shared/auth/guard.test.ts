@@ -4,6 +4,7 @@ import {
   resolveAccountGuard,
   resolveCustomerGuard,
   resolveGuestGuard,
+  resolveLandingGuard,
   resolveRiderGuard,
   type SessionInfo,
 } from './guard'
@@ -108,6 +109,28 @@ describe('resolveGuestGuard', () => {
 
   it('비로그인이면 통과시킨다', () => {
     expect(resolveGuestGuard(guest)).toEqual({ action: 'allow' })
+  })
+})
+
+describe('resolveLandingGuard', () => {
+  it('비로그인이면 랜딩 화면을 표시한다', () => {
+    expect(resolveLandingGuard(guest)).toEqual({ action: 'allow' })
+  })
+
+  it('고객은 고객 홈으로 보낸다', () => {
+    expect(resolveLandingGuard(customer)).toEqual({ action: 'redirect', to: '/customer' })
+  })
+
+  it.each([
+    ['UNAVAILABLE', '/rider'],
+    ['AVAILABLE', '/rider/requests'],
+    ['BUSY', '/rider/delivery'],
+  ] as const)('%s 라이더는 %s 로 보낸다', (status, expected) => {
+    expect(resolveLandingGuard(rider(status))).toEqual({ action: 'redirect', to: expected })
+  })
+
+  it('운행 상태가 없는 라이더는 라이더 홈으로 보낸다', () => {
+    expect(resolveLandingGuard(rider())).toEqual({ action: 'redirect', to: '/rider' })
   })
 })
 

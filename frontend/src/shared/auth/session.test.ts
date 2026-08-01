@@ -22,7 +22,7 @@ vi.mock('@/api/generated/rider-session/rider-session', () => ({
   getGetRiderSessionQueryKey: () => ['/api/rider/session'],
 }))
 
-const { ensureSessionInfo, clearSessionQueries, isUnauthorized } = await import('./session')
+const { ensureSessionInfo, clearSessionQueries, cacheAuthenticatedCustomer, isUnauthorized } = await import('./session')
 
 function httpError(status: number): AxiosError {
   const response = { status, data: null, statusText: '', headers: {}, config: {} } as unknown as AxiosResponse
@@ -96,6 +96,16 @@ describe('ensureSessionInfo - 실패를 만료로 오해하지 않는다', () =>
 })
 
 describe('ensureSessionInfo - 캐시 공유', () => {
+  it('고객 로그인 응답을 캐시하면 라이더 세션을 조회하지 않는다', async () => {
+    const customer = { memberId: 1, loginId: 'c1', name: '고객' }
+
+    cacheAuthenticatedCustomer(queryClient, customer)
+
+    await expect(ensureSessionInfo(queryClient)).resolves.toEqual({ role: 'CUSTOMER', customer })
+    expect(getCustomerSession).not.toHaveBeenCalled()
+    expect(getRiderSession).not.toHaveBeenCalled()
+  })
+
   it('신선한 세션이 캐시에 있으면 어느 세션 API 도 다시 부르지 않는다', async () => {
     getCustomerSession.mockResolvedValue({ success: true, data: { memberId: 1, loginId: 'c1', name: '고객' } })
     getRiderSession.mockRejectedValue(httpError(401))

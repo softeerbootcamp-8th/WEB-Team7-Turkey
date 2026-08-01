@@ -5,6 +5,7 @@ import {
   getGetCustomerSessionQueryKey,
 } from '@/api/generated/customer-session/customer-session'
 import { getGetRiderSessionQueryKey, getRiderSession } from '@/api/generated/rider-session/rider-session'
+import type { CustomerSessionResponse } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
 import type { SessionInfo } from './guard'
 
 /**
@@ -125,4 +126,23 @@ export async function ensureSessionInfo(queryClient: QueryClient): Promise<Sessi
 export function clearSessionQueries(queryClient: QueryClient): void {
   queryClient.removeQueries({ queryKey: getGetCustomerSessionQueryKey() })
   queryClient.removeQueries({ queryKey: getGetRiderSessionQueryKey() })
+}
+
+/**
+ * 고객 로그인 응답으로 고객 세션 캐시를 확정한다.
+ *
+ * 로그인 직후 역할은 이미 CUSTOMER 로 확인됐다. 이때 캐시를 비워 둔 채 가드가 역할을 다시
+ * 탐색하면 고객·라이더 세션 API 를 함께 호출하고, 라이더 역할 불일치 401 의 만료 쿠키가 방금
+ * 발급된 공용 SESSION_ID 를 삭제할 수 있다. 반대 역할을 재조회하지 않도록 로그인 응답을
+ * 고객 세션 조회와 같은 형태로 저장한다.
+ */
+export function cacheAuthenticatedCustomer(
+  queryClient: QueryClient,
+  customer: CustomerSessionResponse,
+): void {
+  clearSessionQueries(queryClient)
+  queryClient.setQueryData(getGetCustomerSessionQueryKey(), {
+    success: true,
+    data: customer,
+  })
 }
