@@ -44,8 +44,13 @@ import org.hibernate.type.SqlTypes;
  *   <li>ck_point_transaction_balance — balanceAfter 를 인자로 받지 않고 방향과 금액으로 계산한다.</li>
  * </ul>
  *
- * 멱등성: request_key 전역 유니크 + 소스별 (source_id, transaction_type) 유니크가
+ * 멱등성: (request_key, transaction_type) 유니크 + 소스별 (source_id, transaction_type) 유니크가
  * 재전송·재시도로 원장이 중복 기록되는 것을 막는다.
+ *
+ * <b>request_key 는 전역 유니크가 아니다</b>(V18 에서 완화). 같은 주문 요청키로 ORDER_USE 와
+ * ORDER_REFUND 가 각각 한 건씩 남을 수 있고, 그 둘이 키를 공유하는 것이 "같은 주문 요청에서 나온
+ * 결제와 환불"이라는 추적 근거가 된다. 유형이 다르면 키가 겹쳐도 된다는 뜻이지, 같은 유형이
+ * 두 번 기록될 수 있다는 뜻은 아니다.
  */
 @Entity
 @Table(name = "point_transaction")
