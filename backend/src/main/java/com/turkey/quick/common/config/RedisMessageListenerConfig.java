@@ -1,0 +1,77 @@
+package com.turkey.quick.common.config;
+
+import com.turkey.quick.location.sse.TrackingChannel;
+import com.turkey.quick.location.sse.TrackingEventSubscriber;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.listener.PatternTopic;
+import org.springframework.data.redis.listener.RedisMessageListenerContainer;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+
+/**
+ * Redis Pub/Sub 구독 배선. <b>이 저장소의 첫 Redis {@code @Configuration} 이다</b> — 그전까지
+ * 세 저장소가 스프링 부트 자동설정이 준 {@code StringRedisTemplate} 을 그냥 주입받아 썼다.
+ *
+ * <p>Pub/Sub 은 <b>SSE 이벤트 팬아웃 용도로만</b> 허용된다({@code CLAUDE.md} 「금지 사항」).
+ * 작업 큐·도메인 이벤트 버스·인스턴스 간 RPC 로 확장하지 않는다 — 그건 별도 논의가 필요하다.
+ * Streams 금지는 유지된다.
+ */
+@Slf4j
+@Configuration
+public class RedisMessageListenerConfig {
+
+    /**
+     * 메시지 디스패치 전용 실행기. <b>반드시 지정해야 한다.</b>
+     *
+     * <p>{@code RedisMessageListenerContainer} 는 미지정 시
+     * {@code createDefaultTaskExecutor()} 로 {@code SimpleAsyncTaskExecutor} 를 쓰고,
+     * {@code dispatchMessage} 가 <b>메시지마다 {@code executor.execute}</b> 를 부른다. 그 실행기는
+     * 매 호출에 <b>새 플랫폼 스레드를 만들고 버린다</b>(동시성 제한 기본 무제한). BUSY 라이더가
+     * 100명이면 초당 20개, 500명이면 초당 100개의 스레드 생성·파괴다 — 동시 구독 고객 수보다
+     * 이쪽이 먼저 무너진다.
+     *
+     * <p><b>풀 크기를 1이 아니라 4로 둔 이유</b>(트레이드오프): {@code SseEmitter.send} 는
+     * 블로킹이라, 단일 스레드면 소켓 버퍼가 가득 찬 클라이언트 하나가
+     * <b>모든 주문의 위치 전달을 멈춘다.</b> 여러 스레드면 그 격리는 얻지만 같은 채널 메시지의
+     * 처리 순서가 뒤집힐 수 있다. 순서 역전은 프론트가 {@code measuredAt} 이 뒤로 가는 이벤트를
+     * 버리는 것으로 복구되고(#196 에 필요한 가드이며 재연결 스냅샷 때문에 어차피 있어야 한다),
+     * 멈춘 디스패처는 <b>모든 고객의 지도가 조용히 얼어붙는</b> 것이라 복구할 방법이 없다.
+     * 그래서 격리를 골랐다.
+     */
+    @Bean
+    public ThreadPoolTaskExecutor trackingEventExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(4);
+        executor.setMaxPoolSize(4);
+        executor.setQueueCapacity(1_000);
+        executor.setThreadNamePrefix("sse-fanout-");
+        // 종료 시 남은 메시지를 기다리지 않는다. at-most-once 라 유실은 감내하기로 정했고,
+        // 기다리면 배포만 느려진다.
+        executor.setWaitForTasksToCompleteOnShutdown(false);
+        return executor;
+    }
+
+    /**
+     * 주문별 채널을 <b>패턴 하나로</b> 구독한다. 그 선택의 근거는
+     * {@link TrackingChannel#pattern()} 에 적어 뒀다 — 주문별 동적 구독은 구독이 어긋났을 때
+     * 고객 스트림이 조용히 죽는 실패 모드를 만든다.
+     *
+     * <p>{@code ErrorHandler} 를 지정하는 이유: 컨테이너는 리스너에서 올라온 {@code Throwable} 을
+     * 삼켜 로그만 남긴다. 기본 로거로는 어느 이벤트가 왜 사라졌는지 알 수 없어 관측 가능하게 만든다.
+     */
+    @Bean
+    public RedisMessageListenerContainer trackingMessageListenerContainer(
+            RedisConnectionFactory connectionFactory,
+            TrackingEventSubscriber subscriber,
+            ThreadPoolTaskExecutor trackingEventExecutor) {
+        RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+        container.setConnectionFactory(connectionFactory);
+        container.setTaskExecutor(trackingEventExecutor);
+        container.setErrorHandler(throwable ->
+                log.error("event=SSE_FANOUT_ERROR reason={}", throwable.getClass().getSimpleName(), throwable));
+        container.addMessageListener(subscriber, new PatternTopic(TrackingChannel.pattern()));
+        return container;
+    }
+}
