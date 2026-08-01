@@ -579,9 +579,15 @@ body {
 }
 
 .landing-loading p {
+    width: min(100% - 48px, 420px);
+    min-height: 40px;
     margin: -5px 0 0;
     color: #666454;
     font-size: 13px;
+    line-height: 20px;
+    text-align: center;
+    text-wrap: balance;
+    white-space: pre-line;
 }
 
 @keyframes landing-spin {

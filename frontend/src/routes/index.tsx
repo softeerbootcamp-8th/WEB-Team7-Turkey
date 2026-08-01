@@ -8,6 +8,7 @@ import {
   startRiderLocationSender,
   stopRiderLocationSender,
 } from '@/shared/hooks/useLocationSender'
+import { useRotatingLoadingTip } from '@/shared/hooks/useRotatingLoadingTip'
 
 export const Route = createFileRoute('/')({
   // account/* 는 역할 무관 화면이라 비로그인 시 여기로 보내진다(#195). 목적지를 보존한다.
@@ -179,13 +180,17 @@ function LandingPage() {
 }
 
 function LandingLoadingScreen() {
+  const loadingTip = useRotatingLoadingTip()
+
   return (
     <main className="landing-loading" aria-label="로그인 상태 확인 중">
       <span className="landing-loading__brand">
         turkey<span aria-hidden="true">.</span>
       </span>
       <span className="landing-loading__spinner" aria-hidden="true" />
-      <p role="status">잠시만 기다려 주세요</p>
+      <p role="status" aria-live="polite" aria-atomic="true">
+        {loadingTip}
+      </p>
     </main>
   )
 }
