@@ -235,10 +235,16 @@ class DeliveryCreateIntegrationTest extends IntegrationTestSupport {
         String requestKey = UUID.randomUUID().toString();
         deliveryService.createDelivery(request(requestKey, fare), customerId);
 
-        // 요금 정책을 갈아엎는다: 이후 재계산하면 다른 금액이 나온다
+        // 요금 정책을 갈아엎는다: 이후 재계산하면 다른 금액이 나온다.
+        //
+        // 두 트랜잭션으로 나눈다. 한 트랜잭션에 두면 Hibernate 가 INSERT 를 UPDATE 보다 먼저
+        // 내보내서(액션 순서가 고정돼 있다) 새 ACTIVE 정책이 들어가는 순간 기존 정책이 아직
+        // ACTIVE 라 uk_fare_policy_active 를 위반한다. flush() 를 끼워도 되지만, 순서에 기대는
+        // 코드보다 커밋 경계로 못 박는 편이 읽기 쉽다.
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                farePolicyRepository.findAll().get(0).deactivate());
+
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
-            FarePolicy old = farePolicyRepository.findAll().get(0);
-            old.deactivate();
             FarePolicy renewed = FarePolicy.create(
                     "v2", 9_000L, 100, 500L, 30_000, LocalDateTime.now().minusDays(1));
             renewed.activate();
