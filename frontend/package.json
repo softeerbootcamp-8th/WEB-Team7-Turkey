@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:android": "tsc -b && vite build --mode android",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "generate:api": "orval --config ./orval.config.ts",
