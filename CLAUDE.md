@@ -309,6 +309,15 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   `delivery_order`에 관련 컬럼이 없음(`itemType` 열거형만 존재). 화면에서 실제로 필요해지면 스키마
   변경(Flyway 마이그레이션)과 주문 생성(REQ-ORD-002) 쪽 값 저장까지 함께 논의해야 함
   (2026-07-30: #56 rebase 중 dev 병합 과정에서 이 항목이 유실됐던 걸 복구함)
+- 포인트 지갑 없음의 응답 코드가 고객(400)과 라이더(500)로 갈린다(#67). 라이더는
+  `BusinessException(INTERNAL_SERVER_ERROR)`로 `RiderPointApi` 문서와 맞췄지만, 고객
+  (`CustomerPaymentService`)은 `IllegalStateException` → `GlobalExceptionHandler` → 400 이라
+  `CustomerPointApi` 문서에 적힌 500 과 어긋난 상태다. 지갑은 회원가입 트랜잭션에서 함께 생성되므로
+  정상 경로에서는 둘 다 발생하지 않지만, 고객 쪽을 500 으로 맞추면 기존 API 의 응답 계약이 바뀌어
+  프론트 영향 검토가 필요하다 — 별도 이슈로 올릴지 미결
+- `GlobalExceptionHandler`가 `IllegalStateException`을 일괄 400 으로 바꾼다(#67에서 드러남). 서버
+  정합성 오류를 사용자 입력 오류와 구분하려면 매번 `BusinessException`을 명시해야 한다는 뜻인데,
+  이 관례를 `references/backend.md`에 못 박을지 미결
 - 배차 확정(`POST /api/rider/requests/{deliveryId}/accept`, #56) 실패 사유(취소/이미 배차/라이더
   다른 배송 수행 중)를 `ApiResponse`에 에러코드 필드 없이 `message` 문자열로만 구분함(ADR-006).
   프론트가 사유별로 다른 UX를 보여줘야 하면 에러코드 체계 신설을 별도 이슈로 논의해야 함
