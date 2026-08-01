@@ -2,6 +2,7 @@ package com.turkey.quick.rider.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -23,8 +24,10 @@ import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
 import com.turkey.quick.order.service.DeliveryService;
 import com.turkey.quick.rider.auth.AuthenticatedRider;
 import com.turkey.quick.rider.domain.OperatingStatus;
+import com.turkey.quick.rider.dto.RiderDeliveryRequestAcceptResponse;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestDetailResponse;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestSummaryResponse;
+import com.turkey.quick.rider.repository.RiderProfileRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -36,12 +39,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.geo.Point;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("라이더 콜(배차 대기 요청) 목록·상세 조회 서비스(#55/#57)")
+@DisplayName("라이더 콜(배차 대기 요청) 목록·상세 조회·수락 서비스(#55/#57/#56)")
 class RiderDeliveryRequestServiceTest {
 
     @InjectMocks
@@ -55,6 +59,9 @@ class RiderDeliveryRequestServiceTest {
 
     @Mock
     private RiderGeoRepository riderGeoRepository;
+
+    @Mock
+    private RiderProfileRepository riderProfileRepository;
 
     @Mock
     private DeliveryService deliveryService;
@@ -300,6 +307,105 @@ class RiderDeliveryRequestServiceTest {
             assertThat(result.estimatedMinutes()).isEqualTo(2);
             assertThat(result.estimatedFare().totalFare()).isEqualTo(6400L);
             assertThat(result.expectedSettlementAmount()).isEqualTo(6400L);
+        }
+    }
+
+    @Nested
+    @DisplayName("배차 확정(#56, ADR-006 조건부 UPDATE)")
+    class AcceptDeliveryRequestTest {
+
+        @Test
+        @DisplayName("라이더 운행 상태가 AVAILABLE이 아니면 403으로 거부한다")
+        void shouldRejectWhenRiderNotAvailable() {
+            assertThatThrownBy(() -> service.acceptDeliveryRequest(rider(OperatingStatus.BUSY), 1024L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("AVAILABLE");
+        }
+
+        @Test
+        @DisplayName("주문 조건부 UPDATE가 0행이고 주문이 존재하지 않으면 404다")
+        void shouldRejectWith404WhenOrderNotFound() {
+            given(deliveryOrderRepository.assignIfWaiting(eq(1024L), eq(RIDER_ID), any(LocalDateTime.class)))
+                    .willReturn(0);
+            given(deliveryOrderRepository.findById(1024L)).willReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.acceptDeliveryRequest(rider(OperatingStatus.AVAILABLE), 1024L))
+                    .isInstanceOf(BusinessException.class)
+                    .satisfies(e -> assertThat(((BusinessException) e).getStatus()).isEqualTo(HttpStatus.NOT_FOUND));
+        }
+
+        @Test
+        @DisplayName("주문 조건부 UPDATE가 0행이고 주문이 취소됐으면 409와 취소 사유를 반환한다")
+        void shouldRejectWith409WhenOrderCanceled() {
+            DeliveryOrder canceled = order(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"), LocalDateTime.now());
+            ReflectionTestUtils.setField(canceled, "status", OrderStatus.CANCELED);
+            given(deliveryOrderRepository.assignIfWaiting(eq(canceled.getId()), eq(RIDER_ID), any(LocalDateTime.class)))
+                    .willReturn(0);
+            given(deliveryOrderRepository.findById(canceled.getId())).willReturn(Optional.of(canceled));
+
+            assertThatThrownBy(() -> service.acceptDeliveryRequest(rider(OperatingStatus.AVAILABLE), canceled.getId()))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("취소")
+                    .satisfies(e -> assertThat(((BusinessException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT));
+        }
+
+        @Test
+        @DisplayName("주문 조건부 UPDATE가 0행이고 이미 다른 라이더에게 배차됐으면 409를 반환한다")
+        void shouldRejectWith409WhenAlreadyAssignedToAnotherRider() {
+            DeliveryOrder assigned = order(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"), LocalDateTime.now());
+            ReflectionTestUtils.setField(assigned, "status", OrderStatus.ASSIGNED);
+            given(deliveryOrderRepository.assignIfWaiting(eq(assigned.getId()), eq(RIDER_ID), any(LocalDateTime.class)))
+                    .willReturn(0);
+            given(deliveryOrderRepository.findById(assigned.getId())).willReturn(Optional.of(assigned));
+
+            assertThatThrownBy(() -> service.acceptDeliveryRequest(rider(OperatingStatus.AVAILABLE), assigned.getId()))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("이미 다른 라이더")
+                    .satisfies(e -> assertThat(((BusinessException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT));
+        }
+
+        @Test
+        @DisplayName("같은 라이더가 다른 주문과 동시에 경쟁해 uk_delivery_active_rider를 위반하면 409로 변환한다")
+        void shouldConvertUniqueConstraintViolationTo409() {
+            given(deliveryOrderRepository.assignIfWaiting(eq(1024L), eq(RIDER_ID), any(LocalDateTime.class)))
+                    .willThrow(new DataIntegrityViolationException("uk_delivery_active_rider"));
+
+            assertThatThrownBy(() -> service.acceptDeliveryRequest(rider(OperatingStatus.AVAILABLE), 1024L))
+                    .isInstanceOf(BusinessException.class)
+                    .satisfies(e -> assertThat(((BusinessException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT));
+        }
+
+        @Test
+        @DisplayName("주문 UPDATE는 성공했지만 라이더 UPDATE가 0행이면 409로 실패한다(부분 성공 없음)")
+        void shouldRejectWith409WhenRiderNoLongerAvailable() {
+            given(deliveryOrderRepository.assignIfWaiting(eq(1024L), eq(RIDER_ID), any(LocalDateTime.class)))
+                    .willReturn(1);
+            given(riderProfileRepository.markBusyIfAvailable(RIDER_ID)).willReturn(0);
+
+            assertThatThrownBy(() -> service.acceptDeliveryRequest(rider(OperatingStatus.AVAILABLE), 1024L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("이미 다른 배송을 수행 중")
+                    .satisfies(e -> assertThat(((BusinessException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT));
+        }
+
+        @Test
+        @DisplayName("두 조건부 UPDATE가 모두 성공하면 ASSIGNED·BUSY 결과를 반환한다")
+        void shouldReturnAcceptResponseWhenBothUpdatesSucceed() {
+            DeliveryOrder assigned = order(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"), LocalDateTime.now());
+            ReflectionTestUtils.setField(assigned, "status", OrderStatus.ASSIGNED);
+            ReflectionTestUtils.setField(assigned, "assignedAt", LocalDateTime.now());
+            given(deliveryOrderRepository.assignIfWaiting(eq(assigned.getId()), eq(RIDER_ID), any(LocalDateTime.class)))
+                    .willReturn(1);
+            given(riderProfileRepository.markBusyIfAvailable(RIDER_ID)).willReturn(1);
+            given(deliveryOrderRepository.findById(assigned.getId())).willReturn(Optional.of(assigned));
+
+            RiderDeliveryRequestAcceptResponse result =
+                    service.acceptDeliveryRequest(rider(OperatingStatus.AVAILABLE), assigned.getId());
+
+            assertThat(result.deliveryId()).isEqualTo(assigned.getId());
+            assertThat(result.status()).isEqualTo(OrderStatus.ASSIGNED);
+            assertThat(result.operatingStatus()).isEqualTo(OperatingStatus.BUSY);
+            assertThat(result.assignedAt()).isNotNull();
         }
     }
 }

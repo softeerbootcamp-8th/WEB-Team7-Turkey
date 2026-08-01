@@ -13,7 +13,7 @@ function RiderSignup() {
           <span className="material-symbols-outlined">arrow_back</span>
         </Link>
         <h1 className="text-headline-sm font-headline-sm font-bold text-on-surface flex-1 text-center">라이더 회원가입</h1>
-        <Link to="/rider" className="text-on-surface-variant dark:text-on-secondary-container hover:bg-surface-container-low dark:hover:bg-surface-variant rounded-lg px-2 h-10 flex items-center justify-center transition-colors">
+        <Link to="/" className="text-on-surface-variant dark:text-on-secondary-container hover:bg-surface-container-low dark:hover:bg-surface-variant rounded-lg px-2 h-10 flex items-center justify-center transition-colors">
           <span className="text-label-lg font-label-lg">취소</span>
         </Link>
       </header>

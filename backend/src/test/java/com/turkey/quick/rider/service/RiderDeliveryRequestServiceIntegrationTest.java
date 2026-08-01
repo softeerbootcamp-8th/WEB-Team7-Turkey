@@ -14,12 +14,14 @@ import com.turkey.quick.order.domain.FarePolicy;
 import com.turkey.quick.order.domain.FareType;
 import com.turkey.quick.order.domain.ItemType;
 import com.turkey.quick.order.domain.OrderFareSnapshot;
+import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.order.repository.FarePolicyRepository;
 import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
 import com.turkey.quick.rider.auth.AuthenticatedRider;
 import com.turkey.quick.rider.domain.OperatingStatus;
 import com.turkey.quick.rider.domain.RiderProfile;
+import com.turkey.quick.rider.dto.RiderDeliveryRequestAcceptResponse;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestDetailResponse;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestSummaryResponse;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
@@ -27,6 +29,11 @@ import com.turkey.quick.support.IntegrationTestSupport;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -80,8 +87,12 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
     @BeforeEach
     void setUp() {
         redisTemplate.delete(RIDER_GEO_KEY);
-        rider = memberRepository.save(
-                Member.create("integration_rider01", "hash", "라이더", "01099998888", MemberRole.RIDER));
+        // #56부터는 rider_profile 행이 실제로 있어야 accept() 의 조건부 UPDATE(operating_status='AVAILABLE')가
+        // 의미를 갖는다. saveRiderProfile(available=true) 로 Member+RiderProfile 을 함께 만든다.
+        RiderProfile riderProfile = saveRiderProfile("integration_rider01", "01099998888", true);
+        // RiderProfile.member 는 지연 로딩이라 트랜잭션 밖에서 접근하면 LazyInitializationException.
+        // memberId(=PK, @MapsId)로 다시 조회한다 — 새 트랜잭션이라 지연 로딩 문제가 없다.
+        rider = memberRepository.findById(riderProfile.getMemberId()).orElseThrow();
         farePolicy = farePolicyRepository.save(FarePolicy.create(
                 "v1", 3000L, 100, 130L, 30000, LocalDateTime.now().minusDays(1)));
     }
@@ -99,12 +110,17 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
      * Member 와 RiderProfile 을 한 트랜잭션에서 저장한다({@code RiderSessionE2ETest.saveRider}와 같은 이유).
      * RiderProfile.member 는 @MapsId 라서, 서로 다른 트랜잭션에서 저장하면 두 번째 저장 시점에
      * Member 가 detached 상태로 남아 "detached entity passed to persist" 로 실패한다.
+     * available=true 면 저장 전에 goOnline() 을 호출해 AVAILABLE 로 만든다(#56 accept() 검증용).
      */
-    private RiderProfile saveRiderProfile(String loginId, String phoneNumber) {
+    private RiderProfile saveRiderProfile(String loginId, String phoneNumber, boolean available) {
         return new TransactionTemplate(transactionManager).execute(status -> {
             Member member = memberRepository.save(
                     Member.create(loginId, "hash", "다른라이더", phoneNumber, MemberRole.RIDER));
-            return riderProfileRepository.save(RiderProfile.create(member));
+            RiderProfile profile = RiderProfile.create(member);
+            if (available) {
+                profile.goOnline();
+            }
+            return riderProfileRepository.save(profile);
         });
     }
 
@@ -129,7 +145,7 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         DeliveryOrder waiting = saveWaitingOrder(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"));
 
         DeliveryOrder assignedTarget = saveWaitingOrder(new BigDecimal("37.5020000"), new BigDecimal("127.0020000"));
-        RiderProfile assignedRiderProfile = saveRiderProfile("integration_rider02", "01077776666");
+        RiderProfile assignedRiderProfile = saveRiderProfile("integration_rider02", "01077776666", false);
         assignedTarget.assign(assignedRiderProfile);
         deliveryOrderRepository.save(assignedTarget);
 
@@ -207,7 +223,7 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
     @DisplayName("[#57] 이미 배차된 주문의 상세를 조회하면 404다")
     void shouldRejectDetailForAssignedOrder() {
         DeliveryOrder assignedTarget = saveWaitingOrder(new BigDecimal("37.5020000"), new BigDecimal("127.0020000"));
-        RiderProfile assignedRiderProfile = saveRiderProfile("integration_rider03", "01066665555");
+        RiderProfile assignedRiderProfile = saveRiderProfile("integration_rider03", "01066665555", false);
         assignedTarget.assign(assignedRiderProfile);
         deliveryOrderRepository.save(assignedTarget);
 
@@ -224,5 +240,140 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
                 authenticatedRider(OperatingStatus.AVAILABLE), 999_999_999L))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getStatus()).isEqualTo(HttpStatus.NOT_FOUND));
+    }
+
+    private Member fetchMember(RiderProfile profile) {
+        return memberRepository.findById(profile.getMemberId()).orElseThrow();
+    }
+
+    @Test
+    @DisplayName("[#56] 배차를 확정하면 주문은 ASSIGNED, 라이더는 BUSY로 함께 바뀐다")
+    void shouldAssignOrderAndMarkRiderBusyOnSuccess() {
+        DeliveryOrder order = saveWaitingOrder(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"));
+
+        RiderDeliveryRequestAcceptResponse result = riderDeliveryRequestService.acceptDeliveryRequest(
+                authenticatedRider(OperatingStatus.AVAILABLE), order.getId());
+
+        assertThat(result.status()).isEqualTo(OrderStatus.ASSIGNED);
+        assertThat(result.operatingStatus()).isEqualTo(OperatingStatus.BUSY);
+
+        DeliveryOrder persisted = deliveryOrderRepository.findById(order.getId()).orElseThrow();
+        assertThat(persisted.getStatus()).isEqualTo(OrderStatus.ASSIGNED);
+        assertThat(persisted.getAssignedRider().getMemberId()).isEqualTo(rider.getId());
+        RiderProfile persistedProfile = riderProfileRepository.findById(rider.getId()).orElseThrow();
+        assertThat(persistedProfile.getOperatingStatus()).isEqualTo(OperatingStatus.BUSY);
+    }
+
+    @Test
+    @DisplayName("[#56] 취소된 주문을 수락하려 하면 409와 취소 사유를 반환하고, 상태는 그대로다")
+    void shouldRejectAcceptWhenOrderCanceled() {
+        DeliveryOrder order = saveWaitingOrder(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"));
+        order.cancel("고객 취소");
+        deliveryOrderRepository.save(order);
+
+        assertThatThrownBy(() -> riderDeliveryRequestService.acceptDeliveryRequest(
+                authenticatedRider(OperatingStatus.AVAILABLE), order.getId()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("취소")
+                .satisfies(e -> assertThat(((BusinessException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT));
+
+        DeliveryOrder persisted = deliveryOrderRepository.findById(order.getId()).orElseThrow();
+        assertThat(persisted.getStatus()).isEqualTo(OrderStatus.CANCELED);
+        RiderProfile persistedProfile = riderProfileRepository.findById(rider.getId()).orElseThrow();
+        assertThat(persistedProfile.getOperatingStatus()).isEqualTo(OperatingStatus.AVAILABLE);
+    }
+
+    @Test
+    @DisplayName("[#56, ADR-006] 두 라이더가 같은 주문을 동시에 수락하면 한 명만 성공한다")
+    void shouldAssignExactlyOneRiderOnConcurrentAcceptSameOrder() throws Exception {
+        DeliveryOrder order = saveWaitingOrder(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"));
+        Member riderX = rider;
+        Member riderY = fetchMember(saveRiderProfile("integration_rider_concurrent_y", "01012340000", true));
+
+        int attempts = 2;
+        var start = new CountDownLatch(1);
+        var done = new CountDownLatch(attempts);
+        var succeeded = new AtomicInteger();
+        var conflicted = new AtomicInteger();
+
+        try (ExecutorService pool = Executors.newFixedThreadPool(attempts)) {
+            for (Member candidate : List.of(riderX, riderY)) {
+                pool.submit(() -> {
+                    try {
+                        start.await();
+                        riderDeliveryRequestService.acceptDeliveryRequest(
+                                new AuthenticatedRider(candidate.getId(), candidate.getLoginId(), candidate.getName(),
+                                        OperatingStatus.AVAILABLE),
+                                order.getId());
+                        succeeded.incrementAndGet();
+                    } catch (BusinessException e) {
+                        conflicted.incrementAndGet();
+                    } catch (Exception ignored) {
+                        // 경쟁 패배는 위 BusinessException(409)으로만 오는 게 정상이라, 그 외는 잡되 집계하지 않는다.
+                    } finally {
+                        done.countDown();
+                    }
+                });
+            }
+            start.countDown();
+            done.await(10, TimeUnit.SECONDS);
+        }
+
+        assertThat(succeeded.get()).isEqualTo(1);
+        assertThat(conflicted.get()).isEqualTo(1);
+
+        DeliveryOrder persisted = deliveryOrderRepository.findById(order.getId()).orElseThrow();
+        assertThat(persisted.getStatus()).isEqualTo(OrderStatus.ASSIGNED);
+        Long winnerId = persisted.getAssignedRider().getMemberId();
+        Long loserId = winnerId.equals(riderX.getId()) ? riderY.getId() : riderX.getId();
+        assertThat(riderProfileRepository.findById(winnerId).orElseThrow().getOperatingStatus())
+                .isEqualTo(OperatingStatus.BUSY);
+        assertThat(riderProfileRepository.findById(loserId).orElseThrow().getOperatingStatus())
+                .isEqualTo(OperatingStatus.AVAILABLE);
+    }
+
+    @Test
+    @DisplayName("[#56, ADR-006] 한 라이더가 서로 다른 두 주문을 동시에 수락하면 한 건만 배차된다")
+    void shouldAssignExactlyOneOrderWhenSameRiderRacesTwoOrders() throws Exception {
+        DeliveryOrder orderA = saveWaitingOrder(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"));
+        DeliveryOrder orderB = saveWaitingOrder(new BigDecimal("37.5020000"), new BigDecimal("127.0020000"));
+
+        int attempts = 2;
+        var start = new CountDownLatch(1);
+        var done = new CountDownLatch(attempts);
+        var succeeded = new AtomicInteger();
+        var conflicted = new AtomicInteger();
+
+        try (ExecutorService pool = Executors.newFixedThreadPool(attempts)) {
+            for (DeliveryOrder target : List.of(orderA, orderB)) {
+                pool.submit(() -> {
+                    try {
+                        start.await();
+                        riderDeliveryRequestService.acceptDeliveryRequest(
+                                authenticatedRider(OperatingStatus.AVAILABLE), target.getId());
+                        succeeded.incrementAndGet();
+                    } catch (BusinessException e) {
+                        conflicted.incrementAndGet();
+                    } catch (Exception ignored) {
+                        // no-op
+                    } finally {
+                        done.countDown();
+                    }
+                });
+            }
+            start.countDown();
+            done.await(10, TimeUnit.SECONDS);
+        }
+
+        assertThat(succeeded.get()).isEqualTo(1);
+        assertThat(conflicted.get()).isEqualTo(1);
+
+        DeliveryOrder persistedA = deliveryOrderRepository.findById(orderA.getId()).orElseThrow();
+        DeliveryOrder persistedB = deliveryOrderRepository.findById(orderB.getId()).orElseThrow();
+        long assignedCount = List.of(persistedA, persistedB).stream()
+                .filter(o -> o.getStatus() == OrderStatus.ASSIGNED).count();
+        assertThat(assignedCount).isEqualTo(1);
+        assertThat(riderProfileRepository.findById(rider.getId()).orElseThrow().getOperatingStatus())
+                .isEqualTo(OperatingStatus.BUSY);
     }
 }
