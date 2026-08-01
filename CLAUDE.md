@@ -287,6 +287,31 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   메서드명을 쓰고 동명 메서드에 `_1` 을 붙여 프론트 훅 이름이 액터를 구분하지 못한다
   (`useLogin` / `useLogin1`, 배정 순서는 컨트롤러 스캔 순서 의존). 현재는 `OpenApiOperationIdE2ETest`
   실패로만 알게 되는데, 리뷰 체크리스트나 PR 템플릿에 넣을지 미결
+- 충전 금액 정책이 잠정값(#32): `CustomerPaymentService` 의 1,000 / 1,000,000 / 1,000원 단위.
+  화면 프리셋만 허용하는 화이트리스트로 좁히는 선택지도 있음
+- 충전 준비의 동시 재전송은 409 로 거부한다(#32, 실측 8건 중 2건). 순차 재전송은 기존 건을 돌려준다.
+  패자에게도 같은 응답을 주려면 삽입을 별도 트랜잭션으로 떼야 함
+- 화면 결제수단(카카오페이·휴대폰)과 `PaymentMethod`(`CARD`·`BANK_TRANSFER`)이 불일치(#32).
+  `ck_point_charge_method` 도 두 값만 허용 — enum 을 넓힐지 화면을 줄일지 미결
+- `PaymentGateway.prepare()` 필요 여부는 벤더에 따라 갈림(#32, 일단 유지). 카카오페이류는 `ready`
+  호출 필수, 토스페이먼츠류는 준비 단계에 PG 호출 없음
+- 충전 준비 API 가 이슈에 없는 `chargeRequestKey`·`paymentMethod` 를 필수로 받는다(#32). 또 이미 PAID
+  인 키로 재요청하면 PAID 건을 그대로 돌려줘 프론트가 맥락 없는 409 를 본다(가드 미구현)
+- **PG 벤더 선정 기준 2가지**(#33). ① 승인 API 가 인증 토큰 기준으로 <b>멱등</b>한가 — 아니면 현재
+  구조(PG 호출을 트랜잭션 밖에 두는 파사드)가 성립하지 않는다. ② 결제 <b>조회</b> API 가 있는가 —
+  타임아웃 건의 성사 여부를 판정할 유일한 수단이다. 토스페이먼츠는 둘 다 있음
+- 실 PG 연동 시 필요하나 현재 없는 것(#33): 망 취소, 거래·정산 대사(스케줄러), 웹훅 수신 엔드포인트,
+  `PaymentGateway` 의 결제 조회 메서드. 모의 PG 는 돈이 움직이지 않아 지금 만들면 검증이 불가능하다
+- 동시 승인 요청이 PG 를 각각 호출할 수 있음(#33). 확정 구간만 잠그기 때문이며, 이중 증액은 상태
+  재확인이 막지만 이중 <b>결제</b>는 PG 멱등성에 의존한다. claim 패턴(PG 호출 권한 선점)으로 막을 수
+  있으나 상태·컬럼 추가가 따라온다
+- **포인트 관련 트랜잭션의 잠금 순서는 `point_charge` → `point_wallet` 로 고정한다**(#33). 배송 결제
+  (`ORDER_USE`)·정산이 붙을 때도 같은 순서를 지켜야 한다 — 엇갈리면 데드락이다. 현재 문서와 주석에만
+  있고 코드로 강제할 수단은 없다
+- `status='PENDING' AND provider_payment_key IS NOT NULL` 은 "PG 승인은 받았는데 포인트 반영이 끝나지
+  않은 건"을 뜻한다(#33). 사실상 `APPROVING` 상태를 enum 값 없이 표현한 것이라 PENDING 의 의미가 둘이다
+- `PointChargeApprover.alreadyApprovedResponse` 가 트랜잭션 밖에서 조회한 엔터티를 인자로 받는다(#33).
+  현재는 단순 getter 만 써서 안전하지만 연관을 건드리면 `LazyInitializationException` 이 난다
 - `RiderDeliveryRequestApi`의 `getDeliveryRequest`/`acceptDeliveryRequest`/`skipDeliveryRequest`
   세 메서드에 라이더 식별 파라미터(`AuthenticatedRider`)가 빠져 있음(#55) — #56/#57 구현 시
   `getDeliveryRequests`와 같은 방식(`@RequestAttribute`)으로 추가 필요

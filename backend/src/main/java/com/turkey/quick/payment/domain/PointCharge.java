@@ -128,12 +128,46 @@ public class PointCharge {
                 paymentProvider);
     }
 
+    /**
+     * PG 승인 응답을 받았다는 사실만 먼저 남긴다. <b>상태는 PENDING 그대로다</b>(#33).
+     *
+     * <p>승인 이후 잔액 반영이 실패해 트랜잭션이 롤백되면 승인 식별자가 함께 사라진다. 그러면
+     * "돈은 나갔는데 우리는 모르는" 건이 되어 대사도 취소도 할 수 없다. 그래서 PG 응답 직후
+     * <b>별도 트랜잭션</b>으로 이 값만 먼저 커밋한다.
+     *
+     * <p>{@code ck_point_charge_state_values} 는 금액·시각 컬럼만 검사하고 provider_payment_key 는
+     * 보지 않으므로, PENDING 상태에서 이 값이 채워져 있어도 제약 위반이 아니다.
+     *
+     * <p>따라서 <b>{@code status = PENDING} 이면서 provider_payment_key 가 있는 행</b>은
+     * "PG 승인은 받았는데 포인트 반영이 끝나지 않은 건"을 뜻한다. 대사 대상 추출 조건이 된다.
+     * 이 상태의 건에 승인 요청이 다시 오면 PG 를 다시 부르면 안 된다 — 새 승인 식별자가 기존 값을
+     * 덮어써 추적 근거가 사라진다.
+     *
+     * <p><b>한 번 기록된 식별자는 바뀌지 않는다.</b> 동시 승인 요청이 각각 PG 를 불러 서로 다른 승인을
+     * 받아 오는 경우(벤더가 인증 토큰 기준으로 멱등하지 않을 때) 나중 값이 먼저 값을 덮으면, 먼저 받은
+     * 승인이 어디에도 남지 않아 추적할 수 없게 된다. 그래서 덮어쓰지 않고 결과를 반환한다.
+     *
+     * @return 이번 호출로 기록했거나 이미 같은 값이면 {@code true}, 다른 값이 이미 기록돼 있으면
+     *         {@code false}(= 같은 충전에 PG 승인이 둘 존재한다는 신호)
+     */
+    public boolean markApprovalReceived(String providerPaymentKey) {
+        requireStatus(PointChargeStatus.PENDING, "승인 응답 기록");
+        if (this.providerPaymentKey != null) {
+            return this.providerPaymentKey.equals(providerPaymentKey);
+        }
+        this.providerPaymentKey = providerPaymentKey;
+        return true;
+    }
+
     /** 결제 승인: PENDING → PAID. 전액 승인이므로 approved_amount = requested_amount. */
     public void approve(String providerPaymentKey, String issuerCode, String maskedPaymentMethod) {
         requireStatus(PointChargeStatus.PENDING, "승인");
         this.status = PointChargeStatus.PAID;
         this.approvedAmount = this.requestedAmount;
-        this.providerPaymentKey = providerPaymentKey;
+        // markApprovalReceived 로 이미 기록된 식별자는 덮어쓰지 않는다 — 같은 이유다(위 주석 참조).
+        if (this.providerPaymentKey == null) {
+            this.providerPaymentKey = providerPaymentKey;
+        }
         this.issuerCode = issuerCode;
         this.maskedPaymentMethod = maskedPaymentMethod;
         this.approvedAt = LocalDateTime.now(ZoneOffset.UTC);

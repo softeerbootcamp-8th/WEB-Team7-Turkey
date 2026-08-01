@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class PointChargeTest {
@@ -94,5 +95,53 @@ class PointChargeTest {
 
         assertThatThrownBy(() -> charge.refund("refund-key-1", "고객 변심"))
                 .isInstanceOf(IllegalStateException.class);
+    }
+    @Test
+    @DisplayName("승인 응답을 기록하면 상태는 PENDING 그대로고 승인 식별자만 남는다")
+    void recordsApprovalKeyWithoutChangingStatus() {
+        PointCharge charge = pending(10_000L);
+
+        boolean recorded = charge.markApprovalReceived("pay-key-1");
+
+        // 이 조합(PENDING + 승인식별자)이 "PG 승인은 받았는데 반영이 안 끝난 건"을 뜻한다
+        assertThat(recorded).isTrue();
+        assertThat(charge.getStatus()).isEqualTo(PointChargeStatus.PENDING);
+        assertThat(charge.getProviderPaymentKey()).isEqualTo("pay-key-1");
+        assertThat(charge.getApprovedAmount()).isNull();
+        assertThat(charge.getApprovedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("이미 기록된 승인 식별자는 다른 값으로 덮이지 않는다")
+    void doesNotOverwriteRecordedApprovalKey() {
+        PointCharge charge = pending(10_000L);
+        charge.markApprovalReceived("pay-key-first");
+
+        boolean recorded = charge.markApprovalReceived("pay-key-second");
+
+        // 덮어쓰면 먼저 받은 승인이 어디에도 안 남아 추적할 수 없게 된다
+        assertThat(recorded).isFalse();
+        assertThat(charge.getProviderPaymentKey()).isEqualTo("pay-key-first");
+    }
+
+    @Test
+    @DisplayName("같은 승인 식별자를 다시 기록하면 성공으로 본다")
+    void treatsSameApprovalKeyAsRecorded() {
+        PointCharge charge = pending(10_000L);
+        charge.markApprovalReceived("pay-key-1");
+
+        assertThat(charge.markApprovalReceived("pay-key-1")).isTrue();
+    }
+
+    @Test
+    @DisplayName("승인은 이미 기록된 승인 식별자를 덮어쓰지 않는다")
+    void approveKeepsRecordedApprovalKey() {
+        PointCharge charge = pending(10_000L);
+        charge.markApprovalReceived("pay-key-first");
+
+        charge.approve("pay-key-second", "IBK", "국민카드(1234)");
+
+        assertThat(charge.getStatus()).isEqualTo(PointChargeStatus.PAID);
+        assertThat(charge.getProviderPaymentKey()).isEqualTo("pay-key-first");
     }
 }
