@@ -1,0 +1,409 @@
+' 포인트 충전 준비·승인 흐름 시퀀스 (#32 CUS-POINT-002, #33 CUS-POINT-003)
+'
+' 이 파일이 있는 이유: 충전 승인의 어려움은 로직이 복잡해서가 아니라 "무엇이 언제 커밋되는가"와
+' "어디부터 우리가 되돌릴 수 없는가"에 있다. 그 두 가지는 코드를 위에서 아래로 읽어서는 잘 안 보인다.
+'
+' IntelliJ PlantUML 플러그인은 한 파일의 여러 @startuml 을 각각 렌더링한다.
+
+@startuml 01-정상-흐름
+title 1. 정상 흐름 — 준비(#32) → 모의 결제 → 승인(#33)
+
+actor 고객 as C
+participant "브라우저" as B
+participant "CustomerPaymentService\n(파사드 · 트랜잭션 없음)" as S
+participant "PointChargeApprover\n(@Transactional)" as A
+database "MySQL" as DB
+participant "PaymentGateway\n(MockPaymentGateway)" as PG
+
+== 준비 (#32) · 별도 HTTP 요청 ==
+C -> B: 30,000원 선택 후 [충전하기]
+B -> B: chargeRequestKey(UUID) 생성\n재시도 시 같은 값을 유지해야 한다
+B -> S: POST /charges
+activate S
+group 트랜잭션 [chargePointRequest]
+  S -> DB: 멱등키로 기존 요청 조회 → 없음
+  S -> DB: INSERT point_charge (PENDING)
+end
+note right of DB
+  <b>이 행이 이후 모든 복구의 근거다.</b>
+  주문 식별자와 금액이 여기서 확정되고,
+  승인 요청이 실패해도 이 행은 남는다.
+end note
+S --> B: 201 {pointChargeId, PENDING}
+deactivate S
+
+== 모의 결제 화면 ==
+B -> C: 결제 성공 / 실패 선택
+C -> B: [결제 성공]
+note over B
+  실 PG 는 여기서 결제창을 띄우고
+  successUrl 리다이렉트로 authToken 을 받는다.
+  호출 주체와 시점은 모킹과 같다.
+end note
+
+== 승인 (#33) ==
+B -> S: POST /charges/{id}/confirm\n{amount, authToken}
+activate S
+S -> DB: 충전 조회 (<b>잠금 없음</b>)
+S -> S: 소유 · 금액 대조 · 상태 · 지갑 존재 확인
+note right of S
+  검증을 PG 호출 <b>앞</b>에 둔다.
+  승인 뒤에 알면 이미 돈이 나간 뒤다.
+end note
+
+S -> PG: confirm(orderKey, authToken, <b>DB 의 요청 금액</b>)
+note right of PG
+  트랜잭션 밖.
+  DB 커넥션도 행 잠금도 쥐지 않는다.
+end note
+PG --> S: Approval(providerPaymentKey …)
+
+S -> A: recordApprovalReceived(id, key)
+activate A
+group 트랜잭션 #1 [승인 식별자만 · 짧게 커밋]
+  A -> DB: SELECT … FOR UPDATE (point_charge)
+  A -> DB: UPDATE provider_payment_key\n<b>status 는 PENDING 유지</b>
+end
+deactivate A
+note over DB
+  <b>PENDING + provider_payment_key</b>
+  = "PG 승인은 받았고 반영은 아직"
+  → 대사 대상 추출 조건
+end note
+
+S -> A: finalizeApproval(id, customerId, approval)
+activate A
+group 트랜잭션 #2 [상태 · 잔액 · 원장은 전부 되거나 전부 안 된다]
+  A -> DB: SELECT … FOR UPDATE (point_charge)
+  A -> DB: SELECT … FOR UPDATE (point_wallet)
+  note right of DB
+    잠금 순서 고정
+    point_charge → point_wallet
+    (엇갈리면 데드락)
+  end note
+  A -> DB: UPDATE point_charge → PAID
+  A -> DB: UPDATE point_wallet balance += 30,000
+  A -> DB: INSERT point_transaction (CHARGE)
+end
+A --> S: 응답 조립
+deactivate A
+S --> B: 200 {PAID, balanceAfter}
+deactivate S
+@enduml
+
+
+@startuml 02-확정-실패
+title 2. 승인 후 반영 실패 — 승인 식별자 선커밋이 구해내는 경우
+
+participant "브라우저" as B
+participant "CustomerPaymentService" as S
+participant "PointChargeApprover" as A
+database "MySQL" as DB
+participant "PG" as PG
+
+B -> S: POST /confirm
+activate S
+S -> PG: confirm(...)
+PG --> S: Approval(key=A1)
+note right of PG #FFCCCC
+  <b>여기서부터 되돌릴 수 없다.</b>
+  고객 카드에서 돈이 빠져나갔고
+  우리 롤백은 이 사실을 취소하지 못한다.
+end note
+
+S -> A: recordApprovalReceived(id, A1)
+activate A
+group 트랜잭션 #1
+  A -> DB: UPDATE provider_payment_key = A1
+end
+note over DB #CCFFCC: <b>커밋됨</b> — 이 값은 이후 롤백과 무관하게 살아남는다
+deactivate A
+
+S -> A: finalizeApproval(...)
+activate A
+group 트랜잭션 #2
+  A -> DB: SELECT … FOR UPDATE
+  A -> DB: UPDATE / INSERT …
+  A -> A: <b>여기서 예외</b>\n(제약 위반 · 커넥션 끊김 · 커밋 실패)
+end
+DB --> A: 롤백
+deactivate A
+note over DB
+  롤백 결과: status = PENDING, 잔액 그대로
+  <b>단 provider_payment_key = A1 은 남아 있다</b>
+end note
+
+S -> S: ERROR 로그\n[결제-불일치] providerPaymentKey=A1
+S --> B: 500
+deactivate S
+
+note over DB #FFFFCC
+  복구 경로
+  SELECT * FROM point_charge
+   WHERE status='PENDING' AND provider_payment_key IS NOT NULL
+  → 망 취소를 보내거나 대사로 포인트를 지급한다 (실 PG 시 구현)
+end note
+
+note over S #FFCCCC
+  <b>선커밋이 없었다면</b> A1 도 함께 롤백돼
+  "돈은 나갔는데 어떤 승인인지 모르는" 건이 됐을 것이다.
+  그러면 취소도 대사도 불가능하다.
+end note
+@enduml
+
+
+@startuml 03-타임아웃
+title 3. PG 응답 유실(TIMEOUT) — 성공과 실패를 구분할 수 없는 경우
+
+participant "브라우저" as B
+participant "CustomerPaymentService" as S
+participant "PointChargeApprover" as A
+database "MySQL" as DB
+participant "PG" as PG
+
+B -> S: POST /confirm
+activate S
+S -> PG: confirm(...)
+activate PG
+PG -> PG: 승인 처리\n<b>(성공했을 수도, 안 했을 수도)</b>
+PG --x S: 응답 유실 / 타임아웃
+deactivate PG
+
+note right of S #FFCCCC
+  <b>여기서 우리가 아는 것은 "모른다" 뿐이다.</b>
+  · 요청이 도달하지 못했다
+  · 도달해 처리됐는데 응답만 유실됐다
+  네트워크는 이 둘을 구분해주지 않는다.
+end note
+
+alt 잘못된 처리 (하지 않는다)
+  S -> A: markFailed(...)
+  note right of A #FFCCCC
+    FAILED 로 확정하면
+    실제로 결제된 건을 실패로 못 박는다.
+    되돌릴 수 없다.
+  end note
+else 현재 구현
+  S -> S: 상태를 건드리지 않는다
+  S --> B: 502 "결제 결과를 확인할 수 없습니다"
+end
+deactivate S
+
+note over DB
+  status = PENDING, provider_payment_key = NULL
+  (승인 식별자를 받지 못했으므로)
+end note
+
+note over PG #FFFFCC
+  <b>이 건은 조회로만 풀린다.</b>
+  chargeRequestKey 로 PG 에 결제 상태를 물어
+  · 승인됨 → 포인트 지급
+  · 내역 없음 → FAILED
+  ⇒ 벤더 선정 시 <b>결제 조회 API 유무</b>가 필수 조건인 이유
+end note
+@enduml
+
+
+@startuml 04-동시승인-PG멱등
+title 4. 동시 승인 — PG 가 인증 토큰 기준으로 멱등한 경우 (정상)
+
+participant "요청 1" as T1
+participant "요청 2" as T2
+participant "CustomerPaymentService" as S
+participant "PointChargeApprover" as A
+database "MySQL" as DB
+participant "PG" as PG
+
+T1 -> S: POST /confirm {authToken=X}
+T2 -> S: POST /confirm {authToken=X}
+note over S: 사전 검증은 <b>잠금 없는 읽기</b>\n둘 다 통과한다
+
+S -> PG: confirm(X)   <font color=blue>[요청 1]</font>
+PG --> S: Approval(key=A1)
+S -> PG: confirm(X)   <font color=green>[요청 2]</font>
+PG --> S: <b>거절</b> — 이미 처리된 결제
+note right of PG #CCFFCC
+  <b>여기가 방어선이다.</b>
+  같은 인증 토큰의 재승인을 PG 가 막아준다.
+  (토스페이먼츠 등)
+end note
+
+S -> A: recordApprovalReceived(A1)  <font color=blue>[1]</font>
+A -> DB: provider_payment_key = A1
+S -> A: finalizeApproval(A1)        <font color=blue>[1]</font>
+activate A
+group 트랜잭션 [FOR UPDATE 로 직렬화]
+  A -> DB: status → PAID, 잔액 +30,000, 원장 1행
+end
+deactivate A
+
+S -> A: markFailed(...)             <font color=green>[2]</font>
+activate A
+A -> DB: SELECT … FOR UPDATE → status 가 이미 PAID
+note right of A: PENDING 이 아니므로 상태를 바꾸지 않는다
+deactivate A
+
+note over DB #CCFFCC
+  결과: 승인 1건 · 잔액 1회 증가 · 원장 1행
+  <b>포인트 증가는 정확히 한 번</b>
+end note
+@enduml
+
+
+@startuml 05-동시승인-PG비멱등
+title 5. 동시 승인 — PG 가 멱등하지 않은 경우 (이중 결제)
+
+participant "요청 1" as T1
+participant "요청 2" as T2
+participant "CustomerPaymentService" as S
+participant "PointChargeApprover" as A
+database "MySQL" as DB
+participant "PG" as PG
+
+T1 -> S: POST /confirm {authToken=X}
+T2 -> S: POST /confirm {authToken=X}
+note over S: 사전 검증은 잠금 없는 읽기 — 둘 다 통과
+
+S -> PG: confirm(X)  <font color=blue>[1]</font>
+PG --> S: Approval(key=A1)
+S -> PG: confirm(X)  <font color=green>[2]</font>
+PG --> S: Approval(key=A2)
+note right of PG #FFCCCC
+  <b>승인이 두 건 생겼다.</b>
+  고객 카드에서 두 번 빠졌고
+  우리 코드는 이미 이것을 막을 수단이 없다.
+end note
+
+S -> A: recordApprovalReceived(A1)  <font color=blue>[1]</font>
+activate A
+A -> DB: provider_payment_key = A1
+deactivate A
+
+S -> A: recordApprovalReceived(A2)  <font color=green>[2]</font>
+activate A
+A -> DB: SELECT … FOR UPDATE
+A -> A: markApprovalReceived(A2) → <b>false</b>\n(이미 A1 이 있으므로 덮어쓰지 않는다)
+A -> A: ERROR [결제-이중승인]\n기록된키=A1, 새로받은키=A2
+deactivate A
+note right of A #CCFFCC
+  <b>덮어쓰기를 막지 않았다면</b> A1 이 사라져
+  먼저 받은 승인을 추적할 수 없게 된다.
+  적어도 한 건은 지킨다 + 사건을 남긴다.
+end note
+
+S -> A: finalizeApproval(A1)  <font color=blue>[1]</font>
+A -> DB: PAID · 잔액 +30,000 · 원장 1행
+S -> A: finalizeApproval(A2)  <font color=green>[2]</font>
+A -> DB: 이미 PAID → 멱등 응답 (잔액 안 늘림)
+
+note over DB #FFCCCC
+  결과: 포인트는 1회 증가 <b>(정상)</b>
+  하지만 PG 승인은 2건 <b>(이중 결제)</b>
+  → A2 는 사람이 수동 취소해야 한다. ERROR 로그가 유일한 신호.
+end note
+
+note over S #FFFFCC
+  <b>근본 해결</b>: claim 패턴
+  PG 호출 전에 짧은 트랜잭션으로 "승인 시도 중"을 선점하고
+  선점 실패한 요청은 PG 를 부르지 않는다.
+  → 상태나 컬럼 추가가 필요해 마이그레이션이 따라온다. 현재 미구현.
+end note
+@enduml
+
+
+@startuml 06-재시도-차단
+title 6. 반영이 끊긴 건에 대한 재시도 — 409 로 막는 이유
+
+actor 고객 as C
+participant "브라우저" as B
+participant "CustomerPaymentService" as S
+database "MySQL" as DB
+participant "PG" as PG
+
+note over DB
+  앞선 승인이 반영 도중 끊긴 상태 (다이어그램 2의 결과)
+  status = PENDING, provider_payment_key = A1
+end note
+
+C -> B: 실패 화면에서 [다시 시도]
+B -> S: POST /confirm {authToken=X}
+activate S
+S -> DB: 충전 조회
+DB --> S: PENDING + provider_payment_key = A1
+
+alt 막지 않았다면
+  S -[#red]> PG: confirm(X)
+  PG -[#red]-> S: Approval(key=A2)
+  S -[#red]> DB: provider_payment_key = A2
+  note right of DB #FFCCCC
+    <b>A1 이 사라진다.</b>
+    앞선 승인의 추적 근거가 없어져
+    망 취소도 대사도 불가능해진다.
+  end note
+else 현재 구현
+  S -> S: PENDING + 승인식별자 있음 → 재승인 금지
+  S --> B: 409 "결제 확인 중인 충전 요청입니다"
+  note right of S #CCFFCC
+    PG 를 부르지 않는다.
+    이 건은 <b>대사로만</b> 풀어야 한다.
+  end note
+end
+deactivate S
+
+note over DB #FFFFCC
+  사실상 APPROVING 상태를
+  <b>enum 값이나 컬럼 추가 없이</b> 표현한 것.
+  대신 "PENDING 의 의미가 둘"이라는 점이 암묵적이라
+  도메인 메서드 이름과 주석으로 드러낸다.
+end note
+@enduml
+
+
+@startuml 07-동시-준비요청
+title 7. 충전 준비의 동시 재전송 (#32) — 유니크 제약이 최종 방어선
+
+participant "요청 1" as T1
+participant "요청 2" as T2
+participant "CustomerPaymentService" as S
+database "MySQL" as DB
+
+note over S: 두 요청 모두 같은 chargeRequestKey 를 보낸다
+
+group 트랜잭션 [요청 1]
+  T1 -> S: POST /charges
+  S -> DB: 멱등키 조회 → <b>없음</b>
+end
+group 트랜잭션 [요청 2]
+  T2 -> S: POST /charges
+  S -> DB: 멱등키 조회 → <b>없음</b>
+  note right of DB
+    REPEATABLE READ 의 스냅샷 읽기라
+    상대의 미커밋 행을 볼 수 없다.
+    <b>선조회는 이 경쟁을 막지 못한다.</b>
+  end note
+end
+
+S -> DB: INSERT (요청 1) → 커밋
+S -> DB: INSERT (요청 2)
+DB --> S: <b>uk_point_charge_customer_request 위반</b>
+S -> S: DataIntegrityViolationException → 409
+
+note over S
+  catch 안에서 기존 건을 재조회하지 <b>않는다</b>.
+  제약 위반 트랜잭션은 rollback-only 라
+  같은 트랜잭션의 추가 조회가 커밋 때 다시 터진다.
+end note
+
+note over DB #CCFFCC
+  결과: 행 1건 (부분 성공 없음)
+  실측(8스레드 동시): 성공/실패 비율은 실행마다 크게 흔들리지만
+  <b>남은 행은 항상 1</b>
+end note
+
+note over S #FFFFCC
+  <b>역할 분담</b>
+  · 선조회 = <b>순차</b> 재전송에 같은 결과를 돌려주는 것 (DB 제약은 못 하는 일)
+  · 유니크 제약 = <b>동시</b> 요청에 한 건만 남기는 것 (앱 코드는 못 하는 일)
+  두 장치는 같은 일을 두 번 하는 것이 아니다.
+end note
+@enduml

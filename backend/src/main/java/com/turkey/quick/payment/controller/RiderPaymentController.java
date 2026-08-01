@@ -8,9 +8,11 @@ import com.turkey.quick.payment.dto.SettlementListResponse;
 import com.turkey.quick.payment.dto.WithdrawalListResponse;
 import com.turkey.quick.payment.dto.WithdrawalRequest;
 import com.turkey.quick.payment.dto.WithdrawalResponse;
+import com.turkey.quick.payment.service.RiderPaymentService;
 import com.turkey.quick.rider.auth.AuthenticatedRider;
 import com.turkey.quick.rider.auth.RiderSessionInterceptor;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,16 +23,19 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+@RequiredArgsConstructor
 @RestController
 @RequestMapping("/api/rider/points")
 public class RiderPaymentController implements RiderPointApi {
+
+    private final RiderPaymentService riderPaymentService;
 
     @Override
     @GetMapping
     public ApiResponse<PointBalanceResponse> getPointBalance(
             @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
             AuthenticatedRider rider) {
-        return null;
+        return ApiResponse.ok(riderPaymentService.getPointBalance(rider.memberId()));
     }
 
     @Override
