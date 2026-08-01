@@ -5,6 +5,7 @@ import com.turkey.quick.customer.auth.AuthenticatedCustomer;
 import com.turkey.quick.customer.auth.CustomerSessionInterceptor;
 import com.turkey.quick.payment.domain.PointTransactionType;
 import com.turkey.quick.payment.dto.PointBalanceResponse;
+import com.turkey.quick.payment.dto.PointChargeCancelResponse;
 import com.turkey.quick.payment.dto.PointChargeConfirmRequest;
 import com.turkey.quick.payment.dto.PointChargeConfirmResponse;
 import com.turkey.quick.payment.dto.PointChargeRequest;
@@ -75,5 +76,16 @@ public class CustomerPaymentController implements CustomerPointApi {
             @Valid @RequestBody PointChargeConfirmRequest request) {
         return ApiResponse.ok(customerPaymentService.confirmPointCharge(
                 pointChargeId, request, customer.memberId()));
+    }
+
+    @Override
+    @PostMapping("/charges/{pointChargeId}/cancel")
+    public ApiResponse<PointChargeCancelResponse> cancelPointCharge(
+            @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
+            AuthenticatedCustomer customer,
+
+            @PathVariable("pointChargeId") Long pointChargeId) {
+        return ApiResponse.ok(customerPaymentService.cancelPointCharge(
+                pointChargeId, customer.memberId()));
     }
 }

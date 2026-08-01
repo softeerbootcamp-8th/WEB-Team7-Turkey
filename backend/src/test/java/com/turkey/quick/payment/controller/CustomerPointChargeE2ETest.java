@@ -119,6 +119,10 @@ class CustomerPointChargeE2ETest extends IntegrationTestSupport {
         return CHARGES_ENDPOINT + "/" + pointChargeId + "/confirm";
     }
 
+    private String cancelEndpoint(long pointChargeId) {
+        return CHARGES_ENDPOINT + "/" + pointChargeId + "/cancel";
+    }
+
     @Test
     @DisplayName("세션 쿠키가 없으면 충전 준비는 401을 반환한다")
     void returnsUnauthorizedWhenPreparingWithoutSession() {
@@ -195,5 +199,94 @@ class CustomerPointChargeE2ETest extends IntegrationTestSupport {
                 ApiResponse.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @DisplayName("세션 쿠키가 없으면 충전 취소는 401을 반환한다")
+    void returnsUnauthorizedWhenCancelingWithoutSession() {
+        var response = rest.exchange(cancelEndpoint(1L), HttpMethod.POST,
+                withCookie(null, null), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    @DisplayName("준비한 충전을 취소하면 200과 CANCELED, 변하지 않은 잔액을 반환한다")
+    void cancelsPreparedChargeAndKeepsBalance() {
+        saveCustomerWithWallet("e2e_cancel01", "p@ssw0rd", "01044445555");
+        String cookie = loginAndGetSessionCookie("e2e_cancel01", "p@ssw0rd");
+        long pointChargeId = prepareCharge(cookie);
+
+        var response = rest.exchange(cancelEndpoint(pointChargeId), HttpMethod.POST,
+                withCookie(cookie, null), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().data())
+                .asInstanceOf(InstanceOfAssertFactories.MAP)
+                .containsEntry("status", "CANCELED")
+                .containsEntry("balance", 0)
+                .containsEntry("requestedAmount", (int) AMOUNT);
+    }
+
+    @Test
+    @DisplayName("이미 취소한 충전을 다시 취소해도 200과 CANCELED 를 반환한다")
+    void repeatedCancelReturnsOk() {
+        saveCustomerWithWallet("e2e_cancel02", "p@ssw0rd", "01055556666");
+        String cookie = loginAndGetSessionCookie("e2e_cancel02", "p@ssw0rd");
+        long pointChargeId = prepareCharge(cookie);
+        rest.exchange(cancelEndpoint(pointChargeId), HttpMethod.POST,
+                withCookie(cookie, null), ApiResponse.class);
+
+        var response = rest.exchange(cancelEndpoint(pointChargeId), HttpMethod.POST,
+                withCookie(cookie, null), ApiResponse.class);
+
+        // 따닥 클릭·재시도가 오류로 보이지 않아야 한다 — confirm 의 PAID 재요청과 같은 판단(#34)
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().data())
+                .asInstanceOf(InstanceOfAssertFactories.MAP)
+                .containsEntry("status", "CANCELED");
+    }
+
+    @Test
+    @DisplayName("이미 승인된 충전을 취소하면 409를 반환한다")
+    void returnsConflictWhenCancelingPaidCharge() {
+        saveCustomerWithWallet("e2e_cancel03", "p@ssw0rd", "01066667777");
+        String cookie = loginAndGetSessionCookie("e2e_cancel03", "p@ssw0rd");
+        long pointChargeId = prepareCharge(cookie);
+        rest.exchange(confirmEndpoint(pointChargeId), HttpMethod.POST,
+                withCookie(cookie, Map.of("amount", AMOUNT, "authToken", "mock_auth_e2e")),
+                ApiResponse.class);
+
+        var response = rest.exchange(cancelEndpoint(pointChargeId), HttpMethod.POST,
+                withCookie(cookie, null), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    @Test
+    @DisplayName("남의 충전 건을 취소하려 하면 403을 반환한다")
+    void returnsForbiddenWhenCancelingOthersCharge() {
+        saveCustomerWithWallet("e2e_cancel04", "p@ssw0rd", "01077778888");
+        saveCustomerWithWallet("e2e_cancel05", "p@ssw0rd", "01088889999");
+        String ownerCookie = loginAndGetSessionCookie("e2e_cancel04", "p@ssw0rd");
+        String strangerCookie = loginAndGetSessionCookie("e2e_cancel05", "p@ssw0rd");
+        long pointChargeId = prepareCharge(ownerCookie);
+
+        var response = rest.exchange(cancelEndpoint(pointChargeId), HttpMethod.POST,
+                withCookie(strangerCookie, null), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 충전 건을 취소하면 404를 반환한다")
+    void returnsNotFoundWhenCancelingUnknownCharge() {
+        saveCustomerWithWallet("e2e_cancel06", "p@ssw0rd", "01099990000");
+        String cookie = loginAndGetSessionCookie("e2e_cancel06", "p@ssw0rd");
+
+        var response = rest.exchange(cancelEndpoint(999_999L), HttpMethod.POST,
+                withCookie(cookie, null), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
 }

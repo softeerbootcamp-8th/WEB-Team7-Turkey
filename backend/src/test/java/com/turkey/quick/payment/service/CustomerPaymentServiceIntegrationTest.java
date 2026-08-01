@@ -1,7 +1,9 @@
 package com.turkey.quick.payment.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.turkey.quick.common.exception.BusinessException;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
 import com.turkey.quick.member.repository.MemberRepository;
@@ -11,6 +13,7 @@ import com.turkey.quick.payment.domain.PointChargeStatus;
 import com.turkey.quick.payment.domain.PointTransaction;
 import com.turkey.quick.payment.domain.PointTransactionType;
 import com.turkey.quick.payment.domain.PointWallet;
+import com.turkey.quick.payment.dto.PointChargeCancelResponse;
 import com.turkey.quick.payment.dto.PointChargeConfirmRequest;
 import com.turkey.quick.payment.dto.PointChargeConfirmResponse;
 import com.turkey.quick.payment.dto.PointChargeRequest;
@@ -32,13 +35,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 포인트 충전 준비의 <b>DB 가 개입하는 정합성</b>을 검증한다(#32).
- *
+ *PointChargeCancelResponse
  * <p>단위 테스트({@link CustomerPaymentServiceTest})는 리포지토리를 인메모리 페이크로 바꿔 서비스의
  * 판단만 본다. 그래서 이 두 가지를 증명할 수 없다:
  *
@@ -296,5 +300,136 @@ class CustomerPaymentServiceIntegrationTest extends IntegrationTestSupport {
                 .isEqualTo(35_000L);
         assertThat(pointTransactionRepository.findAll()).as(context).hasSize(1);
         assertThat(successCount.get()).as(context).isGreaterThanOrEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("충전을 취소하면 CANCELED 로 종료되고 잔액과 원장은 그대로다")
+    void cancelTerminatesChargeWithoutTouchingBalance() {
+        Long customerId = saveCustomerWithWallet(5_000L);
+        Long pointChargeId = customerPaymentService
+                .chargePointRequest(request(), customerId)
+                .pointChargeId();
+
+        PointChargeCancelResponse response =
+                customerPaymentService.cancelPointCharge(pointChargeId, customerId);
+
+        assertThat(response.status()).isEqualTo(PointChargeStatus.CANCELED);
+        assertThat(response.balance()).isEqualTo(5_000L);
+
+        // 단위 테스트로는 알 수 없는 것: ck_point_charge_state_values 를 통과하며 실제로 커밋되는지.
+        // CANCELED 행은 approved_amount/approved_at 이 NULL 이어야 하고, 사유는 failure_reason 에 있다.
+        assertThat(pointChargeRepository.findById(pointChargeId))
+                .get()
+                .satisfies(charge -> {
+                    assertThat(charge.getStatus()).isEqualTo(PointChargeStatus.CANCELED);
+                    assertThat(charge.getApprovedAmount()).isNull();
+                    assertThat(charge.getApprovedAt()).isNull();
+                    assertThat(charge.getFailureReason()).isNotBlank();
+                });
+        assertThat(pointWalletRepository.findByMemberId(customerId))
+                .get()
+                .extracting(PointWallet::getBalance)
+                .isEqualTo(5_000L);
+        assertThat(pointTransactionRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("이미 취소된 충전을 다시 취소해도 200 멱등 응답이고 상태는 그대로다")
+    void repeatedCancelIsIdempotent() {
+        Long customerId = saveCustomerWithWallet(5_000L);
+        Long pointChargeId = customerPaymentService
+                .chargePointRequest(request(), customerId)
+                .pointChargeId();
+        customerPaymentService.cancelPointCharge(pointChargeId, customerId);
+
+        PointChargeCancelResponse second =
+                customerPaymentService.cancelPointCharge(pointChargeId, customerId);
+
+        assertThat(second.status()).isEqualTo(PointChargeStatus.CANCELED);
+        assertThat(second.balance()).isEqualTo(5_000L);
+    }
+
+    @Test
+    @DisplayName("승인된 충전은 취소할 수 없고 409 이며 늘어난 잔액은 유지된다")
+    void cannotCancelPaidCharge() {
+        Long customerId = saveCustomerWithWallet(5_000L);
+        Long pointChargeId = customerPaymentService
+                .chargePointRequest(request(), customerId)
+                .pointChargeId();
+        customerPaymentService.confirmPointCharge(pointChargeId, confirmRequest(), customerId);
+
+        assertThatThrownBy(() -> customerPaymentService.cancelPointCharge(pointChargeId, customerId))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getStatus())
+                .isEqualTo(HttpStatus.CONFLICT);
+
+        // 409 를 던진 트랜잭션이 롤백되면서 앞선 승인까지 되돌리지 않는지 확인한다.
+        assertThat(pointWalletRepository.findByMemberId(customerId))
+                .get()
+                .extracting(PointWallet::getBalance)
+                .isEqualTo(35_000L);
+    }
+
+    /**
+     * 같은 충전 건에 승인과 취소가 <b>진짜 동시에</b> 들어오는 경우. 잠금이 없으면 둘 다 PENDING 을
+     * 읽고 각각 PAID·CANCELED 로 진행해 "취소됐는데 잔액은 늘어난" 상태가 만들어진다.
+     *
+     * <p>어느 쪽이 이기는지는 정하지 않는다 — 스케줄링에 달렸다. 대신 <b>둘의 결과가 서로
+     * 모순되지 않는 것</b>을 본다: 최종 상태가 PAID 면 잔액이 늘어 있고 원장이 1건, CANCELED 면
+     * 잔액이 그대로이고 원장이 0건이어야 한다. 부분 성공이 없다는 것이 요점이다.
+     */
+    @Test
+    @DisplayName("승인과 취소가 동시에 들어와도 최종 상태와 잔액이 어긋나지 않는다")
+    void concurrentConfirmAndCancelDoNotDiverge() throws InterruptedException {
+        Long customerId = saveCustomerWithWallet(5_000L);
+        Long pointChargeId = customerPaymentService
+                .chargePointRequest(request(), customerId)
+                .pointChargeId();
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch startTogether = new CountDownLatch(1);
+        CountDownLatch finished = new CountDownLatch(2);
+
+        pool.submit(() -> runIgnoringBusinessFailure(startTogether, finished,
+                () -> customerPaymentService.confirmPointCharge(
+                        pointChargeId, confirmRequest(), customerId)));
+        pool.submit(() -> runIgnoringBusinessFailure(startTogether, finished,
+                () -> customerPaymentService.cancelPointCharge(pointChargeId, customerId)));
+
+        startTogether.countDown();
+        assertThat(finished.await(30, TimeUnit.SECONDS)).isTrue();
+        pool.shutdownNow();
+
+        PointChargeStatus finalStatus = pointChargeRepository.findById(pointChargeId)
+                .orElseThrow()
+                .getStatus();
+        long balance = pointWalletRepository.findByMemberId(customerId).orElseThrow().getBalance();
+        List<PointTransaction> ledger = pointTransactionRepository.findAll();
+        String context = "최종 상태=%s, 잔액=%d, 원장=%d건".formatted(finalStatus, balance, ledger.size());
+
+        assertThat(finalStatus).as(context)
+                .isIn(PointChargeStatus.PAID, PointChargeStatus.CANCELED);
+        if (finalStatus == PointChargeStatus.PAID) {
+            assertThat(balance).as(context).isEqualTo(35_000L);
+            assertThat(ledger).as(context).hasSize(1);
+        } else {
+            assertThat(balance).as(context).isEqualTo(5_000L);
+            assertThat(ledger).as(context).isEmpty();
+        }
+    }
+
+    /** 경쟁에서 진 쪽은 {@link BusinessException} 으로 명확히 실패한다 — 그것만 흡수한다. */
+    private void runIgnoringBusinessFailure(CountDownLatch startTogether, CountDownLatch finished,
+                                            Runnable action) {
+        try {
+            startTogether.await();
+            action.run();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (BusinessException ignored) {
+            // 승패는 스케줄링에 달렸다. 어느 쪽이 지든 정상이다.
+        } finally {
+            finished.countDown();
+        }
     }
 }

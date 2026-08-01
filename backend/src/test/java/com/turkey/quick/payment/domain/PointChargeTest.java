@@ -68,12 +68,37 @@ class PointChargeTest {
     }
 
     @Test
-    void 취소하면_CANCELED로_전이한다() {
+    void 취소하면_CANCELED로_전이하고_사유를_기록한다() {
         PointCharge charge = pending(10_000L);
 
-        charge.cancel();
+        charge.cancel("고객이 결제를 취소했습니다.");
 
         assertThat(charge.getStatus()).isEqualTo(PointChargeStatus.CANCELED);
+        // CANCELED 전용 사유 컬럼을 두지 않고 failure_reason 을 겸용한다(#34).
+        assertThat(charge.getFailureReason()).isEqualTo("고객이 결제를 취소했습니다.");
+        // ck_point_charge_state_values: CANCELED 행에는 승인 금액·시각이 없어야 한다.
+        assertThat(charge.getApprovedAmount()).isNull();
+        assertThat(charge.getApprovedAt()).isNull();
+    }
+
+    @Test
+    void 이미_승인된_충전은_취소할수_없다() {
+        PointCharge charge = pending(10_000L);
+        charge.approve("pay-key-1", "IBK", "국민카드(1234)");
+
+        assertThatThrownBy(() -> charge.cancel("고객이 결제를 취소했습니다."))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void 이미_실패한_충전은_취소할수_없다() {
+        PointCharge charge = pending(10_000L);
+        charge.fail("한도 초과");
+
+        // 서비스는 이 경우 예외로 새지 않고 200 멱등 응답으로 흡수한다(#34).
+        // 도메인 레벨에서는 PENDING 이 아닌 전이를 거부하는 것이 맞다.
+        assertThatThrownBy(() -> charge.cancel("고객이 결제를 취소했습니다."))
+                .isInstanceOf(IllegalStateException.class);
     }
 
     @Test
