@@ -4,8 +4,13 @@ spring:
 
   # --- DB 연결 (MySQL 8.4 / 스키마명 turkey) ---
   # 접속 정보는 환경 변수로 주입한다(비밀정보 커밋 금지).
+  # tinyInt1isBit=false: Connector/J 는 기본값(true)에서 TINYINT(1) 컬럼을 Types.BIT 으로
+  # 보고한다. 그러면 boolean 컬럼(term.is_required/is_active, member_term_agreement.agreed)이
+  # 엔티티의 @JdbcTypeCode(TINYINT) 와 어긋나 ddl-auto=validate 가 기동 시 실패한다.
+  # 표시폭에 따라 타입이 바뀌지 않도록 끄고, TINYINT 을 있는 그대로 받는다.
+  # ※ DB_URL 을 환경 변수로 주입하는 배포 환경에서는 그 URL 에도 이 파라미터가 있어야 한다.
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3306/turkey}
+    url: ${DB_URL:jdbc:mysql://localhost:3306/turkey?tinyInt1isBit=false}
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:}
 
