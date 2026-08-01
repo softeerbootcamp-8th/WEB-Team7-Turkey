@@ -1,8 +1,13 @@
 import { createFileRoute, Link, redirect } from '@tanstack/react-router'
 import { Bike, Clock3, MapPin, Menu, Route as RouteIcon, UserRound } from 'lucide-react'
+import { useState } from 'react'
 import { resolveLandingGuard } from '@/shared/auth/guard'
 import { validateRedirectSearch } from '@/shared/auth/redirectSearch'
 import { ensureSessionInfo } from '@/shared/auth/session'
+import {
+  startRiderLocationSender,
+  stopRiderLocationSender,
+} from '@/shared/hooks/useLocationSender'
 
 export const Route = createFileRoute('/')({
   // account/* 는 역할 무관 화면이라 비로그인 시 여기로 보내진다(#195). 목적지를 보존한다.
@@ -32,6 +37,29 @@ export const Route = createFileRoute('/')({
 
 function LandingPage() {
   const { sessionCheckFailed } = Route.useLoaderData()
+  const [locationAction, setLocationAction] = useState<'idle' | 'starting' | 'stopping'>('idle')
+
+  const startLocation = async () => {
+    setLocationAction('starting')
+    try {
+      await startRiderLocationSender()
+    } catch (error) {
+      console.error('수동 위치 송신 시작에 실패했습니다.', error)
+    } finally {
+      setLocationAction('idle')
+    }
+  }
+
+  const stopLocation = async () => {
+    setLocationAction('stopping')
+    try {
+      await stopRiderLocationSender()
+    } catch (error) {
+      console.error('수동 위치 송신 중지에 실패했습니다.', error)
+    } finally {
+      setLocationAction('idle')
+    }
+  }
 
   return (
     <div className="landing-home">
@@ -39,15 +67,33 @@ function LandingPage() {
         <span className="landing-home__brand" aria-label="Turkey 홈">
           turkey<span aria-hidden="true">.</span>
         </span>
-        <button
-          type="button"
-          className="landing-home__menu-button"
-          aria-label="메뉴 화면 준비 중"
-          title="메뉴는 준비 중입니다"
-          disabled
-        >
-          <Menu size={25} strokeWidth={2.3} aria-hidden="true" />
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            disabled={locationAction !== 'idle'}
+            onClick={() => void startLocation()}
+            className="rounded-md bg-primary-container px-2.5 py-1.5 text-xs font-semibold text-on-primary-container disabled:opacity-50"
+          >
+            송신 시작
+          </button>
+          <button
+            type="button"
+            disabled={locationAction !== 'idle'}
+            onClick={() => void stopLocation()}
+            className="rounded-md border border-outline-variant bg-surface-container-lowest px-2.5 py-1.5 text-xs font-semibold text-on-surface disabled:opacity-50"
+          >
+            끄기
+          </button>
+          <button
+            type="button"
+            className="landing-home__menu-button"
+            aria-label="메뉴 화면 준비 중"
+            title="메뉴는 준비 중입니다"
+            disabled
+          >
+            <Menu size={25} strokeWidth={2.3} aria-hidden="true" />
+          </button>
+        </div>
       </header>
 
       <main className="landing-home__main" aria-label="Turkey 서비스 소개">

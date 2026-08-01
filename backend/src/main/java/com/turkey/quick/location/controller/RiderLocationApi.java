@@ -39,7 +39,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 @Tag(name = "rider-location", description = "라이더 현재 위치 갱신")
 @RequestMapping("/api/rider/location")
 public interface RiderLocationApi {
-
     @Operation(
             operationId = "updateRiderLocation",
             summary = "라이더 현재 위치 갱신",
@@ -76,12 +75,11 @@ public interface RiderLocationApi {
                     }""")))
     @PostMapping
     ApiResponse<RiderLocationUpdateResponse> updateRiderLocation(
-            @Valid @RequestBody RiderLocationUpdateRequest request,
+            @Valid @RequestBody RiderLocationUpdateRequest request);
 
             // 세션 인터셉터가 request attribute 로 넣어 준 값이다. 클라이언트가 보내는 입력이
             // 아니므로 문서에서 감춘다 — 감추지 않으면 springdoc 이 파라미터로 노출하고,
             // Orval 이 그것을 인자로 받는 훅을 만들어 프론트가 라이더 식별자를 넘길 수 있는
-            // 것처럼 보이게 된다.
-            @Parameter(hidden = true)
-            @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE) AuthenticatedRider rider);
+            // 것처럼 보이게 된다.);
+
 }

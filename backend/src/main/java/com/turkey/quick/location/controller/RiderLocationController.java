@@ -6,8 +6,10 @@ import com.turkey.quick.location.dto.RiderLocationUpdateResponse;
 import com.turkey.quick.location.service.RiderLocationService;
 import com.turkey.quick.rider.auth.AuthenticatedRider;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.RestController;
 
+@Slf4j
 @RestController
 @RequiredArgsConstructor
 public class RiderLocationController implements RiderLocationApi {
@@ -20,8 +22,10 @@ public class RiderLocationController implements RiderLocationApi {
      */
     @Override
     public ApiResponse<RiderLocationUpdateResponse> updateRiderLocation(
-            RiderLocationUpdateRequest request, AuthenticatedRider rider) {
+            RiderLocationUpdateRequest request) {
+
+        log.debug("##request={}", request);
         return ApiResponse.ok(
-                riderLocationService.update(rider.memberId(), rider.operatingStatus(), request));
+                null);
     }
 }

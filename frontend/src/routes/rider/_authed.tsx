@@ -2,6 +2,7 @@ import { createFileRoute, Outlet, redirect } from '@tanstack/react-router'
 import { resolveRiderGuard } from '@/shared/auth/guard'
 import { ensureSessionInfo } from '@/shared/auth/session'
 import { SessionErrorScreen } from '@/shared/auth/SessionErrorScreen'
+import { useLocationSender } from '@/shared/hooks/useLocationSender'
 
 /**
  * 라이더 전용 화면의 인증 가드. 인증·역할 확인에 더해 운행 상태와 화면의 정합성까지 본다
@@ -22,6 +23,15 @@ export const Route = createFileRoute('/rider/_authed')({
 
     return { session }
   },
-  component: Outlet,
+  component: RiderAuthedLayout,
   errorComponent: SessionErrorScreen,
 })
+
+function RiderAuthedLayout() {
+  const { session } = Route.useRouteContext()
+  const operatingStatus =
+    session.role === 'RIDER' ? (session.rider.operatingStatus ?? 'UNAVAILABLE') : 'UNAVAILABLE'
+
+  useLocationSender(operatingStatus)
+  return <Outlet />
+}
