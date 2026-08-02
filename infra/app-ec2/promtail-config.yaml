@@ -1,0 +1,19 @@
+server:
+  http_listen_port: 9080
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  # <모니터링-EC2-사설IP> 를 실제 값으로 바꿔넣는다.
+  - url: http://<모니터링-EC2-사설IP>:3100/loki/api/v1/push
+
+scrape_configs:
+  # myapp.service 가 stdout 으로 남기는 로그를 journald 에서 그대로 읽는다 —
+  # 로그 파일 appender 를 따로 만들지 않는다(docs/logging-guidelines.md 의
+  # `event=EVENT_NAME key=value` 포맷은 logfmt 라 Loki 에서 파싱 없이 바로 쓸 수 있다).
+  - job_name: journal
+    journal:
+      matches: _SYSTEMD_UNIT=myapp.service
+      labels:
+        job: spring-app
