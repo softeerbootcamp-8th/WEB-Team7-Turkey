@@ -6,12 +6,14 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:android": "tsc -b && vite build --mode android",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "generate:api": "orval --config ./orval.config.ts",
     "test": "vitest run"
   },
   "dependencies": {
+    "@capacitor/core": "^8.5.0",
     "@tanstack/react-query": "^5.62.0",
     "@tanstack/react-router": "^1.95.0",
     "axios": "^1.7.9",

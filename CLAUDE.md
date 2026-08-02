@@ -1,7 +1,7 @@
 ---
 title: Turkey 프로젝트 지침
 status: active
-updated_at: 2026-07-24
+updated_at: 2026-08-02
 owner: WEB-Team7-Turkey
 source_of_truth: true
 ---
@@ -125,16 +125,22 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
     보호할 API마다 해당 인터셉터의 `addPathPatterns`에 경로를 직접 등록해야 인증이 걸린다.
     (고객 예시: `customer/config/CustomerWebMvcConfig`, #27) 새 고객/라이더 전용 API를 추가할 때
     이 등록을 빠뜨리면 그 API는 인증 없이 열린 채로 배포된다 — 리뷰 시 반드시 확인할 것.
-- Redis는 현재 **세션 저장 / 라이더 최신 위치 / GEO 위치 검색 / 휴대전화 인증번호(TTL) / SSE 이벤트
-  팬아웃(Pub/Sub, #246)** 에 쓴다. 영속 원본 저장소로는 쓰지 않는다.
+- Redis는 현재 **세션 저장 / GEO 위치 검색(배차 후보용, `RiderGeoRepository`) / 휴대전화
+  인증번호(TTL)** 에 쓴다. 영속 원본 저장소로는 쓰지 않는다. **라이더 최신 위치 저장과 SSE
+  이벤트 팬아웃(Pub/Sub, #246)은 위치 추적 단순화(#297, 2026-08-02)로 제거했다** — 아래
+  SSE 항목 참고.
 - Redis 배포 방식은 **EC2 인스턴스에 직접 설치**(2026-07-29 변경, 디스커션 #176). 관리 부담을 줄이는
   ElastiCache(관리형)를 먼저 검토했으나 **비용 문제**로 EC2 직접 설치로 결정을 뒤집었다.
   MySQL 배치 방식(EC2 직접 설치 vs RDS)도 별도로 아직 미결(아래 「확인이 필요한 항목」).
 - 영속성·트랜잭션 정합성이 필요한 데이터는 MySQL이 정본(사용자·배송요청·배차·상태·포인트 원장·정산·위치 이력).
-- 실시간 라이더 위치 전달은 **SSE** 사용(Polling 아님). 위치가 실제로 변경됐을 때만 이벤트 전송.
-  - 다중 인스턴스 환경에서는 위치를 처리한 인스턴스가 Redis Pub/Sub으로 발행하고, 해당 emitter를
-    들고 있는 인스턴스가 구독해 고객에게 전달한다(#246). `SseEmitter` 레지스트리는 인스턴스
-    로컬(인메모리)로 유지한다.
+- 실시간 라이더 위치 전달은 **SSE** 사용(Polling 아님). **위치 추적 단순화(#297) 이후에는
+  서버가 위치를 검증·저장·필터링하지 않고 받는 즉시 그대로 중계한다** — "변경됐을 때만"이
+  아니라 유효한 위치가 올 때마다 그 배송을 구독 중인 고객에게 전송한다.
+  - `location/sse/SseRegistry`(배송 ID → SSE 연결 로컬 Map)와 `location/sse/SseRelay`(위치
+    수신 시 그 레지스트리를 조회해 전송)로 나뉜다. **현재 인스턴스 로컬 전제다 — 다중
+    인스턴스 팬아웃(Redis Pub/Sub 등)은 도입하지 않았다.** MVP가 백엔드 1대로 운영되는 동안은
+    그 문제 자체가 없고, 실제로 인스턴스를 늘리는 시점에 대안(Redis Pub/Sub 재도입·폴링·배송
+    id 기준 sticky routing 등)을 다시 고른다(아래 「확인이 필요한 항목」 참고).
 - 라이더 상태와 배송 상태를 분리한다.
 - 여러 인스턴스로 수평 확장 가능한 모놀리식 Spring Boot WAS(코드 수준에서만 책임 분리, MSA 아님).
 - 프론트 빌드 산출물은 S3에 배포하고 CloudFront로 제공. 정적 요청은 CloudFront·S3, API·SSE는 EC2 Spring Boot가 처리.
@@ -155,28 +161,34 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - 동일 요청 재전송에 대한 API 멱등성 정책(요청 식별값 기준)
 - 예상 요금과 최종 요금의 차이 허용 >> 허용하기로 했음
 - 포인트 차감·환불 시점, 포인트 동시성 처리 방식(선차감 vs 결제 승인 모킹 포함)
-- 라이더 위치 이력의 MySQL 저장 기준(시간/이동거리/상태변화)
-- SSE 타임아웃·재연결·heartbeat·중복 연결 정책 >> **#77 에서 확정함**(사람 확인, 2026-07-30).
-  emitter 타임아웃 5분 / heartbeat 15초 / 동일 주문 연결 한도 3 / stale 임계 45초 /
-  서버가 `retry: 3000` 지정. 값은 `location/sse/TrackingStreamPolicy` 한 곳에 있다.
-  **`new SseEmitter()` 로 만들면 Tomcat 기본값 30초가 적용되고 그 30초는 쓰기로 갱신되지 않는다** —
-  이벤트가 흐르고 있어도 끊긴다. 타임아웃은 반드시 명시할 것. CloudFront 오리진 응답 타임아웃
-  상한이 120초·keep-alive 300초라(사람 확인) 이 값들은 안전하지만, **오리진 응답 타임아웃을
-  20초 아래로 내리면 heartbeat 도 함께 내려야 한다**
-- **SSE 팬아웃은 주문별 채널명 + 패턴 구독이다**(#78, 2026-07-30). 채널은 `tracking:order:{id}` 이고
-  모든 인스턴스가 `tracking:order:*` 를 구독해 자기 emitter 가 있는 것만 전송한다. 주문별로
-  구독·해제하지 않은 이유: 같은 주문이 1→0 과 0→1 을 동시에 겪을 때 구독 호출 순서가 뒤집혀
-  "구독은 없는데 연결은 있다"가 되면 **고객 스트림이 조용히 죽는다.** 대가는 모든 인스턴스가 모든
-  이벤트를 받는 것이고, 채널 이름이 주문별이라 비용이 문제되면 값 형식 변경 없이 전환할 수 있다.
-  **`RedisMessageListenerContainer` 의 `taskExecutor` 를 반드시 지정할 것** — 미지정이면 메시지마다
-  새 OS 스레드를 만든다
-- **`Pub/Sub` 페이로드 형식이 세 번째 배포 호환성 표면이다**(#78). Flyway 마이그레이션, Redis 값
-  형식에 이어. 수신단이 페이로드를 파싱하지 않고 그대로 흘리므로 롤링 배포 중 구·신 형식이 그대로
-  클라이언트로 나갈 수 있다 — **필드 추가만 허용하고 제거·의미 변경은 하지 않는다**
-- **오류 응답에 Content-Type 을 명시해야 한다**(#77 에서 드러남, `GlobalExceptionHandler` 에 적용).
-  지정하지 않으면 스프링이 `Accept` 로 컨텐트 협상을 하고, 브라우저 `EventSource` 는
-  `Accept: text/event-stream` 만 보내므로 401·409·429 가 전부 **406** 으로 바뀌어 상태코드와
-  `ApiResponse` 본문을 둘 다 잃는다
+- **위치 추적이 #297(2026-08-02)에서 단순화됨.** 기존 위치 필터(`LocationAcceptancePolicy`·
+  `LocationFilter`), Redis 최신 위치 저장(`RiderLocationStore`), MySQL 이력 저장, SSE Pub/Sub
+  팬아웃(`TrackingChannel`·`RedisTrackingEventPublisher`·`TrackingStreamPolicy`의 heartbeat·
+  연결 수 제한)을 전부 제거했다. 서버는 이제 "라이더 위치를 받아 그 배송을 구독 중인 고객에게
+  그대로 중계"만 한다(`location/sse/SseRegistry` + `SseRelay`). 아래는 그 결과 남은 미결 항목이다
+  — 아래 목록이 이 절 전체를 대체한다.
+- **SSE emitter 타임아웃이 임시값이다**(1초, `CustomerTrackingStreamController`/
+  `RiderLocationUpdateController`의 `TTL`). 테스트가 안정적으로 끝나는 선에서 고른 값이라, 고객이
+  몇 분씩 화면을 보고 있어야 하는 실제 운영에는 전혀 안 맞는다 — 실제 정책값을 정해야 한다.
+  예전 값(5분)이 참고는 되지만, 그때는 heartbeat가 있어 조용한 연결도 안 끊겼다는 전제가 다르다
+- **heartbeat가 없다.** 그래서 CloudFront 등 프록시의 유휴 타임아웃에 조용한 스트림이 끊길 수
+  있다(예전에 heartbeat를 둔 이유이기도 하다) — TTL을 실제 운영값으로 늘리면 이 문제가 다시
+  떠오른다
+- **연결 수 제한이 없다.** 예전엔 배송당 3개(Redis ZSET)로 막았는데, 지금은 같은 배송에 몇 명이든
+  무제한 구독 가능하다. 단일 인스턴스 전제라 카운팅 자체는 로컬 Map 크기로 간단히 가능하지만,
+  필요성이 재확인되기 전까지는 만들지 않기로 했다
+- **다중 인스턴스 팬아웃 방식이 미정이다.** 지금은 인스턴스 1대 전제로 로컬 레지스트리만 쓴다
+  — MVP가 실제로 1대로 운영되는 동안은 여러 인스턴스에 흩어진 연결을 모아 전달해야 하는 문제
+  자체가 없다. 스케일 아웃 시 대안(Redis Pub/Sub 재도입 · 폴링 · 배송 id 기준 sticky routing ·
+  인스턴스 확장 포기) 중 하나를 그때 실제 인스턴스 수를 보고 고른다
+- **라이더 위치 POST가 배송 ID를 요청 본문으로 직접 받는다**(#290). 서버가 DB로 "라이더의 진행
+  중 배송"을 조회하지 않기 때문이다. 그 라이더가 실제로 그 배송에 배정됐는지는 검증하지 않고
+  운행 상태(AVAILABLE/BUSY)만 확인한다(#291) — 아무 배송 ID나 넣으면 남의 고객 화면에 위치를
+  흘려보낼 수 있는 구멍이다
+- **오류 응답에 Content-Type 을 명시해야 한다**(#77 에서 드러남, `GlobalExceptionHandler` 에 적용,
+  단순화 이후에도 유효). 지정하지 않으면 스프링이 `Accept` 로 컨텐트 협상을 하고, 브라우저
+  `EventSource` 는 `Accept: text/event-stream` 만 보내므로 401·409·429 가 전부 **406** 으로
+  바뀌어 상태코드와 `ApiResponse` 본문을 둘 다 잃는다
 - `server.shutdown` 을 설정한 적이 없는데 graceful 로 동작한다(#77 에서 테스트 로그로 확인:
   `Graceful shutdown aborted with one or more requests still active`). SSE 는 끝나지 않으므로
   **종료마다 대기 시간을 소진한 뒤 강제 중단**돼 배포가 그만큼 느려진다. `immediate` 로 명시할지 미결
@@ -220,6 +232,19 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   해소되고 TTL 이 10분이라 감내했지만, **롤링 배포 중 구·신 버전이 공존하면 서로의 값을 못 읽는
   구간이 생긴다.** Flyway 마이그레이션 호환성(「확정된 결정」)과 같은 종류의 문제인데 Redis 값에서는
   규칙이 없다. 규칙으로 못 박을지 미결
+  `Graceful shutdown aborted with one or more requests still active`, 단순화 이후에도 SSE
+  엔드포인트 자체는 남아 있어 유효). SSE 는 끝나지 않으므로 **종료마다 대기 시간을 소진한 뒤
+  강제 중단**돼 배포가 그만큼 느려진다. `immediate` 로 명시할지 미결
+- SSE 연결 중 세션 만료·로그아웃 처리는 여전히 미결이다. heartbeat 자체가 없어져서, 세션이
+  만료돼도 emitter 타임아웃(지금은 1초라 사실상 무의미하지만 실제 정책값으로 올리면 그 시간까지)
+  위치가 계속 흐를 수 있다
+- 주문 완료·취소 시 **능동적** SSE 연결 종료가 없다. 라이더가 그 배송에 더는 위치를 안 보내면
+  중계 자체는 조용해지지만, 연결은 타임아웃까지 열려 있고 완료 알림이 프론트로 가지 않는다
+- `rider_location_history` 테이블(V15)은 스키마에 남아 있지만 지금은 아무 코드도 쓰지 않는다 —
+  Flyway 마이그레이션은 한 번 적용되면 되돌리지 않는다는 원칙과 같은 이유로 지우지 않기로 했다
+- **emitter 레지스트리가 테스트 사이에 살아남는 문제는 해결됨**(#291). `SseRegistry.clear()`를
+  추가하고 `IntegrationTestSupport`가 매 테스트 전에 부른다 — 다중 인스턴스 카운팅 자체가 없어져서
+  Redis 쪽도 같이 풀어줘야 했던 예전 `TrackingEmitterCleaner`보다 훨씬 간단해졌다
 - 배송 완료 인증 데이터 구조(단건/다건, 사진·수령인 확인·인증코드 중 채택 범위)
 - 정산 생성 시점과 실패 처리 방식
 - 주소·좌표 컬럼 구조, 배차 결과를 별도 테이블로 둘지 주문 FK로 단순화할지
@@ -277,10 +302,10 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - Orval 생성 훅의 `error` 가 전부 `AxiosError<unknown>` 임(#194) — 스펙에 공통 에러 응답 스키마가
   선언돼 있지 않다. springdoc 에 에러 스키마를 노출하고 orval `override.errorType` 을 지정할지,
   화면에서 `unknown` 을 좁혀 쓸지 미결
-- 역할 무관 세션 확인 API(`GET /api/session`)가 없어, 프론트 가드가 고객·라이더 세션 API 를 둘 다
-  조회해 합성한다(#195, 사람 확인). 역할 불일치도 401 이라 한쪽만 보면 "비로그인"과 "다른 역할로
-  로그인"을 구분할 수 없기 때문이다. 요청이 2배가 되는 것이 문제되면 역할 무관 세션 API 를 추가하고
-  `shared/auth/session.ts` 의 `ensureSessionInfo` 를 단순화한다
+- 역할 무관 세션 확인 API(`GET /api/session`)가 없다. 기존 두 역할 API 병렬 조회는 반대 역할의 401이
+  공용 `SESSION_ID` 쿠키를 만료시키는 버그를 일으켜(#288), 프론트가 로그인 성공 시 역할 힌트를 저장하고
+  해당 역할 API 하나만 조회하도록 임시 완화했다. 힌트가 없으면 조회하지 않고 비로그인으로 판정하므로,
+  역할 무관 API가 생기면 힌트를 제거하고 서버 응답의 역할을 정본으로 사용해야 한다
 - 로그인·회원가입 화면(`customer/login`·`rider/login`·`*/signup`)에 비인증 가드를 걸지 미결(#195).
   현재는 로그인 상태로도 로그인 화면이 열린다(비인증 가드는 `auth/*` 에만 적용)
 - 프론트 세션 캐시 유효 시간 5분이 적절한지 미검증(#195). 세션 TTL 2시간 고정·슬라이딩 없음(#27)을
@@ -289,6 +314,47 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   메서드명을 쓰고 동명 메서드에 `_1` 을 붙여 프론트 훅 이름이 액터를 구분하지 못한다
   (`useLogin` / `useLogin1`, 배정 순서는 컨트롤러 스캔 순서 의존). 현재는 `OpenApiOperationIdE2ETest`
   실패로만 알게 되는데, 리뷰 체크리스트나 PR 템플릿에 넣을지 미결
+- 충전 금액 정책이 잠정값(#32): `CustomerPaymentService` 의 1,000 / 1,000,000 / 1,000원 단위.
+  화면 프리셋만 허용하는 화이트리스트로 좁히는 선택지도 있음
+- 충전 준비의 동시 재전송은 409 로 거부한다(#32, 실측 8건 중 2건). 순차 재전송은 기존 건을 돌려준다.
+  패자에게도 같은 응답을 주려면 삽입을 별도 트랜잭션으로 떼야 함
+- 화면 결제수단(카카오페이·휴대폰)과 `PaymentMethod`(`CARD`·`BANK_TRANSFER`)이 불일치(#32).
+  `ck_point_charge_method` 도 두 값만 허용 — enum 을 넓힐지 화면을 줄일지 미결
+- `PaymentGateway.prepare()` 필요 여부는 벤더에 따라 갈림(#32, 일단 유지). 카카오페이류는 `ready`
+  호출 필수, 토스페이먼츠류는 준비 단계에 PG 호출 없음
+- 충전 준비 API 가 이슈에 없는 `chargeRequestKey`·`paymentMethod` 를 필수로 받는다(#32). 또 이미 PAID
+  인 키로 재요청하면 PAID 건을 그대로 돌려줘 프론트가 맥락 없는 409 를 본다(가드 미구현)
+- **PG 벤더 선정 기준 2가지**(#33). ① 승인 API 가 인증 토큰 기준으로 <b>멱등</b>한가 — 아니면 현재
+  구조(PG 호출을 트랜잭션 밖에 두는 파사드)가 성립하지 않는다. ② 결제 <b>조회</b> API 가 있는가 —
+  타임아웃 건의 성사 여부를 판정할 유일한 수단이다. 토스페이먼츠는 둘 다 있음
+- 실 PG 연동 시 필요하나 현재 없는 것(#33): 망 취소, 거래·정산 대사(스케줄러), 웹훅 수신 엔드포인트,
+  `PaymentGateway` 의 결제 조회 메서드. 모의 PG 는 돈이 움직이지 않아 지금 만들면 검증이 불가능하다
+- 동시 승인 요청이 PG 를 각각 호출할 수 있음(#33). 확정 구간만 잠그기 때문이며, 이중 증액은 상태
+  재확인이 막지만 이중 <b>결제</b>는 PG 멱등성에 의존한다. claim 패턴(PG 호출 권한 선점)으로 막을 수
+  있으나 상태·컬럼 추가가 따라온다
+- **포인트 관련 트랜잭션의 잠금 순서는 `point_charge` → `point_wallet` 로 고정한다**(#33). 배송 결제
+  (`ORDER_USE`)·정산이 붙을 때도 같은 순서를 지켜야 한다 — 엇갈리면 데드락이다. 현재 문서와 주석에만
+  있고 코드로 강제할 수단은 없다
+- `status='PENDING' AND provider_payment_key IS NOT NULL` 은 "PG 승인은 받았는데 포인트 반영이 끝나지
+  않은 건"을 뜻한다(#33). 사실상 `APPROVING` 상태를 enum 값 없이 표현한 것이라 PENDING 의 의미가 둘이다
+- `PointChargeApprover.alreadyApprovedResponse` 가 트랜잭션 밖에서 조회한 엔터티를 인자로 받는다(#33).
+  현재는 단순 getter 만 써서 안전하지만 연관을 건드리면 `LazyInitializationException` 이 난다
+- **취소가 승인을 이기면 실 PG 에서 "돈은 나갔는데 CANCELED" 가 될 수 있다**(#34). `confirmPointCharge`
+  는 잠금 없이 사전 검증한 뒤 PG 를 부르는데, 그 사이 취소가 커밋되면 승인을 받아 온 뒤
+  `finalizeApproval` 이 409 로 막는다. 이때 `recordApprovalReceived` 는 상태가 PENDING 이 아니라 아무것도
+  하지 않으므로 **승인 식별자가 DB 에 남지 않아** `status='PENDING' AND provider_payment_key IS NOT NULL`
+  대사 조건에도 걸리지 않는다. 모의 PG 는 무해하지만 실 PG 에서는 추적 불가능한 건이 된다.
+  CANCELED 에도 승인 식별자를 기록할지, claim 패턴으로 취소를 막을지 미결. **`APPROVING` 상태를
+  추가하는 것만으로는 안 풀린다** — 경쟁 창이 PG 호출 앞에 있어서, PG 호출 <b>전에</b> 상태를
+  선점해야 닫힌다(검토 내용은 워크로그 `2026-07-31-34-point-charge-cancel.md` 부록). 모의 PG 로는
+  검증할 수 없어 MVP 에서는 감수하고 실 PG 벤더 선정 시점에 판단한다
+- **오래 PENDING 인 충전 요청을 정리할 방법이 없다**(#34 에서 범위 밖으로 뺌). 결제창을 열어 둔 채
+  브라우저를 닫으면 취소 요청이 오지 않아 그 건은 영구히 PENDING 이다. 만료 스케줄러를 둘지, 둔다면
+  기준(요청 후 N분)과 실 PG 결제 조회 API 와의 관계를 정해야 한다
+- **`point_charge.failure_reason` 이 FAILED·CANCELED 두 의미를 겸한다**(#34, 사람 확인). CANCELED 전용
+  사유 컬럼을 두지 않고 재사용하기로 했다 — 마이그레이션이 없고 승인 전 취소 사유는 사실상 고정값
+  하나이기 때문이다. **값을 해석할 때 반드시 `status` 를 함께 봐야 한다.** 사유별 집계가 붙으면
+  전용 컬럼으로 나눌지 재검토
 - `RiderDeliveryRequestApi`의 `getDeliveryRequest`/`acceptDeliveryRequest`/`skipDeliveryRequest`
   세 메서드에 라이더 식별 파라미터(`AuthenticatedRider`)가 빠져 있음(#55) — #56/#57 구현 시
   `getDeliveryRequests`와 같은 방식(`@RequestAttribute`)으로 추가 필요
@@ -320,6 +386,28 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   `delivery_order`에 관련 컬럼이 없음(`itemType` 열거형만 존재). 화면에서 실제로 필요해지면 스키마
   변경(Flyway 마이그레이션)과 주문 생성(REQ-ORD-002) 쪽 값 저장까지 함께 논의해야 함
   (2026-07-30: #56 rebase 중 dev 병합 과정에서 이 항목이 유실됐던 걸 복구함)
+- 포인트 지갑 없음의 응답 코드가 고객(400)과 라이더(500)로 갈린다(#67). 라이더는
+  `BusinessException(INTERNAL_SERVER_ERROR)`로 `RiderPointApi` 문서와 맞췄지만, 고객
+  (`CustomerPaymentService`)은 `IllegalStateException` → `GlobalExceptionHandler` → 400 이라
+  `CustomerPointApi` 문서에 적힌 500 과 어긋난 상태다. 지갑은 회원가입 트랜잭션에서 함께 생성되므로
+  정상 경로에서는 둘 다 발생하지 않지만, 고객 쪽을 500 으로 맞추면 기존 API 의 응답 계약이 바뀌어
+  프론트 영향 검토가 필요하다 — 별도 이슈로 올릴지 미결
+- `GlobalExceptionHandler`가 `IllegalStateException`을 일괄 400 으로 바꾼다(#67에서 드러남). 서버
+  정합성 오류를 사용자 입력 오류와 구분하려면 매번 `BusinessException`을 명시해야 한다는 뜻인데,
+  이 관례를 `references/backend.md`에 못 박을지 미결
+- **SSE 재연결이 연결 자리를 재사용하지 않는다**(#79 에서 확인, 사람 결정으로 범위에서 제외).
+  연결 한도 3 + 서버 `retry: 3000` + stale 임계 45초라서, **45초 안에 3번 끊겼다 붙으면 4번째가 429**
+  이고 브라우저 `EventSource` 는 200 아닌 응답에 재연결하지 않아 **추적 화면이 수동 새로고침까지
+  죽는다**(지하철·엘리베이터에서 현실적으로 발생). 해법은 클라이언트가 보낸 불투명 식별자를 emitter
+  id 로 쓰는 것이다 — `RedisTrackingConnectionLimiter` 의 Lua 가 이미 같은 멤버의 재획득을 허용한다.
+  단 그때 **죽어 가는 이전 연결의 늦은 `onCompletion` 이 같은 id 를 이어받은 새 연결을 지우는**
+  use-after-free 를 함께 막아야 한다(`complete()` 는 콜백을 동기로 돌리지 않는다) — 레지스트리 제거를
+  값까지 비교하는 형태로 바꾸면 된다. 별도 이슈로 올릴지 미결
+- 추적 스냅샷(`GET /api/customer/deliveries/{deliveryId}/tracking`, #79)이 **스트림과 같은 게이트를 쓴다**
+  (사람 확인) — 그래서 WAITING·COMPLETED·CANCELED 는 409 고, **완료·취소된 배송의 추적 화면을 그릴 API 가
+  없다**(배송요청 상세 API 는 아직 스텁). 또 `estimatedArrivalAt` 은 항상 null 이며(산정 근거 없음),
+  `steps` 는 `order_status_history` 가 아니라 `delivery_order` 시각 컬럼에서 파생한다 — 그 테이블은
+  엔터티만 있고 **행을 쓰는 코드가 없어 런타임에 비어 있다**(상태 전이 API 이슈에서 작성기 필요)
 - 배차 확정(`POST /api/rider/requests/{deliveryId}/accept`, #56) 실패 사유(취소/이미 배차/라이더
   다른 배송 수행 중)를 `ApiResponse`에 에러코드 필드 없이 `message` 문자열로만 구분함(ADR-006).
   프론트가 사유별로 다른 UX를 보여줘야 하면 에러코드 체계 신설을 별도 이슈로 논의해야 함
