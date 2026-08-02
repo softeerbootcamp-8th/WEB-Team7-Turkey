@@ -3,6 +3,7 @@ package com.turkey.quick.location.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.turkey.quick.common.response.ApiResponse;
+import com.turkey.quick.location.repository.RiderGeoRepository;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
 import com.turkey.quick.member.repository.MemberRepository;
@@ -10,6 +11,7 @@ import com.turkey.quick.rider.domain.OperatingStatus;
 import com.turkey.quick.rider.domain.RiderProfile;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -55,6 +57,9 @@ class RiderLocationUpdateE2ETest extends IntegrationTestSupport {
 
     @Autowired
     private PlatformTransactionManager transactionManager;
+
+    @Autowired
+    private RiderGeoRepository riderGeoRepository;
 
     /** Member 저장과 RiderProfile(@MapsId) 저장을 한 트랜잭션으로 묶는다(RiderDeliveryRequestE2ETest와 같은 이유). */
     private Member saveRider(String loginId, String phoneNumber, OperatingStatus targetStatus) {
@@ -133,6 +138,30 @@ class RiderLocationUpdateE2ETest extends IntegrationTestSupport {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(response.getBody().message()).isEqualTo("운행 중이 아닙니다.");
+    }
+
+    @Test
+    @DisplayName("AVAILABLE 라이더가 위치를 보내면 GEO 배차 후보로 등록된다(#83)")
+    void availableRiderIsRegisteredAsGeoCandidate() {
+        Member member = saveRider("e2e_location_geo_available", "01011110005", OperatingStatus.AVAILABLE);
+        String cookie = login("e2e_location_geo_available");
+
+        rest.exchange(LOCATION_ENDPOINT, HttpMethod.POST, withCookie(locationRequest(5L), cookie), ApiResponse.class);
+
+        assertThat(riderGeoRepository.findPosition(member.getId())).isPresent();
+    }
+
+    @Test
+    @DisplayName("BUSY 라이더가 위치를 보내면 GEO 배차 후보에서 빠진다(#83)")
+    void busyRiderIsRemovedFromGeoCandidates() {
+        Member member = saveRider("e2e_location_geo_busy", "01011110006", OperatingStatus.BUSY);
+        riderGeoRepository.registerOrUpdate(member.getId(), new BigDecimal("37.5000000"), new BigDecimal("127.0000000"));
+        assertThat(riderGeoRepository.findPosition(member.getId())).isPresent();
+        String cookie = login("e2e_location_geo_busy");
+
+        rest.exchange(LOCATION_ENDPOINT, HttpMethod.POST, withCookie(locationRequest(6L), cookie), ApiResponse.class);
+
+        assertThat(riderGeoRepository.findPosition(member.getId())).isEmpty();
     }
 
     @Test
