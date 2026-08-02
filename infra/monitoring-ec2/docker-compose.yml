@@ -1,0 +1,72 @@
+# 팀 공유 모니터링 스택. public 서브넷의 별도 EC2 한 대에서 이 compose 만 띄운다.
+# 실행: docker compose up -d --build
+#
+# 대상(앱 EC2, Redis EC2, DB)은 전부 이 EC2와 같은 VPC 안에 있고 Docker 없이 프로세스로
+# 떠 있다 — 그쪽엔 Node Exporter/Promtail/redis_exporter 를 네이티브 systemd 로 설치한다
+# (../app-ec2, ../redis-ec2 참고). 이 EC2만 새로 만드는 박스라 Docker 를 자유롭게 쓴다.
+services:
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      # k6 가 SSH 터널로 원격 write 로 부하테스트 결과를 여기로 직접 push 한다.
+      - --web.enable-remote-write-receiver
+    # 루프백만 바인딩 — k6 를 로컬에서 돌리는 사람이 SSH 터널(-L 9090:localhost:9090)로만
+    # 접근하고, 외부(팀원 브라우저 포함)에는 노출하지 않는다. Grafana 는 같은 docker
+    # 네트워크 안에서 서비스명(prometheus:9090)으로 바로 붙으므로 별도 포트 공개가 필요 없다.
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  # 앱 EC2·Redis EC2는 별도 호스트(다른 compose 프로젝트)라 Docker 내부망으로 안 닿는다.
+  # 반드시 실제 호스트 포트로 열어야 한다 — 보안그룹에서 각 EC2 사설 IP만 허용해서 막는다.
+  loki:
+    image: grafana/loki:3.2.0
+    ports:
+      - "3100:3100"
+    volumes:
+      - loki-data:/loki
+
+  # DB(EC2 직접 설치든 RDS든) 에는 아무것도 설치하지 않고, 여기서 MySQL 프로토콜로
+  # 접속해 지표를 뽑는다. 읽기전용 계정(PROCESS, REPLICATION CLIENT)의 접속정보는
+  # .my.cnf 로 넘긴다 — v0.15.1 부터 DATA_SOURCE_NAME 환경변수를 안 읽는다.
+  mysqld-exporter:
+    image: prom/mysqld-exporter:v0.15.1
+    volumes:
+      - ./.my.cnf:/etc/mysqld-exporter/.my.cnf:ro
+    command:
+      - --config.my-cnf=/etc/mysqld-exporter/.my.cnf
+      # 복제(replica) 구성이 아니라서 불필요 + MySQL 8.4는 SHOW SLAVE STATUS 를 없애고
+      # SHOW REPLICA STATUS 로 바꿔서 이 버전의 exporter(8.4 이전 빌드)가 계속 syntax error 를 냄.
+      - --no-collect.slave_status
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./provisioning:/etc/grafana/provisioning
+    expose:
+      - "3000"      # 호스트에 직접 안 열고 caddy 뒤에서만 접근
+    depends_on:
+      - prometheus
+      - loki
+
+  caddy:
+    image: caddy:2.8-alpine
+    ports:
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy-data:/data
+    depends_on:
+      - grafana
+
+volumes:
+  prometheus-data:
+  loki-data:
+  grafana-data:
+  caddy-data:

@@ -35,6 +35,11 @@ dependencies {
     // 세션 저장 / 라이더 위치 / GEO 검색 / 휴대전화 인증번호(TTL) 등 휘발성 데이터 저장.
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 
+    // 운영 모니터링(Prometheus+Grafana)용 지표 노출. /actuator/prometheus 를
+    // 별도 Prometheus 가 스크레이프한다(management.server.port 로 앱 포트와 분리, application.yml 참고).
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'io.micrometer:micrometer-registry-prometheus'
+
     // OpenAPI 문서 자동 생성. /v3/api-docs 의 스펙을 프론트 Orval 이 그대로 읽어
     // API 클라이언트를 생성하므로, 컨트롤러 어노테이션이 곧 프론트 계약이 된다.
     // 버전 고정 이유: 2.8.17 은 이 조합(Boot 3.4.1 / Spring 6.2)에서 swagger-ui 리소스 핸들러가

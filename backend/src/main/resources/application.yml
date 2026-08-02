@@ -53,6 +53,16 @@ spring:
 server:
   port: 8080
 
+# --- Actuator: 모니터링(Prometheus)용 지표 노출 ---
+# 별도 포트로 분리해, 보안그룹에서 앱 포트(8080)와 독립적으로 접근을 제한할 수 있게 한다.
+management:
+  server:
+    port: 8081
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+
 # --- 로그인 세션 쿠키 ---
 # Secure는 프로파일별로 다르다: 배포는 CloudFront가 HTTPS를 종단하므로 true,
 # 로컬은 http라 브라우저가 Secure 쿠키를 거부하므로 local 프로파일에서 false로 덮어쓴다.
