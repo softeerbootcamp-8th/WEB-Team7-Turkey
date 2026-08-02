@@ -111,6 +111,12 @@ export interface ApiResponseFareQuoteResponse {
   success?: boolean;
 }
 
+export interface ApiResponseListRiderDeliveryRequestSummaryResponse {
+  data?: RiderDeliveryRequestSummaryResponse[];
+  message?: string;
+  success?: boolean;
+}
+
 export interface ApiResponseLoginIdAvailabilityResponse {
   data?: LoginIdAvailabilityResponse;
   message?: string;
@@ -137,8 +143,50 @@ export interface ApiResponsePhoneVerificationResponse {
   success?: boolean;
 }
 
+export interface ApiResponsePointBalanceResponse {
+  data?: PointBalanceResponse;
+  message?: string;
+  success?: boolean;
+}
+
+export interface ApiResponsePointChargeConfirmResponse {
+  data?: PointChargeConfirmResponse;
+  message?: string;
+  success?: boolean;
+}
+
+export interface ApiResponsePointChargeResponse {
+  data?: PointChargeResponse;
+  message?: string;
+  success?: boolean;
+}
+
+export interface ApiResponsePointTransactionListResponse {
+  data?: PointTransactionListResponse;
+  message?: string;
+  success?: boolean;
+}
+
+export interface ApiResponseRiderDeliveryRequestAcceptResponse {
+  data?: RiderDeliveryRequestAcceptResponse;
+  message?: string;
+  success?: boolean;
+}
+
+export interface ApiResponseRiderDeliveryRequestDetailResponse {
+  data?: RiderDeliveryRequestDetailResponse;
+  message?: string;
+  success?: boolean;
+}
+
 export interface ApiResponseRiderLoginResponse {
   data?: RiderLoginResponse;
+  message?: string;
+  success?: boolean;
+}
+
+export interface ApiResponseRiderOperatingStatusResponse {
+  data?: RiderOperatingStatusResponse;
   message?: string;
   success?: boolean;
 }
@@ -155,10 +203,28 @@ export interface ApiResponseRiderSignupResponse {
   success?: boolean;
 }
 
+export interface ApiResponseSettlementListResponse {
+  data?: SettlementListResponse;
+  message?: string;
+  success?: boolean;
+}
+
 export type ApiResponseVoidData = { [key: string]: unknown };
 
 export interface ApiResponseVoid {
   data?: ApiResponseVoidData;
+  message?: string;
+  success?: boolean;
+}
+
+export interface ApiResponseWithdrawalListResponse {
+  data?: WithdrawalListResponse;
+  message?: string;
+  success?: boolean;
+}
+
+export interface ApiResponseWithdrawalResponse {
+  data?: WithdrawalResponse;
   message?: string;
   success?: boolean;
 }
@@ -693,6 +759,334 @@ export interface PhoneVerificationResponse {
   expiresAt?: string;
 }
 
+/**
+ * 포인트 잔액
+ */
+export interface PointBalanceResponse {
+  /** 사용 가능한 포인트 잔액 */
+  balance?: number;
+  /** 잔액이 마지막으로 변경된 시각 */
+  updatedAt?: string;
+}
+
+/**
+ * 포인트 충전 승인 요청
+ */
+export interface PointChargeConfirmRequest {
+  /**
+   * PG 승인 식별자. MVP 모킹에서는 생략 가능(서버가 모의 키 생성).
+   * @minLength 0
+   * @maxLength 100
+   */
+  providerPaymentKey?: string;
+}
+
+/**
+ * 충전 상태. 승인 성공 시 PAID.
+ */
+export type PointChargeConfirmResponseStatus = typeof PointChargeConfirmResponseStatus[keyof typeof PointChargeConfirmResponseStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PointChargeConfirmResponseStatus = {
+  PENDING: 'PENDING',
+  PAID: 'PAID',
+  FAILED: 'FAILED',
+  CANCELED: 'CANCELED',
+  REFUNDED: 'REFUNDED',
+} as const;
+
+/**
+ * 포인트 충전 승인 결과
+ */
+export interface PointChargeConfirmResponse {
+  /** 승인 금액. 전액 결제만 있으므로 요청 금액과 같다. */
+  approvedAmount?: number;
+  /** 승인 시각 */
+  approvedAt?: string;
+  /** 승인 반영 후 잔액 */
+  balanceAfter?: number;
+  /** 충전 식별자 */
+  pointChargeId?: number;
+  /** 충전 상태. 승인 성공 시 PAID. */
+  status?: PointChargeConfirmResponseStatus;
+}
+
+/**
+ * 결제 수단
+ */
+export type PointChargeRequestPaymentMethod = typeof PointChargeRequestPaymentMethod[keyof typeof PointChargeRequestPaymentMethod];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PointChargeRequestPaymentMethod = {
+  CARD: 'CARD',
+  BANK_TRANSFER: 'BANK_TRANSFER',
+} as const;
+
+/**
+ * 포인트 충전 요청
+ */
+export interface PointChargeRequest {
+  /** 충전 금액(포인트). 양수만 허용한다. */
+  amount?: number;
+  /**
+   * 충전 요청 멱등키(UUID). 재전송 시 같은 값을 그대로 보낸다.
+   * @minLength 36
+   * @maxLength 36
+   */
+  chargeRequestKey: string;
+  /** 결제 수단 */
+  paymentMethod: PointChargeRequestPaymentMethod;
+}
+
+/**
+ * 결제 수단
+ */
+export type PointChargeResponsePaymentMethod = typeof PointChargeResponsePaymentMethod[keyof typeof PointChargeResponsePaymentMethod];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PointChargeResponsePaymentMethod = {
+  CARD: 'CARD',
+  BANK_TRANSFER: 'BANK_TRANSFER',
+} as const;
+
+/**
+ * 충전 상태. 요청 직후는 항상 PENDING.
+ */
+export type PointChargeResponseStatus = typeof PointChargeResponseStatus[keyof typeof PointChargeResponseStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PointChargeResponseStatus = {
+  PENDING: 'PENDING',
+  PAID: 'PAID',
+  FAILED: 'FAILED',
+  CANCELED: 'CANCELED',
+  REFUNDED: 'REFUNDED',
+} as const;
+
+/**
+ * 포인트 충전 요청 결과
+ */
+export interface PointChargeResponse {
+  /** 결제 수단 */
+  paymentMethod?: PointChargeResponsePaymentMethod;
+  /** 충전 식별자 */
+  pointChargeId?: number;
+  /** 요청 금액 */
+  requestedAmount?: number;
+  /** 요청 시각 */
+  requestedAt?: string;
+  /** 충전 상태. 요청 직후는 항상 PENDING. */
+  status?: PointChargeResponseStatus;
+}
+
+/**
+ * 포인트 거래 내역 목록(페이지)
+ */
+export interface PointTransactionListResponse {
+  /** 현재 잔액. 목록 화면 상단 카드가 잔액을 따로 조회하지 않도록 함께 담는다. */
+  balance?: number;
+  /** 거래 내역 항목(최신순) */
+  items?: PointTransactionResponse[];
+  /** 현재 페이지(0부터) */
+  page?: number;
+  /** 페이지 크기 */
+  size?: number;
+  /** 전체 건수 */
+  totalElements?: number;
+}
+
+/**
+ * 증감 방향. 유형에서 파생되며 별도로 지정되지 않는다.
+ */
+export type PointTransactionResponseDirection = typeof PointTransactionResponseDirection[keyof typeof PointTransactionResponseDirection];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PointTransactionResponseDirection = {
+  CREDIT: 'CREDIT',
+  DEBIT: 'DEBIT',
+} as const;
+
+/**
+ * 거래 유형
+ */
+export type PointTransactionResponseTransactionType = typeof PointTransactionResponseTransactionType[keyof typeof PointTransactionResponseTransactionType];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PointTransactionResponseTransactionType = {
+  CHARGE: 'CHARGE',
+  CHARGE_REFUND: 'CHARGE_REFUND',
+  ORDER_USE: 'ORDER_USE',
+  ORDER_REFUND: 'ORDER_REFUND',
+  SETTLEMENT: 'SETTLEMENT',
+  WITHDRAWAL: 'WITHDRAWAL',
+  WITHDRAWAL_REFUND: 'WITHDRAWAL_REFUND',
+} as const;
+
+/**
+ * 포인트 거래 내역 항목
+ */
+export interface PointTransactionResponse {
+  /** 거래 금액(항상 양수). 부호는 direction 이 나타낸다. */
+  amount?: number;
+  /** 거래 직후 잔액 */
+  balanceAfter?: number;
+  /** 거래 발생 시각 */
+  createdAt?: string;
+  /** 연관 배송요청 식별자(ORDER_USE·ORDER_REFUND 만) */
+  deliveryId?: number;
+  /** 증감 방향. 유형에서 파생되며 별도로 지정되지 않는다. */
+  direction?: PointTransactionResponseDirection;
+  /** 연관 충전 식별자(CHARGE·CHARGE_REFUND 만) */
+  pointChargeId?: number;
+  /** 연관 정산 식별자(SETTLEMENT 만) */
+  settlementId?: number;
+  /** 거래 식별자 */
+  transactionId?: number;
+  /** 거래 유형 */
+  transactionType?: PointTransactionResponseTransactionType;
+  /** 연관 출금 식별자(WITHDRAWAL·WITHDRAWAL_REFUND 만) */
+  withdrawalId?: number;
+}
+
+/**
+ * 라이더 운행 상태(확정 시 BUSY)
+ */
+export type RiderDeliveryRequestAcceptResponseOperatingStatus = typeof RiderDeliveryRequestAcceptResponseOperatingStatus[keyof typeof RiderDeliveryRequestAcceptResponseOperatingStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RiderDeliveryRequestAcceptResponseOperatingStatus = {
+  UNAVAILABLE: 'UNAVAILABLE',
+  AVAILABLE: 'AVAILABLE',
+  BUSY: 'BUSY',
+} as const;
+
+/**
+ * 배송 상태(확정 시 ASSIGNED)
+ */
+export type RiderDeliveryRequestAcceptResponseStatus = typeof RiderDeliveryRequestAcceptResponseStatus[keyof typeof RiderDeliveryRequestAcceptResponseStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RiderDeliveryRequestAcceptResponseStatus = {
+  WAITING: 'WAITING',
+  ASSIGNED: 'ASSIGNED',
+  MOVING_TO_PICKUP: 'MOVING_TO_PICKUP',
+  PICKED_UP: 'PICKED_UP',
+  DELIVERING: 'DELIVERING',
+  COMPLETED: 'COMPLETED',
+  CANCELED: 'CANCELED',
+} as const;
+
+/**
+ * 배차 확정 결과
+ */
+export interface RiderDeliveryRequestAcceptResponse {
+  /** 배차 시각(UTC) */
+  assignedAt?: string;
+  /** 배송요청 식별자 */
+  deliveryId?: number;
+  /** 라이더 운행 상태(확정 시 BUSY) */
+  operatingStatus?: RiderDeliveryRequestAcceptResponseOperatingStatus;
+  /** 배송 상태(확정 시 ASSIGNED) */
+  status?: RiderDeliveryRequestAcceptResponseStatus;
+}
+
+/**
+ * 물품 종류
+ */
+export type RiderDeliveryRequestDetailResponseItemType = typeof RiderDeliveryRequestDetailResponseItemType[keyof typeof RiderDeliveryRequestDetailResponseItemType];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RiderDeliveryRequestDetailResponseItemType = {
+  DOCUMENT: 'DOCUMENT',
+  SMALL_PARCEL: 'SMALL_PARCEL',
+  MEDIUM_PARCEL: 'MEDIUM_PARCEL',
+  LARGE_PARCEL: 'LARGE_PARCEL',
+  FOOD: 'FOOD',
+} as const;
+
+/**
+ * 배차 대기 콜 상세
+ */
+export interface RiderDeliveryRequestDetailResponse {
+  /** 배송요청 식별자 */
+  deliveryId?: number;
+  destination?: AddressResponse;
+  estimatedFare?: FareBreakdownResponse;
+  /** 예상 소요시간(분) */
+  estimatedMinutes?: number;
+  /** 예상 정산액(원). 수수료 정책이 생기면 운임 합계와 갈릴 수 있다. */
+  expectedSettlementAmount?: number;
+  /** 물품 종류 */
+  itemType?: RiderDeliveryRequestDetailResponseItemType;
+  pickup?: AddressResponse;
+  /** 요청 시각(UTC) */
+  requestedAt?: string;
+  /** 픽업지-도착지 직선거리(m) */
+  straightDistanceMeters?: number;
+}
+
+/**
+ * 물품 종류
+ */
+export type RiderDeliveryRequestSummaryResponseItemType = typeof RiderDeliveryRequestSummaryResponseItemType[keyof typeof RiderDeliveryRequestSummaryResponseItemType];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RiderDeliveryRequestSummaryResponseItemType = {
+  DOCUMENT: 'DOCUMENT',
+  SMALL_PARCEL: 'SMALL_PARCEL',
+  MEDIUM_PARCEL: 'MEDIUM_PARCEL',
+  LARGE_PARCEL: 'LARGE_PARCEL',
+  FOOD: 'FOOD',
+} as const;
+
+/**
+ * 배차 대기 콜 목록 항목
+ */
+export interface RiderDeliveryRequestSummaryResponse {
+  /** 배송요청 식별자 */
+  deliveryId?: number;
+  /** 도착지 도로명 주소 */
+  destinationRoadAddress?: string;
+  /** 라이더 최신 위치에서 픽업지까지의 거리(m). 위치를 모르면 null. */
+  distanceToPickupMeters?: number;
+  /** 예상 정산액(원) */
+  expectedSettlementAmount?: number;
+  /** 물품 종류 */
+  itemType?: RiderDeliveryRequestSummaryResponseItemType;
+  /** 픽업지 도로명 주소 */
+  pickupRoadAddress?: string;
+  /** 요청 시각(UTC) */
+  requestedAt?: string;
+  /** 픽업지-도착지 직선거리(m) */
+  straightDistanceMeters?: number;
+}
+
+export interface RiderLocationUpdateRequest {
+  accuracyMeters?: number;
+  deliveryId: number;
+  /**
+   * @minimum -90
+   * @maximum 90
+   */
+  latitude: number;
+  /**
+   * @minimum -180
+   * @maximum 180
+   */
+  longitude: number;
+  measuredAt: string;
+}
+
 export interface RiderLoginRequest {
   /** 로그인 ID */
   loginId: string;
@@ -722,6 +1116,51 @@ export interface RiderLoginResponse {
   name?: string;
   /** 현재 운행 상태 */
   operatingStatus?: RiderLoginResponseOperatingStatus;
+}
+
+/**
+ * 운행 상태
+ */
+export type RiderOperatingStatusResponseOperatingStatus = typeof RiderOperatingStatusResponseOperatingStatus[keyof typeof RiderOperatingStatusResponseOperatingStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RiderOperatingStatusResponseOperatingStatus = {
+  UNAVAILABLE: 'UNAVAILABLE',
+  AVAILABLE: 'AVAILABLE',
+  BUSY: 'BUSY',
+} as const;
+
+/**
+ * 라이더 운행 상태
+ */
+export interface RiderOperatingStatusResponse {
+  /** 진행 중 배송 식별자. BUSY 가 아니면 null. */
+  currentDeliveryId?: number;
+  /** 운행 상태 */
+  operatingStatus?: RiderOperatingStatusResponseOperatingStatus;
+  /** 상태가 바뀐 시각(UTC) */
+  statusChangedAt?: string;
+}
+
+/**
+ * 수행할 행위
+ */
+export type RiderOperatingStatusUpdateRequestAction = typeof RiderOperatingStatusUpdateRequestAction[keyof typeof RiderOperatingStatusUpdateRequestAction];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RiderOperatingStatusUpdateRequestAction = {
+  GO_ONLINE: 'GO_ONLINE',
+  GO_OFFLINE: 'GO_OFFLINE',
+} as const;
+
+/**
+ * 운행 상태 변경 요청
+ */
+export interface RiderOperatingStatusUpdateRequest {
+  /** 수행할 행위 */
+  action: RiderOperatingStatusUpdateRequestAction;
 }
 
 /**
@@ -787,6 +1226,101 @@ export interface RiderSignupResponse {
   name?: string;
 }
 
+/**
+ * 라이더 정산 내역 목록(페이지)
+ */
+export interface SettlementListResponse {
+  /** 정산 항목(최신순) */
+  items?: SettlementResponse[];
+  /** 현재 페이지(0부터) */
+  page?: number;
+  /** 페이지 크기 */
+  size?: number;
+  /** 조회 구간 정산 합계. 화면 상단 요약에 쓴다. */
+  totalAmount?: number;
+  /** 전체 건수 */
+  totalElements?: number;
+}
+
+/**
+ * 라이더 정산 내역 항목
+ */
+export interface SettlementResponse {
+  /** 정산 대상 배송요청 식별자 */
+  deliveryId?: number;
+  /** 정산 생성 시각 */
+  settledAt?: string;
+  /** 정산 금액(라이더 수익) */
+  settlementAmount?: number;
+  /** 정산 식별자 */
+  settlementId?: number;
+}
+
+/**
+ * 포인트 출금 내역 목록(페이지)
+ */
+export interface WithdrawalListResponse {
+  /** 출금 항목(최신순) */
+  items?: WithdrawalResponse[];
+  /** 현재 페이지(0부터) */
+  page?: number;
+  /** 페이지 크기 */
+  size?: number;
+  /** 전체 건수 */
+  totalElements?: number;
+}
+
+/**
+ * 포인트 출금 요청
+ */
+export interface WithdrawalRequest {
+  /** 출금 금액(포인트). 잔액을 초과하면 거부된다. */
+  amount?: number;
+  /**
+   * 출금 요청 멱등키(UUID). 재전송 시 같은 값을 그대로 보낸다.
+   * @minLength 36
+   * @maxLength 36
+   */
+  requestKey: string;
+}
+
+/**
+ * 출금 상태
+ */
+export type WithdrawalResponseStatus = typeof WithdrawalResponseStatus[keyof typeof WithdrawalResponseStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const WithdrawalResponseStatus = {
+  PENDING: 'PENDING',
+  COMPLETED: 'COMPLETED',
+  FAILED: 'FAILED',
+} as const;
+
+/**
+ * 포인트 출금 내역 항목
+ */
+export interface WithdrawalResponse {
+  /** 요청 시점 예금주 스냅샷 */
+  accountHolderName?: string;
+  /** 출금 금액 */
+  amount?: number;
+  /** 요청 시점 은행 코드 스냅샷 */
+  bankCode?: string;
+  /** 실패 사유(FAILED 만) */
+  failureReason?: string;
+  /** 요청 시점 마스킹 계좌번호 스냅샷 */
+  maskedAccountNumber?: string;
+  /** 처리 완료 시각(COMPLETED·FAILED 만) */
+  processedAt?: string;
+  /** 요청 시각 */
+  requestedAt?: string;
+  /** 출금 상태 */
+  status?: WithdrawalResponseStatus;
+  /** 출금 식별자 */
+  withdrawalId?: number;
+}
+
 export type GetDeliveriesParams = {
 /**
  * 배송 상태 필터(미지정 시 전체)
@@ -816,7 +1350,108 @@ export const GetDeliveriesStatus = {
   CANCELED: 'CANCELED',
 } as const;
 
+export type GetCustomerPointTransactionsParams = {
+/**
+ * 거래 유형 필터(미지정 시 전체)
+ */
+type?: GetCustomerPointTransactionsType;
+/**
+ * 페이지(0부터)
+ */
+page?: number;
+/**
+ * 페이지 크기
+ */
+size?: number;
+};
+
+export type GetCustomerPointTransactionsType = typeof GetCustomerPointTransactionsType[keyof typeof GetCustomerPointTransactionsType];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const GetCustomerPointTransactionsType = {
+  CHARGE: 'CHARGE',
+  CHARGE_REFUND: 'CHARGE_REFUND',
+  ORDER_USE: 'ORDER_USE',
+  ORDER_REFUND: 'ORDER_REFUND',
+  SETTLEMENT: 'SETTLEMENT',
+  WITHDRAWAL: 'WITHDRAWAL',
+  WITHDRAWAL_REFUND: 'WITHDRAWAL_REFUND',
+} as const;
+
 export type CheckLoginIdAvailabilityParams = {
 loginId: string;
 };
+
+export type GetRiderSettlementsParams = {
+/**
+ * 페이지(0부터)
+ */
+page?: number;
+/**
+ * 페이지 크기
+ */
+size?: number;
+};
+
+export type GetRiderPointTransactionsParams = {
+/**
+ * 거래 유형 필터(미지정 시 전체)
+ */
+type?: GetRiderPointTransactionsType;
+/**
+ * 페이지(0부터)
+ */
+page?: number;
+/**
+ * 페이지 크기
+ */
+size?: number;
+};
+
+export type GetRiderPointTransactionsType = typeof GetRiderPointTransactionsType[keyof typeof GetRiderPointTransactionsType];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const GetRiderPointTransactionsType = {
+  CHARGE: 'CHARGE',
+  CHARGE_REFUND: 'CHARGE_REFUND',
+  ORDER_USE: 'ORDER_USE',
+  ORDER_REFUND: 'ORDER_REFUND',
+  SETTLEMENT: 'SETTLEMENT',
+  WITHDRAWAL: 'WITHDRAWAL',
+  WITHDRAWAL_REFUND: 'WITHDRAWAL_REFUND',
+} as const;
+
+export type GetRiderWithdrawalsParams = {
+/**
+ * 페이지(0부터)
+ */
+page?: number;
+/**
+ * 페이지 크기
+ */
+size?: number;
+};
+
+export type GetDeliveryRequestsParams = {
+/**
+ * 검색 반경(m)
+ */
+radiusMeters?: number;
+/**
+ * 정렬 기준
+ */
+sort?: GetDeliveryRequestsSort;
+};
+
+export type GetDeliveryRequestsSort = typeof GetDeliveryRequestsSort[keyof typeof GetDeliveryRequestsSort];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const GetDeliveryRequestsSort = {
+  DISTANCE: 'DISTANCE',
+  FARE: 'FARE',
+  REQUESTED_AT: 'REQUESTED_AT',
+} as const;
 

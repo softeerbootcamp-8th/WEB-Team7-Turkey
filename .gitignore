@@ -41,3 +41,9 @@ frontend/.claude/hooks/
 
 # 개인 작업 메모. 팀 공유 문서는 docs/ 와 Wiki(ADR)를 쓴다.
 /plan.md
+
+# 실제 비밀값(모니터링 EC2 등 infra .env / mysqld_exporter .my.cnf). 템플릿만 커밋한다.
+.env
+!.env.example
+.my.cnf
+!.my.cnf.example

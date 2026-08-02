@@ -53,6 +53,15 @@ spring:
 server:
   port: 8080
 
+# --- Actuator: 모니터링(Prometheus)용 지표 노출 ---
+# 별도 포트로 분리해, 보안그룹에서 앱 포트(8080)와 독립적으로 접근을 제한할 수 있게 한다.
+management:
+  server:
+    port: 8081
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
 # --- 공개 접근 도메인 ---
 # CloudFront가 EC2로 요청을 넘길 때 Host 헤더를 오리진(EC2) 도메인으로 덮어써서,
 # springdoc이 자동 추론하는 OpenAPI 서버 URL이 EC2 주소로 잡힌다(OpenApiConfig 참고).

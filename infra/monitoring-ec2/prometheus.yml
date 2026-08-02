@@ -1,0 +1,31 @@
+# <...-사설IP> 자리는 실제 배포 전에 이 VPC의 실제 사설 IP로 바꿔넣는다.
+# Prometheus 는 설정 파일의 env var 치환을 지원하지 않아서(docker-compose 와 다름)
+# 값을 직접 적어야 한다.
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  # 앱 자체 지표(JVM, GC, HTTP 처리시간, DB 커넥션 풀) — application.yml 의 management.server.port
+  - job_name: spring-app
+    static_configs:
+      - targets: ["10.0.10.215:8081"]
+
+  # 앱 EC2 호스트 지표(CPU, 메모리, 디스크, 네트워크)
+  - job_name: node-app
+    static_configs:
+      - targets: ["10.0.10.215:9100"]
+
+  # Redis EC2 호스트 지표
+  - job_name: node-redis
+    static_configs:
+      - targets: ["10.0.130.0:9100"]
+
+  # Redis 자체 지표(커넥션 수, 메모리, hit/miss)
+  - job_name: redis
+    static_configs:
+      - targets: ["10.0.130.0:9121"]
+
+  # DB 지표 — mysqld-exporter 는 이 compose 안에서 같이 뜨므로 서비스명으로 접근한다
+  - job_name: mysql
+    static_configs:
+      - targets: ["mysqld-exporter:9104"]

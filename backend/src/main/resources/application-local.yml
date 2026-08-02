@@ -10,9 +10,11 @@
 spring:
   datasource:
     # tinyInt1isBit=false: TINYINT(1) 을 BIT 이 아닌 TINYINT 으로 받게 한다(배포 URL 과 동일 설정).
-    url: jdbc:mysql://localhost:3306/turkey?tinyInt1isBit=false
-    username: turkey
-    password: local
+    # env var 로 override 가능하게 한다 — 로컬 bootRun 은 기본값(localhost) 그대로 쓰고,
+    # docker-compose 로 앱까지 컨테이너로 띄울 때는 DB_URL 등을 서비스명(mysql)으로 넘긴다.
+    url: ${DB_URL:jdbc:mysql://localhost:3306/turkey?tinyInt1isBit=false}
+    username: ${DB_USERNAME:turkey}
+    password: ${DB_PASSWORD:local}
 
   flyway:
     enabled: true
@@ -23,3 +25,7 @@ session:
 
 app:
   public-base-url: ""
+
+logging:
+  level:
+    com.turkey.quick: DEBUG

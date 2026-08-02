@@ -2,15 +2,9 @@ import { QueryClient } from '@tanstack/react-query'
 import { AxiosError, AxiosHeaders, type AxiosResponse } from 'axios'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-/**
- * 세션 합성 조회의 분기를 고정한다.
- *
- * 여기서 틀리면 증상이 큰 쪽으로 난다 — 401 이 아닌 실패를 만료로 처리하면 서버가 잠깐 흔들릴 때
- * 접속자 전원이 로그인 화면으로 튕긴다(#195 예외 흐름).
- */
-
 const getCustomerSession = vi.fn()
 const getRiderSession = vi.fn()
+const roleState = vi.hoisted(() => ({ value: null as 'CUSTOMER' | 'RIDER' | null }))
 
 vi.mock('@/api/generated/customer-session/customer-session', () => ({
   getCustomerSession: (...args: unknown[]) => getCustomerSession(...args),
@@ -22,7 +16,23 @@ vi.mock('@/api/generated/rider-session/rider-session', () => ({
   getGetRiderSessionQueryKey: () => ['/api/rider/session'],
 }))
 
-const { ensureSessionInfo, clearSessionQueries, isUnauthorized } = await import('./session')
+vi.mock('./sessionRole', () => ({
+  readStoredSessionRole: () => roleState.value,
+  storeSessionRole: (role: 'CUSTOMER' | 'RIDER') => {
+    roleState.value = role
+  },
+  clearStoredSessionRole: () => {
+    roleState.value = null
+  },
+}))
+
+const {
+  ensureSessionInfo,
+  clearSessionQueries,
+  cacheAuthenticatedCustomer,
+  cacheAuthenticatedRider,
+  isUnauthorized,
+} = await import('./session')
 
 function httpError(status: number): AxiosError {
   const response = { status, data: null, statusText: '', headers: {}, config: {} } as unknown as AxiosResponse
@@ -37,22 +47,35 @@ let queryClient: QueryClient
 
 beforeEach(() => {
   vi.clearAllMocks()
+  roleState.value = null
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 })
 
-describe('ensureSessionInfo - 역할 판정', () => {
-  it('고객 세션이 200 이면 CUSTOMER 로 판정한다', async () => {
-    getCustomerSession.mockResolvedValue({ success: true, data: { memberId: 1, loginId: 'c1', name: '고객' } })
-    getRiderSession.mockRejectedValue(httpError(401))
+describe('ensureSessionInfo - 저장된 역할에 따른 단일 조회', () => {
+  it('저장된 역할이 없으면 어느 세션 API도 호출하지 않는다', async () => {
+    await expect(ensureSessionInfo(queryClient)).resolves.toEqual({ role: null })
+
+    expect(getCustomerSession).not.toHaveBeenCalled()
+    expect(getRiderSession).not.toHaveBeenCalled()
+  })
+
+  it('CUSTOMER 역할이면 고객 세션만 조회한다', async () => {
+    roleState.value = 'CUSTOMER'
+    getCustomerSession.mockResolvedValue({
+      success: true,
+      data: { memberId: 1, loginId: 'c1', name: '고객' },
+    })
 
     await expect(ensureSessionInfo(queryClient)).resolves.toEqual({
       role: 'CUSTOMER',
       customer: { memberId: 1, loginId: 'c1', name: '고객' },
     })
+    expect(getCustomerSession).toHaveBeenCalledTimes(1)
+    expect(getRiderSession).not.toHaveBeenCalled()
   })
 
-  it('라이더 세션이 200 이면 RIDER 로 판정하고 운행 상태를 함께 담는다', async () => {
-    getCustomerSession.mockRejectedValue(httpError(401))
+  it('RIDER 역할이면 라이더 세션만 조회한다', async () => {
+    roleState.value = 'RIDER'
     getRiderSession.mockResolvedValue({
       success: true,
       data: { memberId: 2, loginId: 'r1', name: '라이더', operatingStatus: 'BUSY' },
@@ -62,68 +85,97 @@ describe('ensureSessionInfo - 역할 판정', () => {
       role: 'RIDER',
       rider: { memberId: 2, loginId: 'r1', name: '라이더', operatingStatus: 'BUSY' },
     })
+    expect(getCustomerSession).not.toHaveBeenCalled()
+    expect(getRiderSession).toHaveBeenCalledTimes(1)
   })
 
-  it('양쪽 모두 401 이면 비로그인으로 판정한다', async () => {
+  it('선택한 세션 API가 401이면 역할을 제거하고 비로그인으로 판정한다', async () => {
+    roleState.value = 'CUSTOMER'
     getCustomerSession.mockRejectedValue(httpError(401))
-    getRiderSession.mockRejectedValue(httpError(401))
 
     await expect(ensureSessionInfo(queryClient)).resolves.toEqual({ role: null })
+    expect(roleState.value).toBeNull()
+    expect(getRiderSession).not.toHaveBeenCalled()
   })
 })
 
 describe('ensureSessionInfo - 실패를 만료로 오해하지 않는다', () => {
-  it('한쪽이 5xx 면 비로그인이 아니라 오류를 올린다', async () => {
+  it('선택한 API의 5xx는 비로그인이 아니라 오류를 올린다', async () => {
+    roleState.value = 'CUSTOMER'
     getCustomerSession.mockRejectedValue(httpError(500))
-    getRiderSession.mockRejectedValue(httpError(401))
 
     await expect(ensureSessionInfo(queryClient)).rejects.toMatchObject({ response: { status: 500 } })
+    expect(roleState.value).toBe('CUSTOMER')
   })
 
   it('네트워크 오류도 비로그인이 아니라 오류를 올린다', async () => {
-    getCustomerSession.mockRejectedValue(networkError())
+    roleState.value = 'RIDER'
     getRiderSession.mockRejectedValue(networkError())
 
     await expect(ensureSessionInfo(queryClient)).rejects.toMatchObject({ code: AxiosError.ERR_NETWORK })
+    expect(roleState.value).toBe('RIDER')
   })
 
-  it('200 인데 body 에 data 가 없으면 오류를 올린다', async () => {
+  it('200인데 body에 data가 없으면 오류를 올린다', async () => {
+    roleState.value = 'CUSTOMER'
     getCustomerSession.mockResolvedValue({ success: true })
-    getRiderSession.mockRejectedValue(httpError(401))
 
     await expect(ensureSessionInfo(queryClient)).rejects.toThrow(/data 가 없습니다/)
   })
 })
 
-describe('ensureSessionInfo - 캐시 공유', () => {
-  it('신선한 세션이 캐시에 있으면 어느 세션 API 도 다시 부르지 않는다', async () => {
-    getCustomerSession.mockResolvedValue({ success: true, data: { memberId: 1, loginId: 'c1', name: '고객' } })
-    getRiderSession.mockRejectedValue(httpError(401))
+describe('ensureSessionInfo - 로그인 캐시와 역할 저장', () => {
+  it('고객 로그인 응답은 CUSTOMER 역할과 고객 세션을 캐시한다', async () => {
+    const customer = { memberId: 1, loginId: 'c1', name: '고객' }
 
-    await ensureSessionInfo(queryClient)
-    expect(getCustomerSession).toHaveBeenCalledTimes(1)
-    expect(getRiderSession).toHaveBeenCalledTimes(1)
+    cacheAuthenticatedCustomer(queryClient, customer)
 
-    // 두 번째 가드 평가(=화면 전환). 실패가 예정된 라이더 세션 요청을 반복하지 않아야 한다.
-    await ensureSessionInfo(queryClient)
-    expect(getCustomerSession).toHaveBeenCalledTimes(1)
-    expect(getRiderSession).toHaveBeenCalledTimes(1)
+    expect(roleState.value).toBe('CUSTOMER')
+    await expect(ensureSessionInfo(queryClient)).resolves.toEqual({ role: 'CUSTOMER', customer })
+    expect(getCustomerSession).not.toHaveBeenCalled()
+    expect(getRiderSession).not.toHaveBeenCalled()
   })
 
-  it('세션 캐시를 지우면 다시 조회한다', async () => {
-    getCustomerSession.mockResolvedValue({ success: true, data: { memberId: 1, loginId: 'c1', name: '고객' } })
-    getRiderSession.mockRejectedValue(httpError(401))
+  it('라이더 로그인 응답은 RIDER 역할과 라이더 세션을 캐시한다', async () => {
+    const rider = { memberId: 2, loginId: 'r1', name: '라이더', operatingStatus: 'AVAILABLE' as const }
+
+    cacheAuthenticatedRider(queryClient, rider)
+
+    expect(roleState.value).toBe('RIDER')
+    await expect(ensureSessionInfo(queryClient)).resolves.toEqual({ role: 'RIDER', rider })
+    expect(getCustomerSession).not.toHaveBeenCalled()
+    expect(getRiderSession).not.toHaveBeenCalled()
+  })
+
+  it('신선한 세션 캐시가 있으면 선택한 API도 다시 부르지 않는다', async () => {
+    roleState.value = 'CUSTOMER'
+    getCustomerSession.mockResolvedValue({
+      success: true,
+      data: { memberId: 1, loginId: 'c1', name: '고객' },
+    })
 
     await ensureSessionInfo(queryClient)
+    await ensureSessionInfo(queryClient)
+
+    expect(getCustomerSession).toHaveBeenCalledTimes(1)
+    expect(getRiderSession).not.toHaveBeenCalled()
+  })
+
+  it('세션 정리 시 역할 힌트와 두 역할 캐시를 함께 제거한다', async () => {
+    const customer = { memberId: 1, loginId: 'c1', name: '고객' }
+    cacheAuthenticatedCustomer(queryClient, customer)
+
     clearSessionQueries(queryClient)
-    await ensureSessionInfo(queryClient)
 
-    expect(getCustomerSession).toHaveBeenCalledTimes(2)
+    expect(roleState.value).toBeNull()
+    await expect(ensureSessionInfo(queryClient)).resolves.toEqual({ role: null })
+    expect(getCustomerSession).not.toHaveBeenCalled()
+    expect(getRiderSession).not.toHaveBeenCalled()
   })
 })
 
 describe('isUnauthorized', () => {
-  it('401 만 참으로 본다', () => {
+  it('401만 참으로 본다', () => {
     expect(isUnauthorized(httpError(401))).toBe(true)
     expect(isUnauthorized(httpError(403))).toBe(false)
     expect(isUnauthorized(httpError(500))).toBe(false)

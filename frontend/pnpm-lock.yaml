@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@capacitor/core':
+        specifier: ^8.5.0
+        version: 8.5.0
       '@tanstack/react-query':
         specifier: ^5.62.0
         version: 5.101.4(react@19.2.8)
@@ -168,6 +171,9 @@ packages:
   '@babel/types@7.29.7':
     resolution: {integrity: sha512-4zBIxpPzowiZpusoFkyGVwakdRJUyuH5PxQ/PrqghfdFWWasvnCdPfQXHrenDai+gyLARulZjZowCOj6fjT4pA==}
     engines: {node: '>=6.9.0'}
+
+  '@capacitor/core@8.5.0':
+    resolution: {integrity: sha512-Ca4krtqH1hothjtBIwf2J2TW7IhYq1ujp8QeItTiJohNsqij8ja2DYYH3DU0l8RmxCWaBAFTGA2TgOgOMCSNsQ==}
 
   '@commander-js/extra-typings@14.0.0':
     resolution: {integrity: sha512-hIn0ncNaJRLkZrxBIp5AsW/eXEHNKYQBh0aPdoUqNgD+Io3NIykQqpKFyKcuasZhicGaEZJX/JBSIkZ4e5x8Dg==}
@@ -2518,6 +2524,10 @@ snapshots:
     dependencies:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
+
+  '@capacitor/core@8.5.0':
+    dependencies:
+      tslib: 2.8.1
 
   '@commander-js/extra-typings@14.0.0(commander@14.0.3)':
     dependencies:

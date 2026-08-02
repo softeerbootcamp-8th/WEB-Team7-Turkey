@@ -36,7 +36,10 @@ public class RiderWebMvcConfig implements WebMvcConfigurer {
                 .addPathPatterns("/api/rider/session",
                                  "/api/rider/requests",
                                  "/api/rider/requests/**",
-                                 "/api/rider/location"   
+                                 "/api/rider/location",
+                                 "/api/rider/operating-status",
+                                 "/api/rider/points",
+                                 "/api/rider/points/**"
                                 );
     }
 }

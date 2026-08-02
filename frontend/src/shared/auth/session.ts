@@ -5,15 +5,23 @@ import {
   getGetCustomerSessionQueryKey,
 } from '@/api/generated/customer-session/customer-session'
 import { getGetRiderSessionQueryKey, getRiderSession } from '@/api/generated/rider-session/rider-session'
+import type {
+  CustomerSessionResponse,
+  RiderSessionResponse,
+} from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
 import type { SessionInfo } from './guard'
+import {
+  clearStoredSessionRole,
+  readStoredSessionRole,
+  storeSessionRole,
+  type SessionRole,
+} from './sessionRole'
 
 /**
- * 세션 확인 쿼리와, 역할을 모르는 상태에서 로그인 여부를 판정하는 합성 조회.
+ * 세션 확인 쿼리와 저장된 역할 힌트에 따른 단일 조회.
  *
- * 백엔드 세션 API 는 `customer-session` · `rider-session` 으로 역할별로 갈려 있고 역할 무관
- * 조회 API 가 없다. 그래서 두 API 를 모두 시도해 하나라도 200 이면 그 역할로 로그인된 것으로 본다
- * (#195 사람 확인). 역할 불일치도 서버가 401 로 주므로, 고객 세션 API 의 401 만으로는
- * "비로그인"과 "라이더로 로그인"을 구분할 수 없다 — 그 구분이 이 합성의 존재 이유다.
+ * 역할별 세션 API 를 병렬 호출하면 반대 역할의 401 응답이 공용 SESSION_ID 쿠키를 만료시킨다(#288).
+ * 로그인 성공 시 저장한 역할은 조회 대상을 고르는 힌트일 뿐이며, 인증·인가는 서버 세션이 담당한다.
  */
 
 /**
@@ -56,20 +64,20 @@ class MalformedSessionResponseError extends Error {
 }
 
 /**
- * 캐시에 아직 신선한 세션이 있으면 그것만으로 판정한다.
- *
- * 이게 없으면 라우트를 옮길 때마다 "내 역할이 아닌 쪽" 세션 API 로 실패가 예정된 요청을 매번 보낸다
- * (401 은 캐시되지 않으므로 ensureQueryData 가 계속 재요청한다). 이슈가 요구하는
- * "화면마다 다시 요청하지 않도록 캐시를 공유한다"를 만족시키는 지점이다.
+ * 저장된 역할과 일치하는 신선한 세션 캐시가 있으면 네트워크를 다시 조회하지 않는다.
+ * 다른 탭에서 역할 힌트가 바뀐 경우에는 이전 역할 캐시를 재사용하지 않는다.
  */
-function readFreshSession(queryClient: QueryClient): SessionInfo | undefined {
+function readFreshSession(queryClient: QueryClient, role: SessionRole): SessionInfo | undefined {
   const now = Date.now()
 
-  const customerState = queryClient.getQueryState<Awaited<ReturnType<typeof getCustomerSession>>>(
-    getGetCustomerSessionQueryKey(),
-  )
-  if (customerState?.data?.data && now - customerState.dataUpdatedAt < SESSION_STALE_TIME) {
-    return { role: 'CUSTOMER', customer: customerState.data.data }
+  if (role === 'CUSTOMER') {
+    const customerState = queryClient.getQueryState<Awaited<ReturnType<typeof getCustomerSession>>>(
+      getGetCustomerSessionQueryKey(),
+    )
+    if (customerState?.data?.data && now - customerState.dataUpdatedAt < SESSION_STALE_TIME) {
+      return { role: 'CUSTOMER', customer: customerState.data.data }
+    }
+    return undefined
   }
 
   const riderState = queryClient.getQueryState<Awaited<ReturnType<typeof getRiderSession>>>(
@@ -89,40 +97,73 @@ function readFreshSession(queryClient: QueryClient): SessionInfo | undefined {
  * 로그아웃되기 때문이다. 라우트는 이 throw 를 errorComponent 로 받아 오류 상태를 보여준다.
  */
 export async function ensureSessionInfo(queryClient: QueryClient): Promise<SessionInfo> {
-  const cached = readFreshSession(queryClient)
+  const role = readStoredSessionRole()
+  if (!role) {
+    return { role: null }
+  }
+
+  const cached = readFreshSession(queryClient, role)
   if (cached) {
     return cached
   }
 
-  const [customer, rider] = await Promise.allSettled([
-    queryClient.ensureQueryData(customerSessionQueryOptions()),
-    queryClient.ensureQueryData(riderSessionQueryOptions()),
-  ])
-
-  if (customer.status === 'fulfilled') {
-    if (!customer.value.data) {
-      throw new MalformedSessionResponseError('CUSTOMER')
+  try {
+    if (role === 'CUSTOMER') {
+      const customer = await queryClient.ensureQueryData(customerSessionQueryOptions())
+      if (!customer.data) {
+        throw new MalformedSessionResponseError('CUSTOMER')
+      }
+      return { role: 'CUSTOMER', customer: customer.data }
     }
-    return { role: 'CUSTOMER', customer: customer.value.data }
-  }
-  if (rider.status === 'fulfilled') {
-    if (!rider.value.data) {
+
+    const rider = await queryClient.ensureQueryData(riderSessionQueryOptions())
+    if (!rider.data) {
       throw new MalformedSessionResponseError('RIDER')
     }
-    return { role: 'RIDER', rider: rider.value.data }
-  }
+    return { role: 'RIDER', rider: rider.data }
+  } catch (error) {
+    if (isUnauthorized(error)) {
+      clearSessionQueries(queryClient)
+      return { role: null }
+    }
 
-  const unexpected = [customer.reason, rider.reason].find((reason) => !isUnauthorized(reason))
-  if (unexpected) {
-    throw unexpected
+    throw error
   }
-
-  // 양쪽 모두 401 — 어느 역할로도 로그인되어 있지 않다.
-  return { role: null }
 }
 
-/** 로그아웃·만료 시 캐시된 세션을 버린다. invalidate 가 아니라 remove — 만료된 세션을 남겨둘 이유가 없다. */
+/** 로그아웃·만료 시 역할 힌트와 캐시된 세션을 함께 버린다. */
 export function clearSessionQueries(queryClient: QueryClient): void {
+  clearStoredSessionRole()
   queryClient.removeQueries({ queryKey: getGetCustomerSessionQueryKey() })
   queryClient.removeQueries({ queryKey: getGetRiderSessionQueryKey() })
+}
+
+/**
+ * 고객 로그인 응답으로 고객 세션 캐시를 확정한다.
+ *
+ * 로그인 직후 역할은 이미 CUSTOMER 로 확인됐다. 이때 캐시를 비워 둔 채 가드가 역할을 다시
+ * 탐색하면 고객·라이더 세션 API 를 함께 호출하고, 라이더 역할 불일치 401 의 만료 쿠키가 방금
+ * 발급된 공용 SESSION_ID 를 삭제할 수 있다. 반대 역할을 재조회하지 않도록 로그인 응답을
+ * 고객 세션 조회와 같은 형태로 저장한다.
+ */
+export function cacheAuthenticatedCustomer(
+  queryClient: QueryClient,
+  customer: CustomerSessionResponse,
+): void {
+  clearSessionQueries(queryClient)
+  storeSessionRole('CUSTOMER')
+  queryClient.setQueryData(getGetCustomerSessionQueryKey(), {
+    success: true,
+    data: customer,
+  })
+}
+
+/** 라이더 로그인 응답으로 역할 힌트와 라이더 세션 캐시를 확정한다. */
+export function cacheAuthenticatedRider(queryClient: QueryClient, rider: RiderSessionResponse): void {
+  clearSessionQueries(queryClient)
+  storeSessionRole('RIDER')
+  queryClient.setQueryData(getGetRiderSessionQueryKey(), {
+    success: true,
+    data: rider,
+  })
 }

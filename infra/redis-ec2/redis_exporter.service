@@ -1,0 +1,11 @@
+[Unit]
+Description=Redis Exporter
+After=network.target redis.service
+
+[Service]
+Environment=REDIS_ADDR=redis://localhost:6379
+ExecStart=/usr/local/bin/redis_exporter
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

@@ -1,6 +1,8 @@
 package com.turkey.quick.order.controller;
 
 import com.turkey.quick.common.response.ApiResponse;
+import com.turkey.quick.customer.auth.AuthenticatedCustomer;
+import com.turkey.quick.customer.auth.CustomerSessionInterceptor;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.DeliveryCancelRequest;
 import com.turkey.quick.order.dto.DeliveryCancelResponse;
@@ -23,6 +25,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -73,20 +76,38 @@ public interface CustomerDeliveryApi {
     @PostMapping("/quote")
     ApiResponse<FareQuoteResponse> quoteFare(@RequestBody FareQuoteRequest request);
 
-    @Operation(summary = "배송요청 생성",
-            description = "배송요청을 WAITING 으로 생성하고 예상 운임(ESTIMATE) 스냅샷을 함께 남긴다. "
+    @Operation(operationId = "createCustomerDelivery",
+            summary = "배송요청 생성",
+            description = "배송요청을 WAITING 으로 생성하고 예상 운임(ESTIMATE) 스냅샷을 남긴 뒤 "
+                    + "그 요금만큼 포인트를 차감한다(REQ-ORD-002 + CUS-PAY-002). "
+                    + "셋은 하나의 트랜잭션이라 어느 하나가 실패하면 전부 롤백된다 — 주문만 생기거나 "
+                    + "포인트만 빠져나가는 상태는 만들어지지 않는다. "
+                    + "요금은 좌표로 서버가 다시 계산하며, 요청의 estimatedFare 는 대조용이다. "
+                    + "화면이 안내한 금액과 서버 계산이 다르면 주문을 만들지 않고 409 로 알린다 — "
+                    + "사용자가 동의하지 않은 금액을 결제하지 않기 위해서다. "
                     + "고객은 진행 중(WAITING~DELIVERING) 요청을 1건만 가질 수 있다. "
-                    + "같은 requestKey 로 재전송하면 새로 만들지 않고 기존 결과를 돌려준다.")
+                    + "같은 requestKey 로 재전송하면 새로 만들지 않고 기존 결과를 돌려주며 포인트도 "
+                    + "다시 차감하지 않는다.")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "201", description = "생성 성공"),
+                    responseCode = "201", description = "생성 성공(재전송 시 기존 주문의 결과)"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "409", description = "진행 중 배송요청이 이미 있음")
+                    responseCode = "400",
+                    description = "입력값 오류, 최대 배송 거리 초과, 또는 활성 요금 정책 없음"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401", description = "미로그인 또는 세션 만료"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "402", description = "포인트 잔액이 배송요금보다 적음"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "409",
+                    description = "진행 중 배송요청이 이미 있거나 동일 요청이 동시에 처리 중, "
+                            + "또는 서버 재계산 요금이 요청의 estimatedFare 와 다름")
     })
     @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(
             examples = @ExampleObject(value = """
                     {
                       "requestKey": "6c1f1a0e-6f7a-4b2b-9a3f-6b0d7f2a1c34",
+                      "estimatedFare": 6400,
                       "itemType": "DOCUMENT",
                       "pickup": {
                         "roadAddress": "서울 강남구 테헤란로 152",
@@ -114,6 +135,12 @@ public interface CustomerDeliveryApi {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     ApiResponse<DeliveryCreateResponse> createDelivery(
+            // 세션에서 얻은 고객이 곧 주문의 주인이다. 요청 바디로 받으면 남의 주문을 만들 수 있다.
+            // 이 파라미터는 클라이언트가 채울 수 없으므로 스웨거 문서에도 노출되지 않는다.
+            // (RiderDeliveryRequestApi 와 같은 방식 — 이 파일은 매핑을 인터페이스에 두는 옛 형태다)
+            @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
+            AuthenticatedCustomer customer,
+
             @Valid @RequestBody DeliveryCreateRequest request);
 
     @Operation(summary = "배송요청 목록",
@@ -135,13 +162,35 @@ public interface CustomerDeliveryApi {
             @Parameter(description = "배송요청 식별자", example = "1234")
             @PathVariable Long deliveryId);
 
+    /**
+     * 실패 응답이 SSE 스트림({@code GET .../tracking/stream})과 정확히 같은 판정을 쓴다 — 즉
+     * <b>이 API 가 200 이면 그 스트림도 열린다.</b> 프론트가 이 보장에 기대는 이유는 브라우저
+     * {@code EventSource} 가 상태코드·본문을 스크립트에 노출하지 않아, 스트림이 왜 실패했는지 알 수
+     * 있는 통로가 이 REST 뿐이라는 것이다({@code docs/04-frontend-api-map.md} §7).
+     *
+     * <p>{@code estimatedArrivalAt} 은 <b>현재 항상 null</b> 이다(산정 근거가 없다).
+     * {@code steps} 는 {@code delivery_order} 의 단계별 시각 컬럼에서 파생한다.
+     */
     @Operation(summary = "배송 추적 스냅샷",
             description = "추적 화면 진입 시 한 번 그릴 상태·타임라인·라이더 정보를 조회한다. "
-                    + "이후 위치·상태 갱신은 location 도메인의 SSE 스트림이 밀어 준다(폴링하지 않는다(변동가능)).")
+                    + "이후 위치·상태 갱신은 location 도메인의 SSE 스트림이 밀어 준다(폴링하지 않는다(변동가능)). "
+                    + "실패 판정은 스트림과 동일하다: 404(없거나 타인 주문), 409(WAITING·COMPLETED·CANCELED).")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200", description = "조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404", description = "배송요청이 없거나 본인 것이 아님"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "409", description = "추적할 수 없는 상태(배차 전·완료·취소)")
+    })
     @GetMapping("/{deliveryId}/tracking")
     ApiResponse<DeliveryTrackingResponse> getDeliveryTracking(
             @Parameter(description = "배송요청 식별자", example = "1234")
-            @PathVariable Long deliveryId);
+            @PathVariable Long deliveryId,
+
+            @Parameter(hidden = true)
+            @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
+            AuthenticatedCustomer customer);
 
     @Operation(summary = "배송요청 취소",
             description = "배차 전(WAITING)에만 허용한다. ASSIGNED 이상은 MVP 범위 밖이라 거부된다.")
