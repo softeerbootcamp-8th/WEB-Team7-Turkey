@@ -1,7 +1,10 @@
 package com.turkey.quick.location.controller;
 
+import com.turkey.quick.customer.auth.AuthenticatedCustomer;
 import com.turkey.quick.location.sse.SseRegistry;
 import java.io.IOException;
+
+import com.turkey.quick.order.service.DeliveryTrackingAccessService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.RestController;
@@ -13,9 +16,13 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class CustomerTrackingStreamController implements CustomerTrackingStreamApi {
     private static final Long TTL = 1000L;
     private final SseRegistry registry;
+    private final DeliveryTrackingAccessService deliveryTrackingAccessService;
 
     @Override
-    public SseEmitter subscribeTracking(Long deliveryId) {
+    public SseEmitter subscribeTracking(Long deliveryId, AuthenticatedCustomer customer) {
+        // BusinessException은 GlobalExceptionHandler가 상태 코드·메시지 그대로 처리한다 —
+        // 여기서 잡아서 다시 던지면 404(없음/타인 것)와 409(추적 불가 상태)가 구분 안 된다.
+        deliveryTrackingAccessService.authorizeTracking(deliveryId, customer.memberId());
         SseEmitter emitter = new SseEmitter(TTL);
 
         registry.add(deliveryId, emitter);
