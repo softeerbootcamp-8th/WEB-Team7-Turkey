@@ -39,14 +39,15 @@ public interface RiderOperatingStatusApi {
     })
     ApiResponse<RiderOperatingStatusResponse> getOperatingStatus(AuthenticatedRider rider);
 
-    @Operation(summary = "운행 상태 변경",
+    @Operation(operationId = "changeRiderOperatingStatus", summary = "운행 상태 변경",
             description = "콜 받기(GO_ONLINE) / 운행 종료(GO_OFFLINE). 목표 상태가 아니라 행위를 받는다. "
-                    + "배송 수행 중(BUSY)에는 종료할 수 없다.")
+                    + "배송 수행 중(BUSY)에는 직접 변경할 수 없고, 이미 같은 상태면 오류 없이 현재 상태를 반환한다.")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "200", description = "변경 성공"),
+                    responseCode = "200", description = "변경 성공 또는 이미 같은 상태(멱등)"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "409", description = "현재 상태에서 허용되지 않는 전이")
+                    responseCode = "409", description = "배송 수행 중(BUSY)이라 직접 변경할 수 없음")
     })
-    ApiResponse<RiderOperatingStatusResponse> changeOperatingStatus(RiderOperatingStatusUpdateRequest request);
+    ApiResponse<RiderOperatingStatusResponse> changeOperatingStatus(
+            AuthenticatedRider rider, RiderOperatingStatusUpdateRequest request);
 }

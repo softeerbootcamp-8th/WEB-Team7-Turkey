@@ -1,0 +1,5 @@
+[client]
+user = exporter
+password = change-me
+host = <DB-사설IP-또는-RDS-엔드포인트>
+port = 3306

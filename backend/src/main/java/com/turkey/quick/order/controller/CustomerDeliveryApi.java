@@ -162,13 +162,35 @@ public interface CustomerDeliveryApi {
             @Parameter(description = "배송요청 식별자", example = "1234")
             @PathVariable Long deliveryId);
 
+    /**
+     * 실패 응답이 SSE 스트림({@code GET .../tracking/stream})과 정확히 같은 판정을 쓴다 — 즉
+     * <b>이 API 가 200 이면 그 스트림도 열린다.</b> 프론트가 이 보장에 기대는 이유는 브라우저
+     * {@code EventSource} 가 상태코드·본문을 스크립트에 노출하지 않아, 스트림이 왜 실패했는지 알 수
+     * 있는 통로가 이 REST 뿐이라는 것이다({@code docs/04-frontend-api-map.md} §7).
+     *
+     * <p>{@code estimatedArrivalAt} 은 <b>현재 항상 null</b> 이다(산정 근거가 없다).
+     * {@code steps} 는 {@code delivery_order} 의 단계별 시각 컬럼에서 파생한다.
+     */
     @Operation(summary = "배송 추적 스냅샷",
             description = "추적 화면 진입 시 한 번 그릴 상태·타임라인·라이더 정보를 조회한다. "
-                    + "이후 위치·상태 갱신은 location 도메인의 SSE 스트림이 밀어 준다(폴링하지 않는다(변동가능)).")
+                    + "이후 위치·상태 갱신은 location 도메인의 SSE 스트림이 밀어 준다(폴링하지 않는다(변동가능)). "
+                    + "실패 판정은 스트림과 동일하다: 404(없거나 타인 주문), 409(WAITING·COMPLETED·CANCELED).")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200", description = "조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404", description = "배송요청이 없거나 본인 것이 아님"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "409", description = "추적할 수 없는 상태(배차 전·완료·취소)")
+    })
     @GetMapping("/{deliveryId}/tracking")
     ApiResponse<DeliveryTrackingResponse> getDeliveryTracking(
             @Parameter(description = "배송요청 식별자", example = "1234")
-            @PathVariable Long deliveryId);
+            @PathVariable Long deliveryId,
+
+            @Parameter(hidden = true)
+            @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
+            AuthenticatedCustomer customer);
 
     @Operation(summary = "배송요청 취소",
             description = "배차 전(WAITING)에만 허용한다. ASSIGNED 이상은 MVP 범위 밖이라 거부된다.")

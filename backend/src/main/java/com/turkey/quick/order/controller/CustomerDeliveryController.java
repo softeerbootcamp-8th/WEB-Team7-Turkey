@@ -5,6 +5,7 @@ import com.turkey.quick.customer.auth.AuthenticatedCustomer;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.*;
 import com.turkey.quick.order.service.DeliveryService;
+import com.turkey.quick.order.service.DeliveryTrackingQueryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class CustomerDeliveryController implements CustomerDeliveryApi {
 
     private final DeliveryService deliveryService;
+    private final DeliveryTrackingQueryService deliveryTrackingQueryService;
 
     @Override
     public ApiResponse<FareQuoteResponse> quoteFare(FareQuoteRequest request) {
@@ -45,8 +47,9 @@ public class CustomerDeliveryController implements CustomerDeliveryApi {
     }
 
     @Override
-    public ApiResponse<DeliveryTrackingResponse> getDeliveryTracking(Long deliveryId) {
-        return null;
+    public ApiResponse<DeliveryTrackingResponse> getDeliveryTracking(
+            Long deliveryId, AuthenticatedCustomer customer) {
+        return ApiResponse.ok(deliveryTrackingQueryService.getTracking(deliveryId, customer.memberId()));
     }
 
     @Override

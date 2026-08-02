@@ -52,5 +52,64 @@ services:
       retries: 20
       start_period: 10s
 
+  # 부하 테스트용 spring 앱 컨테이너. 기본 `docker compose up -d` 에는 안 끼고,
+  # `--profile app` 을 줘야만 뜬다 — 평소 로컬 개발(bootRun)에는 영향 없음.
+  # `docker compose --profile app up -d --build --scale app=3` 처럼 여러 대로 늘릴 수 있다.
+  # ports 를 범위로 잡은 건 인스턴스마다 고정 호스트 포트를 하나씩 배정받게 하기 위함이다
+  # (호스트에서 도구로 특정 인스턴스를 직접 겨냥해 때릴 수 있다).
+  app:
+    build: .
+    profiles: ["app"]
+    ports:
+      - "8080-8089:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      DB_URL: jdbc:mysql://mysql:3306/turkey?tinyInt1isBit=false
+      DB_USERNAME: turkey
+      DB_PASSWORD: local
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # k6 부하 테스트 결과 시각화용. `--profile loadtest` 로 별도로 켠다(app profile 과 독립적).
+  influxdb:
+    image: influxdb:1.8
+    profiles: ["loadtest"]
+    environment:
+      INFLUXDB_DB: k6
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    profiles: ["loadtest"]
+    ports:
+      - "3000:3000"
+    environment:
+      # 로컬 1회성 부하테스트 시각화 용도라 익명 admin 허용 — 팀 공유용 모니터링은
+      # infra/monitoring-ec2 쪽(개별 로그인 계정)을 쓴다.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - influxdb
+
+  # 실행: docker compose --profile loadtest run --rm k6 run /scripts/<파일명>.js
+  # ./loadtest/ 에 시나리오 스크립트를 직접 작성해서 넣는다(리포지토리에는 없음).
+  k6:
+    image: grafana/k6:latest
+    profiles: ["loadtest"]
+    volumes:
+      - ./loadtest:/scripts
+    environment:
+      K6_OUT: influxdb=http://influxdb:8086/k6
+    depends_on:
+      - influxdb
+    entrypoint: ["k6"]
+
 volumes:
   turkey-mysql-data:
+  grafana-data:

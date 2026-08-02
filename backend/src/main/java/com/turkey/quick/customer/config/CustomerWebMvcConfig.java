@@ -39,6 +39,7 @@ public class CustomerWebMvcConfig implements WebMvcConfigurer {
                 .addPathPatterns(
                         "/api/customer/session",                                 // #27
                         "/api/customer/deliveries",                              // #37 (정확 경로)
+                        "/api/customer/deliveries/*/tracking",                   // #79
                         "/api/customer/deliveries/*/tracking/stream",            // #77
                         "/api/customer/points/**"
                 );

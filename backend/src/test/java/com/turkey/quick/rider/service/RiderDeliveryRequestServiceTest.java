@@ -6,6 +6,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willThrow;
 
 import com.turkey.quick.common.exception.BusinessException;
 import com.turkey.quick.location.repository.RiderGeoRepository;
@@ -406,6 +408,25 @@ class RiderDeliveryRequestServiceTest {
             assertThat(result.status()).isEqualTo(OrderStatus.ASSIGNED);
             assertThat(result.operatingStatus()).isEqualTo(OperatingStatus.BUSY);
             assertThat(result.assignedAt()).isNotNull();
+            then(riderGeoRepository).should().remove(RIDER_ID);
+        }
+
+        @Test
+        @DisplayName("배차 확정 후 GEO 후보 제거가 실패해도 배차 확정 응답은 그대로 성공한다(#83)")
+        void shouldSucceedEvenWhenGeoRemoveFails() {
+            DeliveryOrder assigned = order(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"), LocalDateTime.now());
+            ReflectionTestUtils.setField(assigned, "status", OrderStatus.ASSIGNED);
+            ReflectionTestUtils.setField(assigned, "assignedAt", LocalDateTime.now());
+            given(deliveryOrderRepository.assignIfWaiting(eq(assigned.getId()), eq(RIDER_ID), any(LocalDateTime.class)))
+                    .willReturn(1);
+            given(riderProfileRepository.markBusyIfAvailable(RIDER_ID)).willReturn(1);
+            given(deliveryOrderRepository.findById(assigned.getId())).willReturn(Optional.of(assigned));
+            willThrow(new RuntimeException("redis down")).given(riderGeoRepository).remove(RIDER_ID);
+
+            RiderDeliveryRequestAcceptResponse result =
+                    service.acceptDeliveryRequest(rider(OperatingStatus.AVAILABLE), assigned.getId());
+
+            assertThat(result.status()).isEqualTo(OrderStatus.ASSIGNED);
         }
     }
 }
