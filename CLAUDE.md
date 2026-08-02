@@ -190,6 +190,48 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   `EventSource` 는 `Accept: text/event-stream` 만 보내므로 401·409·429 가 전부 **406** 으로
   바뀌어 상태코드와 `ApiResponse` 본문을 둘 다 잃는다
 - `server.shutdown` 을 설정한 적이 없는데 graceful 로 동작한다(#77 에서 테스트 로그로 확인:
+  `Graceful shutdown aborted with one or more requests still active`). SSE 는 끝나지 않으므로
+  **종료마다 대기 시간을 소진한 뒤 강제 중단**돼 배포가 그만큼 느려진다. `immediate` 로 명시할지 미결
+- **ElastiCache 클러스터 모드를 켜면 현재 SSE 팬아웃이 동작하지 않는다**(#78). cluster mode enabled
+  에서는 Redis 7 의 sharded pub/sub(`SSUBSCRIBE`)이 필요한데 `RedisMessageListenerContainer` 는
+  일반 pub/sub 만 다루고 `PSUBSCRIBE` 는 클러스터에서 문제가 된다. **클러스터 모드 비활성을 전제로
+  설계했다** — 배포 구성 확정 시 확인 필요
+- **Redis Pub/Sub 은 로직 DB 로 격리되지 않는다**(#78). 채널은 `SELECT` 를 무시하므로 테스트(DB 1)와
+  개발용 앱(DB 0)이 **같은 채널을 공유한다.** `DatabaseCleaner` 의 TRUNCATE 가 AUTO_INCREMENT 를
+  리셋해 테스트 주문이 매번 낮은 id 를 받으므로, 개발용 앱을 띄운 채 테스트를 돌리면 채널명이
+  겹칠 수 있다. 채널 접두어를 프로파일로 분리할지 미결
+- **emitter 레지스트리는 테스트 사이에 살아남는다**(#77). 인메모리 싱글턴이라
+  `IntegrationTestSupport`(MySQL·Redis 만 비운다)로 정리되지 않고, 앞 테스트의 연결이 남아 실제로
+  한 테스트를 실패시켰다. 세 번째 클리너를 둘지 미결
+- SSE 연결 중 세션 만료·로그아웃 처리(#77). 인터셉터는 연결 시점에 한 번만 도므로 세션이 만료된
+  뒤에도 **emitter 타임아웃(최대 5분)까지 위치가 흐른다.** heartbeat tick 에서 세션 존재를 확인하면
+  15초로 줄지만, 연결마다 세션 식별자를 JVM 에 들고 있어야 해 새 위험 표면이 생긴다 — 미결
+- 주문 완료·취소 시 **능동적** SSE 연결 종료가 없다(#80 범위). 채널 키가 주문이라 발행이 멈춰
+  스트림은 조용해지지만, 연결 자체는 타임아웃까지 열려 있고 완료 알림이 프론트로 가지 않는다
+- 라이더 위치 전송 주기와 필터 임계값 >> **#81 에서 확정함**(사람 확인, 2026-07-29). 전송 주기
+  AVAILABLE 30초 / BUSY 5초 / UNAVAILABLE 미전송, 최소 이동 거리 20m, 허용 최대 속도 50 m/s
+  (180km/h), 정확도 상한 100m, 허용 과거 60초·미래 오차 5초, 정지 시 강제 전송 120초, Redis 최신
+  위치 TTL 10분. **서버(`location/service/LocationAcceptancePolicy`)와 프론트 1차 필터가 같은 값을
+  쓴다** — 클라이언트가 통과시킨 좌표는 서버도 통과해야 두 필터가 서로 싸우지 않는다. 부하 테스트
+  결과에 따라 조정할 수 있다(#82 비고).
+- 위치 갱신 실패 응답의 경계 >> **#81 에서 확정함**(사람 확인). 좌표 범위 밖·필수 값 누락·정확도
+  음수·미래 시각은 400 이지만, **정확도 상한 초과와 60초 초과 과거 fix 는 200 + `reason`** 으로
+  수용·폐기한다(실내·지하 측위나 탭 복귀 직후에 정상적으로 발생해 클라이언트가 고칠 것이 없다).
+  그래서 정확도 상한을 `@DecimalMax` 로 달 수 없다 — Bean Validation 위반은 400 이 된다.
+- ~~운행 종료 후 최대 10분간 라이더 최신 위치가 Redis 에 남는다(#81)~~ **해소(#54, #83)**: GO_OFFLINE
+  시 `RiderGeoRepository.remove`(ZREM)를 호출해 운행 종료 즉시 배차 후보에서 뺀다. `location`
+  패키지 단순화(#297)로 원래 쓰던 `RiderLocationStore`가 삭제되면서 #83이 만든 GEO 저장소로
+  교체했다(같은 의미의 멱등 삭제 연산이라 그대로 대체). remove 를 DB 트랜잭션 커밋 전에 호출하는
+  트레이드오프는 부하 테스트 후 재검토(worklog 2026-07-31-54 참조).
+- 위치 갱신 응답의 `NON_MONOTONIC` 이 **두 원인을 겸한다**(#250, 사람 확인 2026-07-29). 클라이언트가
+  순서를 어겨 보낸 것과 **인스턴스 간 경쟁에서 진 것**(`saveIfNewer` 가 거절)이 같은 사유·같은 로그
+  라인으로 나간다. 계약을 늘리지 않으려고 통일한 것이고, 경쟁 빈도를 알아야 할 때(부하 테스트,
+  인스턴스 수 조정) 값을 나눌지 판단한다
+- **Redis 값 형식 변경도 배포 호환성 검토 대상이다**(#250 에서 처음 드러남). 최신 위치 값 형식을
+  바꾸면서 이전 형식 값이 새 파서로 읽히지 않게 됐다 — 조건부 갱신이 덮으므로 첫 위치 요청에서
+  해소되고 TTL 이 10분이라 감내했지만, **롤링 배포 중 구·신 버전이 공존하면 서로의 값을 못 읽는
+  구간이 생긴다.** Flyway 마이그레이션 호환성(「확정된 결정」)과 같은 종류의 문제인데 Redis 값에서는
+  규칙이 없다. 규칙으로 못 박을지 미결
   `Graceful shutdown aborted with one or more requests still active`, 단순화 이후에도 SSE
   엔드포인트 자체는 남아 있어 유효). SSE 는 끝나지 않으므로 **종료마다 대기 시간을 소진한 뒤
   강제 중단**돼 배포가 그만큼 느려진다. `immediate` 로 명시할지 미결
@@ -331,11 +373,12 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - (#246 후속) 다중 인스턴스 배포 구성 전반 미결 — 채널 설계, ALB 도입, 롤링 배포 등은 구현
   이슈(#77~#80)에서 결정
 - (#246 후속) 세션 만료 정리(#52)에 Pub/Sub을 쓸지는 #246 범위(SSE 팬아웃) 밖이라 별도 결정 필요
-- **PR #284(#54, 라이더 운행 상태 변경 API)가 merge conflict 상태다.** `location` 패키지 단순화
-  (#297)로 그 PR이 쓰던 `RiderLocationStore`/`RedisRiderLocationStore`가 삭제됐기 때문이다. #83이
-  만든 `RiderGeoRepository.remove(riderId)`가 의미상 완전히 같은 연산(즉시 배차 후보 제외, 멱등
-  삭제)이라, PR #284를 새 dev로 리베이스하며 `RiderLocationStore.delete` 호출부를 이걸로 교체하면
-  된다 — 아직 안 함
+- ~~PR #284(#54, 라이더 운행 상태 변경 API)가 merge conflict 상태다~~ **해소**: `location` 패키지
+  단순화(#297)로 그 PR이 쓰던 `RiderLocationStore`/`RedisRiderLocationStore`가 삭제됐던 것을,
+  #83이 만든 `RiderGeoRepository.remove(riderId)`(의미상 완전히 같은 멱등 삭제 연산)로 교체해
+  PR #284를 `feature/83-ride-loc-geo-candidate` 위로 리베이스했다(2026-08-02). 이 PR을 다시
+  `dev` 기준으로 열려면 #83·#290·#291이 먼저 `dev`에 merge돼야 한다(현재 스택: dev ← #290/#291
+  ← #83 ← #54).
 - **다중 인스턴스 대비 Redis Pub/Sub 재도입은 아직 이슈가 없다.** 실제 배포는 단일 인스턴스이지만
   스케일 아웃에 대비해 두기로 했다(2026-08-02, 사람 확인). 예전 설계(#78, 채널 `tracking:order:{id}`
   + 패턴 구독)가 참고 대상이나 #297로 제거된 상태라 처음부터 다시 설계해야 한다
