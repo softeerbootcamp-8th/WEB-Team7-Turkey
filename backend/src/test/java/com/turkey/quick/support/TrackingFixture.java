@@ -6,12 +6,18 @@ import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.order.domain.Address;
 import com.turkey.quick.order.domain.Contact;
 import com.turkey.quick.order.domain.DeliveryOrder;
+import com.turkey.quick.order.domain.FarePolicy;
+import com.turkey.quick.order.domain.FareType;
 import com.turkey.quick.order.domain.ItemType;
+import com.turkey.quick.order.domain.OrderFareSnapshot;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
+import com.turkey.quick.order.repository.FarePolicyRepository;
+import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
 import com.turkey.quick.rider.domain.RiderProfile;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.springframework.context.annotation.Profile;
@@ -55,6 +61,11 @@ public class TrackingFixture {
 
     private static final BCryptPasswordEncoder PASSWORD_ENCODER = new BCryptPasswordEncoder();
 
+    /** 주문 직선거리와 요금 구성. 3,200m / 100m 당 130원 → 거리요금 4,160원. */
+    private static final int DISTANCE_METERS = 3_200;
+    private static final long BASE_FARE = 3_000L;
+    private static final long DISTANCE_FARE = 4_160L;
+
     /**
      * 로그인 아이디·휴대전화 번호를 겹치지 않게 만드는 카운터. {@code DatabaseCleaner} 가 매 테스트
      * 전에 TRUNCATE 하므로 테스트 사이의 충돌은 없지만, <b>한 테스트가 시나리오를 여러 개 만드는</b>
@@ -65,13 +76,19 @@ public class TrackingFixture {
     private final MemberRepository memberRepository;
     private final RiderProfileRepository riderProfileRepository;
     private final DeliveryOrderRepository deliveryOrderRepository;
+    private final FarePolicyRepository farePolicyRepository;
+    private final OrderFareSnapshotRepository orderFareSnapshotRepository;
 
     public TrackingFixture(MemberRepository memberRepository,
                            RiderProfileRepository riderProfileRepository,
-                           DeliveryOrderRepository deliveryOrderRepository) {
+                           DeliveryOrderRepository deliveryOrderRepository,
+                           FarePolicyRepository farePolicyRepository,
+                           OrderFareSnapshotRepository orderFareSnapshotRepository) {
         this.memberRepository = memberRepository;
         this.riderProfileRepository = riderProfileRepository;
         this.deliveryOrderRepository = deliveryOrderRepository;
+        this.farePolicyRepository = farePolicyRepository;
+        this.orderFareSnapshotRepository = orderFareSnapshotRepository;
     }
 
     /**
@@ -83,7 +100,8 @@ public class TrackingFixture {
             String customerLoginId,
             Long riderId,
             String riderLoginId,
-            Long deliveryId
+            Long deliveryId,
+            Long totalFare
     ) {
     }
 
@@ -109,7 +127,7 @@ public class TrackingFixture {
         riderProfileRepository.save(rider);
 
         DeliveryOrder order = DeliveryOrder.request(
-                customer, UUID.randomUUID().toString(), ItemType.DOCUMENT, 3_200,
+                customer, UUID.randomUUID().toString(), ItemType.DOCUMENT, DISTANCE_METERS,
                 address("서울 강남구 테헤란로 152", "06236", "37.4979", "127.0276"),
                 address("서울 중구 세종대로 110", "04524", "37.5665", "126.9780"),
                 Contact.of("김보내", "01011112222"),
@@ -117,8 +135,19 @@ public class TrackingFixture {
         advanceTo(order, rider, status);
         deliveryOrderRepository.save(order);
 
+        // 예상 운임 스냅샷(#79). 실제로는 주문 생성 트랜잭션이 함께 만드는 값인데 그 API 가 아직
+        // 스텁이라 픽스처가 대신 만든다. 정책을 시나리오마다 새로 만드는 이유는
+        // uk_fare_policy_version 때문이고, INACTIVE 로 남겨 두면 uk_fare_policy_active 와도
+        // 충돌하지 않는다(추적 조회는 정책 상태를 보지 않는다).
+        FarePolicy policy = farePolicyRepository.save(FarePolicy.create(
+                "fx-v" + n, BASE_FARE, 100, 130L, 30_000, LocalDateTime.now().minusDays(1)));
+        orderFareSnapshotRepository.save(OrderFareSnapshot.create(
+                order, policy, FareType.ESTIMATE, policy.getPolicyVersion(),
+                DISTANCE_METERS, BASE_FARE, DISTANCE_FARE, 0L));
+
         return new Scenario(customer.getId(), customer.getLoginId(),
-                rider.getMemberId(), riderMember.getLoginId(), order.getId());
+                rider.getMemberId(), riderMember.getLoginId(), order.getId(),
+                BASE_FARE + DISTANCE_FARE);
     }
 
     /**

@@ -37,7 +37,9 @@ public class RiderWebMvcConfig implements WebMvcConfigurer {
                                  "/api/rider/requests",
                                  "/api/rider/requests/**",
                                  "/api/rider/location",
-                                 "/api/rider/operating-status" // #53(GET 조회). 운행 상태 변경(PATCH, #54)도 같은 경로라 이 등록으로 함께 보호된다
+                                 "/api/rider/operating-status",
+                                 "/api/rider/points",
+                                 "/api/rider/points/**"
                                 );
     }
 }

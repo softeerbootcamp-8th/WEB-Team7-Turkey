@@ -1,16 +1,26 @@
 package com.turkey.quick.payment.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.turkey.quick.common.exception.BusinessException;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
 import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.payment.domain.PaymentMethod;
 import com.turkey.quick.payment.domain.PointCharge;
 import com.turkey.quick.payment.domain.PointChargeStatus;
+import com.turkey.quick.payment.domain.PointTransaction;
+import com.turkey.quick.payment.domain.PointTransactionType;
+import com.turkey.quick.payment.domain.PointWallet;
+import com.turkey.quick.payment.dto.PointChargeCancelResponse;
+import com.turkey.quick.payment.dto.PointChargeConfirmRequest;
+import com.turkey.quick.payment.dto.PointChargeConfirmResponse;
 import com.turkey.quick.payment.dto.PointChargeRequest;
 import com.turkey.quick.payment.dto.PointChargeResponse;
 import com.turkey.quick.payment.repository.PointChargeRepository;
+import com.turkey.quick.payment.repository.PointTransactionRepository;
+import com.turkey.quick.payment.repository.PointWalletRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -19,15 +29,20 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+
+import org.apache.commons.lang3.RandomUtils;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 포인트 충전 준비의 <b>DB 가 개입하는 정합성</b>을 검증한다(#32).
- *
+ *PointChargeCancelResponse
  * <p>단위 테스트({@link CustomerPaymentServiceTest})는 리포지토리를 인메모리 페이크로 바꿔 서비스의
  * 판단만 본다. 그래서 이 두 가지를 증명할 수 없다:
  *
@@ -56,12 +71,48 @@ class CustomerPaymentServiceIntegrationTest extends IntegrationTestSupport {
     private PointChargeRepository pointChargeRepository;
 
     @Autowired
+    private PointWalletRepository pointWalletRepository;
+
+    @Autowired
+    private PointTransactionRepository pointTransactionRepository;
+
+    @Autowired
     private MemberRepository memberRepository;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     private Long saveCustomer() {
         Member customer = memberRepository.save(
                 Member.create("cust_charge", "hash", "김고객", "01055556666", MemberRole.CUSTOMER));
         return customer.getId();
+    }
+
+    /**
+     * 승인 검증에는 지갑이 있어야 한다. 실제 서비스에서는 회원가입이 지갑을 함께 만들지만(#237),
+     * 이 테스트는 회원을 직접 저장하므로 지갑도 같이 만든다.
+     *
+     * <p><b>한 트랜잭션 안에서 만들어야 한다.</b> {@code PointWallet} 은 {@code @MapsId} 로 member 와
+     * PK 를 공유하므로 persist 시점에 연관 Member 가 managed 여야 한다. 리포지토리 호출을 각각 따로
+     * 하면(각자 트랜잭션) Member 가 detached 상태라
+     * "detached entity passed to persist" 로 실패한다 — {@code CustomerSignupService.signup} 이
+     * {@code @Transactional} 안에서 둘을 함께 저장하는 것과 같은 조건을 맞춘 것이다.
+     */
+    private Long saveCustomerWithWallet(long initialBalance) {
+        return new TransactionTemplate(transactionManager).execute(status -> {
+            Member customer = memberRepository.save(
+                    Member.create("cust_charge", "hash", "김고객", "01055556666", MemberRole.CUSTOMER));
+            PointWallet wallet = PointWallet.create(customer);
+            if (initialBalance > 0) {
+                wallet.credit(initialBalance);
+            }
+            pointWalletRepository.save(wallet);
+            return customer.getId();
+        });
+    }
+
+    private PointChargeConfirmRequest confirmRequest() {
+        return new PointChargeConfirmRequest(AMOUNT, "mock_auth_integration");
     }
 
     private PointChargeRequest request() {
@@ -147,5 +198,238 @@ class CustomerPaymentServiceIntegrationTest extends IntegrationTestSupport {
         assertThat(successCount.get())
                 .as("적어도 한 요청은 성공해야 한다")
                 .isGreaterThanOrEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("모의 승인은 상태·잔액·원장을 한 트랜잭션에서 함께 반영한다")
+    void confirmAppliesAllThreeChanges() {
+        Long customerId = saveCustomerWithWallet(5_000L);
+        PointChargeResponse prepared =
+                customerPaymentService.chargePointRequest(request(), customerId);
+
+        PointChargeConfirmResponse response = customerPaymentService.confirmPointCharge(
+                prepared.pointChargeId(), confirmRequest(), customerId);
+
+        assertThat(response.status()).isEqualTo(PointChargeStatus.PAID);
+        assertThat(response.approvedAmount()).isEqualTo(AMOUNT);
+        assertThat(response.balanceAfter()).isEqualTo(35_000L);
+        assertThat(response.approvedAt()).isNotNull();
+
+        // 지갑이 실제로 반영됐는지
+        assertThat(pointWalletRepository.findByMemberId(customerId))
+                .get()
+                .extracting(PointWallet::getBalance)
+                .isEqualTo(35_000L);
+
+        // 원장 1행. balance_before/after 조합은 ck_point_transaction_balance 가 검사하므로
+        // 여기까지 커밋됐다는 사실 자체가 그 제약을 통과했다는 뜻이다.
+        List<PointTransaction> ledger = pointTransactionRepository.findAll();
+        assertThat(ledger).hasSize(1);
+        assertThat(ledger.get(0).getTransactionType()).isEqualTo(PointTransactionType.CHARGE);
+        assertThat(ledger.get(0).getBalanceBefore()).isEqualTo(5_000L);
+        assertThat(ledger.get(0).getBalanceAfter()).isEqualTo(35_000L);
+        assertThat(ledger.get(0).getPointCharge().getId()).isEqualTo(prepared.pointChargeId());
+    }
+
+    @Test
+    @DisplayName("승인 성공 시 승인 식별자가 DB 에 남는다")
+    void persistsProviderPaymentKey() {
+        Long customerId = saveCustomerWithWallet(0L);
+        Long pointChargeId = customerPaymentService
+                .chargePointRequest(request(), customerId)
+                .pointChargeId();
+
+        customerPaymentService.confirmPointCharge(pointChargeId, confirmRequest(), customerId);
+
+        // 승인 식별자는 PG 응답에서 오고, 반영 실패 시 대사의 근거가 되는 값이다
+        assertThat(pointChargeRepository.findById(pointChargeId))
+                .get()
+                .extracting(PointCharge::getProviderPaymentKey)
+                .asString()
+                .startsWith("mock_pay_");
+    }
+
+    @Test
+    @DisplayName("같은 충전 건에 동시에 승인 요청이 와도 포인트는 한 번만 증가한다")
+    void concurrentConfirmCreditsOnlyOnce() throws InterruptedException {
+        Long customerId = saveCustomerWithWallet(5_000L);
+        Long pointChargeId = customerPaymentService
+                .chargePointRequest(request(), customerId)
+                .pointChargeId();
+
+        int threads = 8;
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CountDownLatch startTogether = new CountDownLatch(1);
+        CountDownLatch finished = new CountDownLatch(threads);
+        AtomicInteger successCount = new AtomicInteger();
+        AtomicInteger failureCount = new AtomicInteger();
+        AtomicReference<Throwable> unexpected = new AtomicReference<>();
+
+        for (int i = 0; i < threads; i++) {
+            pool.submit(() -> {
+                try {
+                    startTogether.await();
+                    customerPaymentService.confirmPointCharge(
+                            pointChargeId, confirmRequest(), customerId);
+                    successCount.incrementAndGet();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } catch (RuntimeException e) {
+                    failureCount.incrementAndGet();
+                    unexpected.compareAndSet(null, e);
+                } finally {
+                    finished.countDown();
+                }
+            });
+        }
+
+        startTogether.countDown();
+        assertThat(finished.await(30, TimeUnit.SECONDS)).isTrue();
+        pool.shutdownNow();
+
+        String context = "동시 승인 %d건 (성공 %d / 실패 %d, 첫 실패=%s)".formatted(
+                threads, successCount.get(), failureCount.get(),
+                unexpected.get() == null ? "없음" : unexpected.get().toString());
+
+        // 핵심: 잔액이 딱 한 번만 늘었는지. 8건이 모두 성공 응답을 받아도(패자는 멱등 응답)
+        // 잔액과 원장은 한 번만 변해야 한다.
+        assertThat(pointWalletRepository.findByMemberId(customerId))
+                .get()
+                .extracting(PointWallet::getBalance)
+                .as(context)
+                .isEqualTo(35_000L);
+        assertThat(pointTransactionRepository.findAll()).as(context).hasSize(1);
+        assertThat(successCount.get()).as(context).isGreaterThanOrEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("충전을 취소하면 CANCELED 로 종료되고 잔액과 원장은 그대로다")
+    void cancelTerminatesChargeWithoutTouchingBalance() {
+        Long customerId = saveCustomerWithWallet(5_000L);
+        Long pointChargeId = customerPaymentService
+                .chargePointRequest(request(), customerId)
+                .pointChargeId();
+
+        PointChargeCancelResponse response =
+                customerPaymentService.cancelPointCharge(pointChargeId, customerId);
+
+        assertThat(response.status()).isEqualTo(PointChargeStatus.CANCELED);
+        assertThat(response.balance()).isEqualTo(5_000L);
+
+        // 단위 테스트로는 알 수 없는 것: ck_point_charge_state_values 를 통과하며 실제로 커밋되는지.
+        // CANCELED 행은 approved_amount/approved_at 이 NULL 이어야 하고, 사유는 failure_reason 에 있다.
+        assertThat(pointChargeRepository.findById(pointChargeId))
+                .get()
+                .satisfies(charge -> {
+                    assertThat(charge.getStatus()).isEqualTo(PointChargeStatus.CANCELED);
+                    assertThat(charge.getApprovedAmount()).isNull();
+                    assertThat(charge.getApprovedAt()).isNull();
+                    assertThat(charge.getFailureReason()).isNotBlank();
+                });
+        assertThat(pointWalletRepository.findByMemberId(customerId))
+                .get()
+                .extracting(PointWallet::getBalance)
+                .isEqualTo(5_000L);
+        assertThat(pointTransactionRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("이미 취소된 충전을 다시 취소해도 200 멱등 응답이고 상태는 그대로다")
+    void repeatedCancelIsIdempotent() {
+        Long customerId = saveCustomerWithWallet(5_000L);
+        Long pointChargeId = customerPaymentService
+                .chargePointRequest(request(), customerId)
+                .pointChargeId();
+        customerPaymentService.cancelPointCharge(pointChargeId, customerId);
+
+        PointChargeCancelResponse second =
+                customerPaymentService.cancelPointCharge(pointChargeId, customerId);
+
+        assertThat(second.status()).isEqualTo(PointChargeStatus.CANCELED);
+        assertThat(second.balance()).isEqualTo(5_000L);
+    }
+
+    @Test
+    @DisplayName("승인된 충전은 취소할 수 없고 409 이며 늘어난 잔액은 유지된다")
+    void cannotCancelPaidCharge() {
+        Long customerId = saveCustomerWithWallet(5_000L);
+        Long pointChargeId = customerPaymentService
+                .chargePointRequest(request(), customerId)
+                .pointChargeId();
+        customerPaymentService.confirmPointCharge(pointChargeId, confirmRequest(), customerId);
+
+        assertThatThrownBy(() -> customerPaymentService.cancelPointCharge(pointChargeId, customerId))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getStatus())
+                .isEqualTo(HttpStatus.CONFLICT);
+
+        // 409 를 던진 트랜잭션이 롤백되면서 앞선 승인까지 되돌리지 않는지 확인한다.
+        assertThat(pointWalletRepository.findByMemberId(customerId))
+                .get()
+                .extracting(PointWallet::getBalance)
+                .isEqualTo(35_000L);
+    }
+
+    /**
+     * 같은 충전 건에 승인과 취소가 <b>진짜 동시에</b> 들어오는 경우. 잠금이 없으면 둘 다 PENDING 을
+     * 읽고 각각 PAID·CANCELED 로 진행해 "취소됐는데 잔액은 늘어난" 상태가 만들어진다.
+     *
+     * <p>어느 쪽이 이기는지는 정하지 않는다 — 스케줄링에 달렸다. 대신 <b>둘의 결과가 서로
+     * 모순되지 않는 것</b>을 본다: 최종 상태가 PAID 면 잔액이 늘어 있고 원장이 1건, CANCELED 면
+     * 잔액이 그대로이고 원장이 0건이어야 한다. 부분 성공이 없다는 것이 요점이다.
+     */
+    @Test
+    @DisplayName("승인과 취소가 동시에 들어와도 최종 상태와 잔액이 어긋나지 않는다")
+    void concurrentConfirmAndCancelDoNotDiverge() throws InterruptedException {
+        Long customerId = saveCustomerWithWallet(5_000L);
+        Long pointChargeId = customerPaymentService
+                .chargePointRequest(request(), customerId)
+                .pointChargeId();
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch startTogether = new CountDownLatch(1);
+        CountDownLatch finished = new CountDownLatch(2);
+
+        pool.submit(() -> runIgnoringBusinessFailure(startTogether, finished,
+                () -> customerPaymentService.confirmPointCharge(
+                        pointChargeId, confirmRequest(), customerId)));
+        pool.submit(() -> runIgnoringBusinessFailure(startTogether, finished,
+                () -> customerPaymentService.cancelPointCharge(pointChargeId, customerId)));
+
+        startTogether.countDown();
+        assertThat(finished.await(30, TimeUnit.SECONDS)).isTrue();
+        pool.shutdownNow();
+
+        PointChargeStatus finalStatus = pointChargeRepository.findById(pointChargeId)
+                .orElseThrow()
+                .getStatus();
+        long balance = pointWalletRepository.findByMemberId(customerId).orElseThrow().getBalance();
+        List<PointTransaction> ledger = pointTransactionRepository.findAll();
+        String context = "최종 상태=%s, 잔액=%d, 원장=%d건".formatted(finalStatus, balance, ledger.size());
+
+        assertThat(finalStatus).as(context)
+                .isIn(PointChargeStatus.PAID, PointChargeStatus.CANCELED);
+        if (finalStatus == PointChargeStatus.PAID) {
+            assertThat(balance).as(context).isEqualTo(35_000L);
+            assertThat(ledger).as(context).hasSize(1);
+        } else {
+            assertThat(balance).as(context).isEqualTo(5_000L);
+            assertThat(ledger).as(context).isEmpty();
+        }
+    }
+
+    /** 경쟁에서 진 쪽은 {@link BusinessException} 으로 명확히 실패한다 — 그것만 흡수한다. */
+    private void runIgnoringBusinessFailure(CountDownLatch startTogether, CountDownLatch finished,
+                                            Runnable action) {
+        try {
+            startTogether.await();
+            action.run();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (BusinessException ignored) {
+            // 승패는 스케줄링에 달렸다. 어느 쪽이 지든 정상이다.
+        } finally {
+            finished.countDown();
+        }
     }
 }

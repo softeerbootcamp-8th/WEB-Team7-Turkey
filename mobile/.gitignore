@@ -1,0 +1,71 @@
+# Node / Capacitor dependencies
+node_modules/
+
+# Environment and local machine configuration
+.env
+.env.*
+!.env.example
+local.properties
+android/local.properties
+
+# Web build output copied into native projects
+dist/
+www/
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+android/app/src/main/res/xml/config.xml
+
+# Android / Gradle generated files
+.gradle/
+build/
+android/.gradle/
+android/.kotlin/
+android/**/build/
+android/capacitor-cordova-android-plugins/
+android/.externalNativeBuild/
+android/.cxx/
+
+# Android application packages and bytecode
+*.apk
+*.aab
+*.aar
+*.ap_
+*.dex
+*.class
+
+# Android Studio / IntelliJ local files
+.idea/
+android/.idea/
+*.iml
+*.iws
+*.ipr
+captures/
+.navigation/
+
+# Signing secrets
+*.jks
+*.keystore
+key.properties
+android/key.properties
+
+# iOS generated files (when the iOS platform is added)
+ios/App/Pods/
+ios/App/build/
+ios/App/DerivedData/
+ios/App/App/public/
+ios/App/App/capacitor.config.json
+**/xcuserdata/
+*.xcuserstate
+
+# Logs, profiling, and emulator diagnostics
+*.log
+*.hprof
+bugreport-*.zip
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Operating system files
+.DS_Store
+Thumbs.db
