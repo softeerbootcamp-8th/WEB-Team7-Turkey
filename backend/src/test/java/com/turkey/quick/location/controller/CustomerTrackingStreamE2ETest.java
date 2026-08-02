@@ -3,17 +3,21 @@ package com.turkey.quick.location.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.turkey.quick.common.response.ApiResponse;
+import com.turkey.quick.location.dto.LocationPayload;
 import com.turkey.quick.location.sse.SseRegistry;
+import com.turkey.quick.location.sse.SseRelay;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.support.IntegrationTestSupport;
 import com.turkey.quick.support.TrackingFixture;
 import java.io.IOException;
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -48,6 +52,9 @@ class CustomerTrackingStreamE2ETest extends IntegrationTestSupport {
     private SseRegistry registry;
 
     @Autowired
+    private SseRelay sseRelay;
+
+    @Autowired
     private TestRestTemplate rest;
 
     @Autowired
@@ -71,7 +78,7 @@ class CustomerTrackingStreamE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("연결이 끊기면 레지스트리에서 정리된다")
+    @DisplayName("연결이 끊긴 뒤 위치가 전송되면(쓰기 실패) 레지스트리에서 정리된다")
     void disconnectingCleansUpRegistry() throws IOException, InterruptedException {
         TrackingFixture.Scenario scenario = fixture.assignedDelivery();
         String cookie = login(scenario.customerLoginId());
@@ -80,6 +87,11 @@ class CustomerTrackingStreamE2ETest extends IntegrationTestSupport {
         assertThat(registry.connectionOf(scenario.deliveryId())).hasSize(1);
 
         response.body().close();
+        // heartbeat가 없어(위치 추적 단순화, #297) 서버는 클라이언트가 닫은 것을 스스로 알아채지
+        // 못한다 — 다음 쓰기 시도가 실패해야 registry.remove가 불린다(SseRelay#publish). 그래서
+        // 클라이언트 close만으로는 정리되지 않고, 실제 위치 전송을 한 번 트리거해야 한다.
+        sseRelay.publish(scenario.deliveryId(), new LocationPayload(
+                new BigDecimal("37.5000000"), new BigDecimal("127.0000000"), Instant.now(), null));
 
         awaitUntilEmpty(scenario.deliveryId());
     }
