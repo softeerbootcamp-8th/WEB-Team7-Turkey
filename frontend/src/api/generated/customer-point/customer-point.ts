@@ -26,7 +26,6 @@ import type {
 
 import type {
   ApiResponsePointBalanceResponse,
-  ApiResponsePointChargeCancelResponse,
   ApiResponsePointChargeConfirmResponse,
   ApiResponsePointChargeResponse,
   ApiResponsePointTransactionListResponse,
@@ -202,71 +201,8 @@ export const useRequestCustomerPointCharge = <TError = ErrorType<ApiResponsePoin
       return useMutation(mutationOptions, queryClient);
     }
     /**
- * 결제창에서 결제를 포기했을 때 PENDING 충전을 CANCELED 로 종료한다(CUS-POINT-004). 잔액과 원장은 변하지 않는다 — 승인된 적이 없으므로 되돌릴 증액이 없고, PG 호출도 없다(승인 전이라 취소할 결제가 존재하지 않는다). 취소 사유는 서버가 채운다. 승인 전 취소의 사유는 하나뿐이라 요청 바디를 받지 않으며, 사유는 point_charge.failure_reason 에 저장된다(CANCELED 전용 컬럼 없음 — 값을 해석할 때 status 를 함께 봐야 한다). 이미 CANCELED 또는 FAILED 인 건에 다시 취소 요청이 오면 상태를 바꾸지 않고 200 으로 현재 상태를 돌려준다(멱등) — 둘 다 '요청이 종료됐고 잔액은 변하지 않았다'는 성공 조건을 이미 만족하기 때문이다. 반면 PAID·REFUNDED 는 409 다. 돈이 이미 움직였으므로 취소가 아니라 환불로 풀어야 하는 사건이고, 환불은 아직 구현돼 있지 않다.
- * @summary 포인트 충전 취소
- */
-export const cancelCustomerPointCharge = (
-    pointChargeId: number,
- options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
-) => {
-      
-      
-      return customInstance<ApiResponsePointChargeCancelResponse>(
-      {url: `/api/customer/points/charges/${pointChargeId}/cancel`, method: 'POST', signal
-    },
-      options);
-    }
-  
-
-
-export const getCancelCustomerPointChargeMutationOptions = <TError = ErrorType<ApiResponsePointChargeCancelResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelCustomerPointCharge>>, TError,{pointChargeId: number}, TContext>, request?: SecondParameter<typeof customInstance>}
-): UseMutationOptions<Awaited<ReturnType<typeof cancelCustomerPointCharge>>, TError,{pointChargeId: number}, TContext> => {
-
-const mutationKey = ['cancelCustomerPointCharge'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-      
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelCustomerPointCharge>>, {pointChargeId: number}> = (props) => {
-          const {pointChargeId} = props ?? {};
-
-          return  cancelCustomerPointCharge(pointChargeId,requestOptions)
-        }
-
-        
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type CancelCustomerPointChargeMutationResult = NonNullable<Awaited<ReturnType<typeof cancelCustomerPointCharge>>>
-    
-    export type CancelCustomerPointChargeMutationError = ErrorType<ApiResponsePointChargeCancelResponse>
-
-    /**
- * @summary 포인트 충전 취소
- */
-export const useCancelCustomerPointCharge = <TError = ErrorType<ApiResponsePointChargeCancelResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelCustomerPointCharge>>, TError,{pointChargeId: number}, TContext>, request?: SecondParameter<typeof customInstance>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof cancelCustomerPointCharge>>,
-        TError,
-        {pointChargeId: number},
-        TContext
-      > => {
-
-      const mutationOptions = getCancelCustomerPointChargeMutationOptions(options);
-
-      return useMutation(mutationOptions, queryClient);
-    }
-    /**
- * PG 승인을 받아 PENDING 충전을 PAID 로 전이한다(CUS-POINT-003). 상태 전이·잔액 증가·CHARGE 원장 기록은 한 트랜잭션이라 셋 중 하나라도 실패하면 전부 롤백된다. 단 PG 호출은 그 트랜잭션 밖에서 일어난다 — 외부 응답을 기다리는 동안 DB 커넥션과 행 잠금을 쥐지 않기 위해서다. 승인 금액은 항상 요청 금액 전액이다(부분 결제 없음). 요청의 amount 는 대조용이며 승인 금액으로 쓰이지 않는다 — 서버가 기억하는 요청 금액과 다르면 400 이다. 승인 여부는 PaymentGateway 가 결정한다(MVP 는 MockPaymentGateway). PG 가 거절하면 충전하지 않고 FAILED 로 확정하며, 이는 오류가 아니라 200 응답(status=FAILED)으로 돌려준다 — 예외로 처리하면 트랜잭션이 롤백되어 FAILED 전이 자체가 사라진다. PG 응답을 받지 못한 경우(TIMEOUT)는 결제 성사 여부를 알 수 없어 PENDING 을 유지하고 502 로 알린다. 이미 PAID 인 충전에 다시 승인 요청이 오면 잔액을 또 늘리지 않고 그때의 결과를 200 으로 돌려준다(멱등). 이때 balanceAfter 는 지갑의 현재 잔액이 아니라 승인 시점 원장의 balance_after 다.
- * @summary 포인트 충전 모의 승인
+ * PENDING 충전을 승인해 PAID 로 전이하고, 같은 트랜잭션에서 지갑 잔액을 늘리고 CHARGE 원장 1행을 남긴다. 승인 금액은 항상 요청 금액 전액이다(부분 결제 없음). 이미 PAID 인 충전에 다시 승인하면 409 로 거부한다 — provider_payment_key 유니크가 PG 중복 승인도 함께 막는다.
+ * @summary 포인트 충전 승인
  */
 export const confirmCustomerPointCharge = (
     pointChargeId: number,
@@ -315,7 +251,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type ConfirmCustomerPointChargeMutationError = ErrorType<ApiResponsePointChargeConfirmResponse>
 
     /**
- * @summary 포인트 충전 모의 승인
+ * @summary 포인트 충전 승인
  */
 export const useConfirmCustomerPointCharge = <TError = ErrorType<ApiResponsePointChargeConfirmResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmCustomerPointCharge>>, TError,{pointChargeId: number;data: BodyType<PointChargeConfirmRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}

@@ -228,7 +228,7 @@ export function useGetDeliveryRequest<TData = Awaited<ReturnType<typeof getDeliv
 
 
 /**
- * 배송 WAITING→ASSIGNED + 라이더 AVAILABLE→BUSY 를 한 트랜잭션으로 처리한다. 요청당 라이더 1명, 라이더당 진행 배송 1건이며 경쟁 실패는 409 로 끝난다.
+ * 배송 WAITING→ASSIGNED + 라이더 AVAILABLE→BUSY 를 한 트랜잭션으로 처리한다(ADR-006 조건부 UPDATE, 주문→라이더 순서 고정). 요청당 라이더 1명, 라이더당 진행 배송 1건이며 경쟁 실패는 409 로 끝난다. (#56) 라이더 식별을 위한 인증 파라미터를 이 메서드에도 추가함.
  * @summary 배차 확정(콜 수락)
  */
 export const acceptDeliveryRequest = (
