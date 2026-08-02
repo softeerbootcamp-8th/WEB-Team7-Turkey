@@ -3,8 +3,11 @@ package com.turkey.quick.payment.service;
 import com.turkey.quick.common.exception.BusinessException;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.repository.MemberRepository;
+import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.payment.domain.PointCharge;
 import com.turkey.quick.payment.domain.PointChargeStatus;
+import com.turkey.quick.payment.domain.PointTransaction;
+import com.turkey.quick.payment.domain.PointTransactionType;
 import com.turkey.quick.payment.domain.PointWallet;
 import com.turkey.quick.payment.dto.PointBalanceResponse;
 import com.turkey.quick.payment.dto.PointChargeCancelResponse;
@@ -13,6 +16,7 @@ import com.turkey.quick.payment.dto.PointChargeConfirmResponse;
 import com.turkey.quick.payment.dto.PointChargeRequest;
 import com.turkey.quick.payment.dto.PointChargeResponse;
 import com.turkey.quick.payment.repository.PointChargeRepository;
+import com.turkey.quick.payment.repository.PointTransactionRepository;
 import com.turkey.quick.payment.repository.PointWalletRepository;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +25,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @RequiredArgsConstructor
@@ -48,6 +53,9 @@ public class CustomerPaymentService {
     private final PointChargeRepository pointChargeRepository;
     private final MemberRepository memberRepository;
 
+    /** 주문 결제(#40)의 원장 기록용. 충전 원장은 {@link PointChargeApprover} 가 따로 쓴다. */
+    private final PointTransactionRepository pointTransactionRepository;
+
     /** 실 PG 를 붙이면 이 빈만 갈아끼운다. MVP 는 {@code MockPaymentGateway}. */
     private final PaymentGateway paymentGateway;
 
@@ -59,6 +67,69 @@ public class CustomerPaymentService {
                 .orElseThrow(() -> new IllegalStateException("계좌 정보가 없습니다."));
 
         return new PointBalanceResponse(pointWallet.getBalance(), pointWallet.getUpdatedAt());
+    }
+
+    /**
+     * 배송요금 포인트 차감(CUS-PAY-002, #40).
+     *
+     * <p><b>이 서비스가 order 를 주입받지는 않는다.</b> 인자로 {@link DeliveryOrder} 엔터티를 받을
+     * 뿐이고 order 쪽 <b>서비스</b>는 참조하지 않는다 — 반대로 엮으면
+     * {@code DeliveryService → CustomerPaymentService} 와 맞물려 스프링 빈 순환이 되고, Boot 3.4 는
+     * 순환 참조가 기본 금지라 컴파일이 아니라 <b>기동</b>이 실패한다. 엔터티 참조는
+     * {@code PointTransaction.deliveryOrder} 가 이미 하고 있어 새로 생기는 방향이 아니다.
+     *
+     * <p><b>{@code Propagation.MANDATORY}</b>: 호출자의 트랜잭션에 반드시 참여하고, 트랜잭션이 없으면
+     * 예외로 실패한다. #37/#40 비고가 요구하는 "주문 생성과 하나의 상위 트랜잭션"을 애노테이션으로
+     * 강제한 것이다. 기본값({@code REQUIRED})이면 누군가 이 메서드만 따로 호출했을 때 조용히 새
+     * 트랜잭션이 열려 <b>주문 없이 포인트만 빠져나가는</b> 경로가 생긴다.
+     *
+     * <p><b>{@code FOR UPDATE} 로 읽는다</b>(사람 확인, #33 승인과 같은 방식). 원장에 남길
+     * {@code balance_before} 를 알아야 하는데 조건부 UPDATE 는 영향 행 수만 주고 변경 직전 잔액을
+     * 주지 않는다({@code ck_point_transaction_balance} 가 before/after/amount 정합을 검사한다).
+     * 그래서 "읽고 → 검사하고 → 빼고 → 기록"이 필요하고, 그 사이 lost update 를 막으려면 읽는 시점에
+     * 행을 잠가야 한다({@code @Version} 은 팀 정책상 사용하지 않는다). 지갑은 회원당 1행이라 잠금
+     * 범위가 단일 행이고 회원끼리는 경합하지 않는다.
+     *
+     * <p><b>동시 요청</b>: 잔액 5,000원에 4,000원짜리 주문 두 건이 동시에 들어와도 잠금이 둘을
+     * 직렬화하므로 뒤에 온 쪽이 잔액을 다시 읽어 402 를 받는다(#40 예외 처리 "동시 요청으로 잔액이
+     * 부족해진 경우 한 요청만 성공한다").
+     *
+     * <p><b>이중 차감</b>은 {@code uk_point_transaction_order_type} (delivery_order_id,
+     * transaction_type) 이 최종적으로 막는다. 정상 경로에서는 주문 생성이 멱등이라 여기까지 두 번
+     * 오지 않지만, 제약이 백스톱으로 남아 있다.
+     *
+     * @param customerId 세션에서 확인된 고객 식별자
+     * @param order      결제 대상 주문. 같은 트랜잭션에서 방금 저장된 managed 엔터티여야 한다.
+     * @param fare       차감할 금액. <b>서버가 재계산한 값</b>이며 클라이언트 전달값이 아니다.
+     * @param requestKey 주문의 요청 멱등키를 그대로 쓴다. 원장의 유니크는 (request_key,
+     *                   transaction_type) 이라(V18) 같은 주문의 ORDER_REFUND 가 이 키를 공유할 수 있다.
+     * @return 차감 후 잔액
+     * @throws BusinessException     402 포인트 부족
+     * @throws IllegalStateException 지갑 없음(회원가입 트랜잭션에서 함께 생성되므로 정합성 오류)
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public long payForOrder(Long customerId, DeliveryOrder order, long fare, String requestKey) {
+        PointWallet wallet = pointWalletRepository.findByMemberIdForUpdate(customerId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "지갑 정보가 없습니다. memberId=" + customerId));
+
+        long balanceBefore = wallet.getBalance();
+        if (balanceBefore < fare) {
+            // 402 다(사람 확인). 프론트가 message 를 파싱하지 않고 "충전 화면으로" 분기할 수 있어야
+            // 하는데, 이 엔드포인트의 409 는 이미 "진행 중 요청 있음"과 "요금 변경"이 쓰고 있다.
+            throw new BusinessException(HttpStatus.PAYMENT_REQUIRED,
+                    "포인트가 부족합니다. 잔액=%d, 필요=%d, 부족=%d"
+                            .formatted(balanceBefore, fare, fare - balanceBefore));
+        }
+
+        wallet.debit(fare);
+        pointTransactionRepository.save(PointTransaction.forOrder(
+                wallet, PointTransactionType.ORDER_USE, fare, balanceBefore, requestKey, order));
+
+        log.info("[포인트-주문결제] deliveryId={}, customerId={}, amount={}, balanceBefore={}, balanceAfter={}",
+                order.getId(), customerId, fare, balanceBefore, wallet.getBalance());
+
+        return wallet.getBalance();
     }
 
     /**

@@ -86,6 +86,16 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
     List<DeliveryOrder> findByStatus(OrderStatus status);
 
     /**
+     * 요청 멱등키로 기존 주문을 찾는다(#37 흐름 ③). {@code uk_delivery_customer_request}
+     * (customer_id, request_key) 와 같은 조합이라 결과는 0 또는 1건이다.
+     *
+     * <p><b>이 조회만으로 중복 생성이 막히지는 않는다.</b> 조회와 INSERT 사이에 다른 요청이 끼어들 수
+     * 있어서, 진짜 동시 재전송은 위 UNIQUE 제약이 잡는다. 이 메서드는 순차 재전송(따닥 클릭, 네트워크
+     * 재시도)을 오류가 아니라 "기존 결과 반환"으로 흡수하기 위한 것이다.
+     */
+    Optional<DeliveryOrder> findByCustomer_IdAndRequestKey(Long customerId, String requestKey);
+
+    /**
      * 배차 확정(#56)의 첫 번째 조건부 UPDATE(ADR-006 Compare-And-Set). WAITING인 행만
      * ASSIGNED로 바꾸고, 영향 행 수(0 또는 1)로 "이 요청이 배차 경쟁에서 이겼는가"를 판정한다.
      * 항상 {@link com.turkey.quick.rider.repository.RiderProfileRepository#markBusyIfAvailable}

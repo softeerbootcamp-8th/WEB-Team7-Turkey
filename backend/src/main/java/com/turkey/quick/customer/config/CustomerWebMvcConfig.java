@@ -21,6 +21,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * {@code POST /api/customer/deliveries/quote}(요금 견적)가 인증 없이 열려 있는데, 한 번에 넓히면
  * 그 API가 조용히 401이 되어 프론트 견적 화면이 깨진다. 인증을 거는 것 자체는 맞는 방향이지만
  * 이 이슈가 임의로 바꿀 범위가 아니다 — 그 API를 구현하는 이슈에서 함께 등록한다.
+ * 그래서 {@code /api/customer/deliveries} 아래는 <b>정확 경로로 한 건씩</b> 등록한다(#37).
  */
 @Configuration
 @RequiredArgsConstructor
@@ -37,6 +38,7 @@ public class CustomerWebMvcConfig implements WebMvcConfigurer {
         registry.addInterceptor(new CustomerSessionInterceptor(sessionStore, memberRepository, cookieSecure))
                 .addPathPatterns(
                         "/api/customer/session",                                 // #27
+                        "/api/customer/deliveries",                              // #37 (정확 경로)
                         "/api/customer/deliveries/*/tracking",                   // #79
                         "/api/customer/deliveries/*/tracking/stream",            // #77
                         "/api/customer/points/**"

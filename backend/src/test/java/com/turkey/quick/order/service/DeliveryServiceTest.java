@@ -4,10 +4,25 @@ import com.turkey.quick.order.domain.Address;
 import com.turkey.quick.order.domain.FarePolicy;
 import com.turkey.quick.order.domain.FarePolicyStatus;
 import com.turkey.quick.order.domain.ItemType;
+import com.turkey.quick.common.exception.BusinessException;
+import com.turkey.quick.member.domain.Member;
+import com.turkey.quick.member.domain.MemberRole;
+import com.turkey.quick.member.repository.MemberRepository;
+import com.turkey.quick.order.domain.Contact;
+import com.turkey.quick.order.domain.DeliveryOrder;
+import com.turkey.quick.order.domain.FareType;
+import com.turkey.quick.order.domain.OrderFareSnapshot;
+import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.AddressRequest;
+import com.turkey.quick.order.dto.ContactRequest;
+import com.turkey.quick.order.dto.DeliveryCreateRequest;
+import com.turkey.quick.order.dto.DeliveryCreateResponse;
 import com.turkey.quick.order.dto.FareQuoteRequest;
 import com.turkey.quick.order.dto.FareQuoteResponse;
+import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.order.repository.FarePolicyRepository;
+import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
+import com.turkey.quick.payment.service.CustomerPaymentService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -15,13 +30,20 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("배송 운임 및 시간 계산 서비스")
@@ -32,6 +54,18 @@ class DeliveryServiceTest {
 
     @Mock
     private FarePolicyRepository farePolicyRepository;
+
+    @Mock
+    private DeliveryOrderRepository deliveryOrderRepository;
+
+    @Mock
+    private OrderFareSnapshotRepository orderFareSnapshotRepository;
+
+    @Mock
+    private MemberRepository memberRepository;
+
+    @Mock
+    private CustomerPaymentService customerPaymentService;
 
     //  픽스 데이터를 상수로 분리
     private static final AddressRequest YANGJAE_STATION = new AddressRequest(
@@ -98,6 +132,119 @@ class DeliveryServiceTest {
             assertThat(response.fare().totalFare())
                     .as("기본요금 및 거리 요금 합산 검증")
                     .isEqualTo(5010L);
+        }
+    }
+
+    /**
+     * 배송요청 생성 + 포인트 차감(#37, #40).
+     *
+     * <p>이 층에서 증명할 것은 <b>서비스의 판단</b>이다: 요금 대조 결과에 따라 저장 경로를 타는가,
+     * 멱등 재전송이 차감까지 건너뛰는가, 차감에 넘기는 금액이 요청값이 아니라 서버 계산값인가.
+     * 트랜잭션 롤백과 DB 제약(진행 중 1건, 이중 차감)은 여기서 증명되지 않는다 —
+     * {@code DeliveryServiceIntegrationTest} 몫이다.
+     *
+     * <p>요금은 모킹하지 않고 {@code QuoteFareTest} 와 같은 정책 스텁으로 실제 계산한다. 다만
+     * 기대 금액을 하드코딩하지 않고 {@link #serverFare()} 로 먼저 구해 쓴다 — 거리 계산이 바뀔 때
+     * 이 테스트가 요금 계산의 회귀 테스트 노릇을 하지 않게 하려는 것이다.
+     */
+    @Nested
+    @DisplayName("배송요청 생성")
+    class CreateDeliveryTest {
+
+        private static final Long CUSTOMER_ID = 7L;
+        private static final String REQUEST_KEY = "6c1f1a0e-6f7a-4b2b-9a3f-6b0d7f2a1c34";
+
+        private void givenActivePolicy() {
+            given(farePolicyRepository.findByStatus(FarePolicyStatus.ACTIVE))
+                    .willReturn(Optional.of(createMockFarePolicy()));
+        }
+
+        /** 같은 좌표·물품에 대해 서버가 산정하는 요금. 요청의 estimatedFare 는 이 값과 맞춰야 통과한다. */
+        private long serverFare() {
+            return deliveryService.quoteFare(
+                            new FareQuoteRequest(ItemType.DOCUMENT, YANGJAE_STATION, SINSA_STATION))
+                    .fare().totalFare();
+        }
+
+        private DeliveryCreateRequest request(long estimatedFare) {
+            return new DeliveryCreateRequest(
+                    REQUEST_KEY, estimatedFare, ItemType.DOCUMENT, YANGJAE_STATION, SINSA_STATION,
+                    new ContactRequest("김고객", "010-1234-5678"),
+                    new ContactRequest("이수령", "010-9876-5432"));
+        }
+
+        private void givenNoExistingOrder() {
+            given(deliveryOrderRepository.findByCustomer_IdAndRequestKey(CUSTOMER_ID, REQUEST_KEY))
+                    .willReturn(Optional.empty());
+            given(memberRepository.getReferenceById(CUSTOMER_ID)).willReturn(
+                    Member.create("cust01", "hash", "김고객", "01055556666", MemberRole.CUSTOMER));
+            given(deliveryOrderRepository.saveAndFlush(any(DeliveryOrder.class)))
+                    .willAnswer(invocation -> invocation.getArgument(0));
+        }
+
+        @Test
+        @DisplayName("정상 요청이면 WAITING 주문을 만들고 서버 계산 요금만큼 차감을 요청한다")
+        void createsWaitingOrderAndChargesServerFare() {
+            givenActivePolicy();
+            long fare = serverFare();
+            givenNoExistingOrder();
+
+            DeliveryCreateResponse response =
+                    deliveryService.createDelivery(request(fare), CUSTOMER_ID);
+
+            assertThat(response.status()).isEqualTo(OrderStatus.WAITING);
+            assertThat(response.requestKey()).isEqualTo(REQUEST_KEY);
+            assertThat(response.estimatedFare().totalFare()).isEqualTo(fare);
+
+            // 차감 금액은 요청값이 아니라 서버 계산값이다. 요청 멱등키를 원장 키로 그대로 넘긴다.
+            verify(customerPaymentService).payForOrder(
+                    eq(CUSTOMER_ID), any(DeliveryOrder.class), eq(fare), eq(REQUEST_KEY));
+        }
+
+        @Test
+        @DisplayName("화면이 안내한 요금과 서버 계산이 다르면 409 로 거부하고 주문도 차감도 하지 않는다")
+        void rejectsWhenFareChanged() {
+            givenActivePolicy();
+            long fare = serverFare();
+
+            Throwable thrown = catchThrowable(
+                    () -> deliveryService.createDelivery(request(fare + 1), CUSTOMER_ID));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class);
+            assertThat(((BusinessException) thrown).getStatus()).isEqualTo(HttpStatus.CONFLICT);
+
+            // 사용자가 동의하지 않은 금액이 빠져나가지 않는다 — 저장 경로 자체를 타지 않는다
+            verify(deliveryOrderRepository, never()).saveAndFlush(any());
+            verifyNoInteractions(customerPaymentService);
+        }
+
+        @Test
+        @DisplayName("같은 요청키로 재전송하면 새 주문을 만들지 않고 포인트도 다시 차감하지 않는다")
+        void doesNotChargeAgainOnResend() {
+            DeliveryOrder existing = DeliveryOrder.request(
+                    Member.create("cust01", "hash", "김고객", "01055556666", MemberRole.CUSTOMER),
+                    REQUEST_KEY, ItemType.DOCUMENT, 2600,
+                    Address.of("픽업", "상세", "06236",
+                            YANGJAE_STATION.latitude(), YANGJAE_STATION.longitude()),
+                    Address.of("도착", "상세", "06232",
+                            SINSA_STATION.latitude(), SINSA_STATION.longitude()),
+                    Contact.of("김고객", "01012345678"), Contact.of("이수령", "01098765432"));
+            given(deliveryOrderRepository.findByCustomer_IdAndRequestKey(CUSTOMER_ID, REQUEST_KEY))
+                    .willReturn(Optional.of(existing));
+            // 응답 요금은 지금 다시 계산하지 않고 저장된 ESTIMATE 스냅샷에서 되읽는다
+            given(orderFareSnapshotRepository.findByOrder_IdAndFareType(null, FareType.ESTIMATE))
+                    .willReturn(Optional.of(OrderFareSnapshot.create(
+                            existing, createMockFarePolicy(), FareType.ESTIMATE,
+                            "1.0", 2600, 1500L, 3510L, 0L)));
+
+            DeliveryCreateResponse response =
+                    deliveryService.createDelivery(request(9_999L), CUSTOMER_ID);
+
+            // estimatedFare 가 서버 계산과 달라도 대조 자체를 하지 않는다 — 이미 확정된 주문이다
+            assertThat(response.estimatedFare().totalFare()).isEqualTo(5_010L);
+            verify(deliveryOrderRepository, never()).saveAndFlush(any());
+            verifyNoInteractions(customerPaymentService);
+            verifyNoInteractions(farePolicyRepository);
         }
     }
 

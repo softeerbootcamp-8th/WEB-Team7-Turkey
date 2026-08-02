@@ -76,20 +76,38 @@ public interface CustomerDeliveryApi {
     @PostMapping("/quote")
     ApiResponse<FareQuoteResponse> quoteFare(@RequestBody FareQuoteRequest request);
 
-    @Operation(summary = "배송요청 생성",
-            description = "배송요청을 WAITING 으로 생성하고 예상 운임(ESTIMATE) 스냅샷을 함께 남긴다. "
+    @Operation(operationId = "createCustomerDelivery",
+            summary = "배송요청 생성",
+            description = "배송요청을 WAITING 으로 생성하고 예상 운임(ESTIMATE) 스냅샷을 남긴 뒤 "
+                    + "그 요금만큼 포인트를 차감한다(REQ-ORD-002 + CUS-PAY-002). "
+                    + "셋은 하나의 트랜잭션이라 어느 하나가 실패하면 전부 롤백된다 — 주문만 생기거나 "
+                    + "포인트만 빠져나가는 상태는 만들어지지 않는다. "
+                    + "요금은 좌표로 서버가 다시 계산하며, 요청의 estimatedFare 는 대조용이다. "
+                    + "화면이 안내한 금액과 서버 계산이 다르면 주문을 만들지 않고 409 로 알린다 — "
+                    + "사용자가 동의하지 않은 금액을 결제하지 않기 위해서다. "
                     + "고객은 진행 중(WAITING~DELIVERING) 요청을 1건만 가질 수 있다. "
-                    + "같은 requestKey 로 재전송하면 새로 만들지 않고 기존 결과를 돌려준다.")
+                    + "같은 requestKey 로 재전송하면 새로 만들지 않고 기존 결과를 돌려주며 포인트도 "
+                    + "다시 차감하지 않는다.")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "201", description = "생성 성공"),
+                    responseCode = "201", description = "생성 성공(재전송 시 기존 주문의 결과)"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "409", description = "진행 중 배송요청이 이미 있음")
+                    responseCode = "400",
+                    description = "입력값 오류, 최대 배송 거리 초과, 또는 활성 요금 정책 없음"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401", description = "미로그인 또는 세션 만료"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "402", description = "포인트 잔액이 배송요금보다 적음"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "409",
+                    description = "진행 중 배송요청이 이미 있거나 동일 요청이 동시에 처리 중, "
+                            + "또는 서버 재계산 요금이 요청의 estimatedFare 와 다름")
     })
     @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(
             examples = @ExampleObject(value = """
                     {
                       "requestKey": "6c1f1a0e-6f7a-4b2b-9a3f-6b0d7f2a1c34",
+                      "estimatedFare": 6400,
                       "itemType": "DOCUMENT",
                       "pickup": {
                         "roadAddress": "서울 강남구 테헤란로 152",
@@ -117,6 +135,12 @@ public interface CustomerDeliveryApi {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     ApiResponse<DeliveryCreateResponse> createDelivery(
+            // 세션에서 얻은 고객이 곧 주문의 주인이다. 요청 바디로 받으면 남의 주문을 만들 수 있다.
+            // 이 파라미터는 클라이언트가 채울 수 없으므로 스웨거 문서에도 노출되지 않는다.
+            // (RiderDeliveryRequestApi 와 같은 방식 — 이 파일은 매핑을 인터페이스에 두는 옛 형태다)
+            @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
+            AuthenticatedCustomer customer,
+
             @Valid @RequestBody DeliveryCreateRequest request);
 
     @Operation(summary = "배송요청 목록",

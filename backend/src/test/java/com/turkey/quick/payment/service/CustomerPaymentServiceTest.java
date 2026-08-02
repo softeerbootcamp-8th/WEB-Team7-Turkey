@@ -28,6 +28,7 @@ import com.turkey.quick.payment.dto.PointChargeRequest;
 import com.turkey.quick.payment.dto.PointChargeResponse;
 import com.turkey.quick.payment.dto.PointChargeConfirmRequest;
 import com.turkey.quick.payment.repository.PointChargeRepository;
+import com.turkey.quick.payment.repository.PointTransactionRepository;
 import com.turkey.quick.payment.repository.PointWalletRepository;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -53,6 +54,7 @@ class CustomerPaymentServiceTest {
     private PointWalletRepository pointWalletRepository;
     private PointChargeRepository pointChargeRepository;
     private MemberRepository memberRepository;
+    private PointTransactionRepository pointTransactionRepository;
     private PaymentGateway paymentGateway;
     private PointChargeApprover pointChargeApprover;
     private CustomerPaymentService customerPaymentService;
@@ -64,9 +66,10 @@ class CustomerPaymentServiceTest {
         memberRepository = mock(MemberRepository.class);
         paymentGateway = mock(PaymentGateway.class);
         pointChargeApprover = mock(PointChargeApprover.class);
+        pointTransactionRepository = mock(PointTransactionRepository.class);
         customerPaymentService = new CustomerPaymentService(
                 pointWalletRepository, pointChargeRepository, memberRepository,
-                paymentGateway, pointChargeApprover);
+                pointTransactionRepository, paymentGateway, pointChargeApprover);
     }
 
     private Member member() {

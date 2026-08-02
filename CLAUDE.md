@@ -395,6 +395,32 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - `GlobalExceptionHandler`가 `IllegalStateException`을 일괄 400 으로 바꾼다(#67에서 드러남). 서버
   정합성 오류를 사용자 입력 오류와 구분하려면 매번 `BusinessException`을 명시해야 한다는 뜻인데,
   이 관례를 `references/backend.md`에 못 박을지 미결
+- **order ↔ payment 서비스 의존 방향은 order → payment 로 고정한다**(#37/#40, 사람 확인 2026-08-01).
+  `DeliveryService` 가 `CustomerPaymentService` 를 주입받고, **payment 서비스는 order 서비스를
+  주입받지 않는다.** 반대로 하면 스프링 빈 순환이 되는데, Boot 3.4 는 순환 참조가 기본 금지라
+  **컴파일이 아니라 기동이 실패한다.** payment 가 order 를 참조하는 것은 엔터티까지다
+  (`PointTransaction.deliveryOrder`, `RiderSettlement.deliveryOrder`).
+- **주문 생성과 포인트 차감은 하나의 트랜잭션이다**(#37/#40). `CustomerPaymentService.payForOrder`
+  는 `Propagation.MANDATORY` 라 상위 트랜잭션 밖에서는 호출 자체가 실패한다 — 기본값이면 이 메서드만
+  따로 불렀을 때 조용히 새 트랜잭션이 열려 **주문 없이 포인트만 빠져나가는** 경로가 생긴다.
+- **배송요청 생성은 `estimatedFare` 를 받아 서버 재계산값과 대조하고, 다르면 409로 거부한다**(#37,
+  사람 확인). 대조 전용이며 **결제 금액으로 쓰이지 않는다**(차감은 항상 서버 계산값). 화면이 5,000원을
+  안내하고 5,500원이 빠져나가는 것을 막기 위한 것이다. 프론트는 `/quote` 응답의 `fare.totalFare` 를
+  그대로 실어 보낸다.
+- **포인트 부족은 402 PAYMENT_REQUIRED 다**(#40, 사람 확인). 이 저장소에서 402를 쓰는 첫 API이며,
+  프론트가 `message` 파싱 없이 충전 화면으로 분기할 수 있게 하려는 것이다. 이 엔드포인트의 409는
+  진행 중 1건 위반·동시 재전송·요금 변경 **세 가지를 겸한다** — 앞의 둘은 같은 INSERT 의 제약 위반이라
+  앱에서 구분할 수 없다(제약명 파싱은 DB 벤더 문자열 의존이라 하지 않았다). #56의 에러코드 체계
+  논의와 같은 사안이다.
+- **`point_transaction` 의 요청키 유니크는 `(request_key, transaction_type)` 이다**(V18, #40에서 완화).
+  원래 `request_key` 전역 유니크였는데, 그러면 `uk_point_transaction_order_type` 이 허용하는
+  "한 주문에 ORDER_USE + ORDER_REFUND"를 키가 막았다(`CHAR(36)` 고정폭이라 접미사도 못 붙인다).
+  이제 ORDER_USE 와 ORDER_REFUND 가 같은 주문 요청키를 공유할 수 있고, 그 공유 자체가 "같은 주문
+  요청에서 나온 결제와 환불"이라는 추적 근거가 된다. 멱등성은 유형까지 포함한 조합으로 유지된다
+- **`/api/customer/deliveries` 아래는 인터셉터에 정확 경로로 한 건씩 등록한다**(#37). 형제 경로
+  `/quote`(요금 견적, #39)가 비로그인 API 라 `/api/customer/deliveries/**` 로 넓히면 그 API 가 조용히
+  401 이 되어 프론트 견적 화면이 깨진다. `CustomerDeliveryCreateE2ETest` 가 "/quote 는 쿠키 없이
+  200" 을 회귀로 고정해 둔다
 - **SSE 재연결이 연결 자리를 재사용하지 않는다**(#79 에서 확인, 사람 결정으로 범위에서 제외).
   연결 한도 3 + 서버 `retry: 3000` + stale 임계 45초라서, **45초 안에 3번 끊겼다 붙으면 4번째가 429**
   이고 브라우저 `EventSource` 는 200 아닌 응답에 재연결하지 않아 **추적 화면이 수동 새로고침까지
