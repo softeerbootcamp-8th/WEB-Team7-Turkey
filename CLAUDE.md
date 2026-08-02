@@ -206,11 +206,11 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   음수·미래 시각은 400 이지만, **정확도 상한 초과와 60초 초과 과거 fix 는 200 + `reason`** 으로
   수용·폐기한다(실내·지하 측위나 탭 복귀 직후에 정상적으로 발생해 클라이언트가 고칠 것이 없다).
   그래서 정확도 상한을 `@DecimalMax` 로 달 수 없다 — Bean Validation 위반은 400 이 된다.
-- ~~운행 종료 후 최대 10분간 라이더 최신 위치가 Redis 에 남는다(#81)~~ **해소(#54)**:
-  운행 상태 변경 API 구현 시 `RiderLocationStore.delete`(Redis DEL)를 추가하고 GO_OFFLINE 에서
-  호출해, 운행 종료 즉시 최신 위치를 지운다. 다만 실제 GEO 배차 후보 스토어(#83)가 붙으면
-  GO_ONLINE/OFFLINE 이 그 GEO 셋에 add/remove 해야 하는지는 그때 확정한다. delete 를 DB 트랜잭션
-  커밋 전에 호출하는 트레이드오프는 부하 테스트 후 재검토(worklog 2026-07-31-54 참조).
+- ~~운행 종료 후 최대 10분간 라이더 최신 위치가 Redis 에 남는다(#81)~~ **해소(#54, #83)**: GO_OFFLINE
+  시 `RiderGeoRepository.remove`(ZREM)를 호출해 운행 종료 즉시 배차 후보에서 뺀다. `location`
+  패키지 단순화(#297)로 원래 쓰던 `RiderLocationStore`가 삭제되면서 #83이 만든 GEO 저장소로
+  교체했다(같은 의미의 멱등 삭제 연산이라 그대로 대체). remove 를 DB 트랜잭션 커밋 전에 호출하는
+  트레이드오프는 부하 테스트 후 재검토(worklog 2026-07-31-54 참조).
 - 위치 갱신 응답의 `NON_MONOTONIC` 이 **두 원인을 겸한다**(#250, 사람 확인 2026-07-29). 클라이언트가
   순서를 어겨 보낸 것과 **인스턴스 간 경쟁에서 진 것**(`saveIfNewer` 가 거절)이 같은 사유·같은 로그
   라인으로 나간다. 계약을 늘리지 않으려고 통일한 것이고, 경쟁 빈도를 알아야 할 때(부하 테스트,
@@ -307,11 +307,12 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - (#246 후속) 다중 인스턴스 배포 구성 전반 미결 — 채널 설계, ALB 도입, 롤링 배포 등은 구현
   이슈(#77~#80)에서 결정
 - (#246 후속) 세션 만료 정리(#52)에 Pub/Sub을 쓸지는 #246 범위(SSE 팬아웃) 밖이라 별도 결정 필요
-- **PR #284(#54, 라이더 운행 상태 변경 API)가 merge conflict 상태다.** `location` 패키지 단순화
-  (#297)로 그 PR이 쓰던 `RiderLocationStore`/`RedisRiderLocationStore`가 삭제됐기 때문이다. #83이
-  만든 `RiderGeoRepository.remove(riderId)`가 의미상 완전히 같은 연산(즉시 배차 후보 제외, 멱등
-  삭제)이라, PR #284를 새 dev로 리베이스하며 `RiderLocationStore.delete` 호출부를 이걸로 교체하면
-  된다 — 아직 안 함
+- ~~PR #284(#54, 라이더 운행 상태 변경 API)가 merge conflict 상태다~~ **해소**: `location` 패키지
+  단순화(#297)로 그 PR이 쓰던 `RiderLocationStore`/`RedisRiderLocationStore`가 삭제됐던 것을,
+  #83이 만든 `RiderGeoRepository.remove(riderId)`(의미상 완전히 같은 멱등 삭제 연산)로 교체해
+  PR #284를 `feature/83-ride-loc-geo-candidate` 위로 리베이스했다(2026-08-02). 이 PR을 다시
+  `dev` 기준으로 열려면 #83·#290·#291이 먼저 `dev`에 merge돼야 한다(현재 스택: dev ← #290/#291
+  ← #83 ← #54).
 - **다중 인스턴스 대비 Redis Pub/Sub 재도입은 아직 이슈가 없다.** 실제 배포는 단일 인스턴스이지만
   스케일 아웃에 대비해 두기로 했다(2026-08-02, 사람 확인). 예전 설계(#78, 채널 `tracking:order:{id}`
   + 패턴 구독)가 참고 대상이나 #297로 제거된 상태라 처음부터 다시 설계해야 한다
