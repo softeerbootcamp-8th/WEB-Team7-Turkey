@@ -31,6 +31,7 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.geo.Point;
 import org.springframework.http.HttpStatus;
@@ -41,6 +42,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 라이더 콜(배차 대기 배송요청) 목록 조회(#55). 수락·상세·넘기기(#56/#57)는 이 서비스가 아니라
  * 각 이슈에서 추가한다.
  */
+@Slf4j
 @RequiredArgsConstructor
 @Service
 public class RiderDeliveryRequestService {
@@ -212,6 +214,15 @@ public class RiderDeliveryRequestService {
             // (ADR-006: 둘 다 1행일 때만 커밋, 부분 성공 금지).
             throw new BusinessException(HttpStatus.CONFLICT,
                     "라이더가 이미 다른 배송을 수행 중이라 배차를 확정할 수 없습니다.");
+        }
+
+        // 배차 확정 = 즉시 BUSY이므로 다음 위치 전송(#83)을 기다리지 않고 바로 후보에서 뺀다 —
+        // 그 사이 창에 다른 고객의 배차 요청이 이 라이더를 후보로 잡는 걸 막기 위해서다. Redis
+        // 실패는 DB 트랜잭션(이미 커밋 확정된 배차)을 되돌릴 이유가 아니므로 로깅만 한다.
+        try {
+            riderGeoRepository.remove(rider.memberId());
+        } catch (RuntimeException e) {
+            log.warn("event=GEO_CANDIDATE_SYNC_FAILED riderId={} reason=ACCEPT_DELIVERY", rider.memberId(), e);
         }
 
         DeliveryOrder assigned = deliveryOrderRepository.findById(deliveryId)
