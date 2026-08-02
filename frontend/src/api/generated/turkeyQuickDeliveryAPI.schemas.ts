@@ -149,12 +149,6 @@ export interface ApiResponsePointBalanceResponse {
   success?: boolean;
 }
 
-export interface ApiResponsePointChargeCancelResponse {
-  data?: PointChargeCancelResponse;
-  message?: string;
-  success?: boolean;
-}
-
 export interface ApiResponsePointChargeConfirmResponse {
   data?: PointChargeConfirmResponse;
   message?: string;
@@ -185,14 +179,14 @@ export interface ApiResponseRiderDeliveryRequestDetailResponse {
   success?: boolean;
 }
 
-export interface ApiResponseRiderLocationUpdateResponse {
-  data?: RiderLocationUpdateResponse;
+export interface ApiResponseRiderLoginResponse {
+  data?: RiderLoginResponse;
   message?: string;
   success?: boolean;
 }
 
-export interface ApiResponseRiderLoginResponse {
-  data?: RiderLoginResponse;
+export interface ApiResponseRiderOperatingStatusResponse {
+  data?: RiderOperatingStatusResponse;
   message?: string;
   success?: boolean;
 }
@@ -776,48 +770,15 @@ export interface PointBalanceResponse {
 }
 
 /**
- * 충전 상태. 취소 성공 시 CANCELED.
- */
-export type PointChargeCancelResponseStatus = typeof PointChargeCancelResponseStatus[keyof typeof PointChargeCancelResponseStatus];
-
-
-// eslint-disable-next-line @typescript-eslint/no-redeclare
-export const PointChargeCancelResponseStatus = {
-  PENDING: 'PENDING',
-  PAID: 'PAID',
-  FAILED: 'FAILED',
-  CANCELED: 'CANCELED',
-  REFUNDED: 'REFUNDED',
-} as const;
-
-/**
- * 포인트 충전 취소 결과
- */
-export interface PointChargeCancelResponse {
-  /** 현재 잔액. 취소는 잔액을 바꾸지 않으므로 취소 전 값과 같다. */
-  balance?: number;
-  /** 취소 사유. 서버가 채운다. */
-  cancelReason?: string;
-  /** 충전 식별자 */
-  pointChargeId?: number;
-  /** 취소된 충전 요청 금액. 승인된 적이 없으므로 결제되지 않은 금액이다. */
-  requestedAmount?: number;
-  /** 충전 상태. 취소 성공 시 CANCELED. */
-  status?: PointChargeCancelResponseStatus;
-}
-
-/**
  * 포인트 충전 승인 요청
  */
 export interface PointChargeConfirmRequest {
-  /** 결제 금액. 서버가 기억하는 요청 금액과 대조하는 데만 쓴다. */
-  amount?: number;
   /**
-   * 결제창을 통과해 받아 온 인증 토큰(토스 paymentKey · 카카오 pg_token 등).
+   * PG 승인 식별자. MVP 모킹에서는 생략 가능(서버가 모의 키 생성).
    * @minLength 0
-   * @maxLength 200
+   * @maxLength 100
    */
-  authToken: string;
+  providerPaymentKey?: string;
 }
 
 /**
@@ -1110,54 +1071,20 @@ export interface RiderDeliveryRequestSummaryResponse {
   straightDistanceMeters?: number;
 }
 
-/**
- * 라이더 현재 위치 갱신 요청
- */
 export interface RiderLocationUpdateRequest {
-  /** 위치 정확도(미터). 단말이 제공하지 않으면 생략한다. */
   accuracyMeters?: number;
+  deliveryId: number;
   /**
-   * 위도
    * @minimum -90
    * @maximum 90
    */
   latitude: number;
   /**
-   * 경도
    * @minimum -180
    * @maximum 180
    */
   longitude: number;
-  /** 단말이 좌표를 측정한 시각(UTC, ISO-8601). 서버 저장 시각과 구분된다. */
   measuredAt: string;
-}
-
-/**
- * 판정 사유
- */
-export type RiderLocationUpdateResponseReason = typeof RiderLocationUpdateResponseReason[keyof typeof RiderLocationUpdateResponseReason];
-
-
-// eslint-disable-next-line @typescript-eslint/no-redeclare
-export const RiderLocationUpdateResponseReason = {
-  ACCEPTED: 'ACCEPTED',
-  STALE: 'STALE',
-  LOW_ACCURACY: 'LOW_ACCURACY',
-  NON_MONOTONIC: 'NON_MONOTONIC',
-  DUPLICATE: 'DUPLICATE',
-  IMPLAUSIBLE_SPEED: 'IMPLAUSIBLE_SPEED',
-} as const;
-
-/**
- * 라이더 현재 위치 갱신 결과
- */
-export interface RiderLocationUpdateResponse {
-  /** 최신 위치가 갱신됐는지 */
-  applied?: boolean;
-  /** 이 위치를 실시간 추적 채널로 발행했는지. 고객 도달이나 구독 여부를 뜻하지 않는다(at-most-once). */
-  published?: boolean;
-  /** 판정 사유 */
-  reason?: RiderLocationUpdateResponseReason;
 }
 
 export interface RiderLoginRequest {
@@ -1189,6 +1116,51 @@ export interface RiderLoginResponse {
   name?: string;
   /** 현재 운행 상태 */
   operatingStatus?: RiderLoginResponseOperatingStatus;
+}
+
+/**
+ * 운행 상태
+ */
+export type RiderOperatingStatusResponseOperatingStatus = typeof RiderOperatingStatusResponseOperatingStatus[keyof typeof RiderOperatingStatusResponseOperatingStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RiderOperatingStatusResponseOperatingStatus = {
+  UNAVAILABLE: 'UNAVAILABLE',
+  AVAILABLE: 'AVAILABLE',
+  BUSY: 'BUSY',
+} as const;
+
+/**
+ * 라이더 운행 상태
+ */
+export interface RiderOperatingStatusResponse {
+  /** 진행 중 배송 식별자. BUSY 가 아니면 null. */
+  currentDeliveryId?: number;
+  /** 운행 상태 */
+  operatingStatus?: RiderOperatingStatusResponseOperatingStatus;
+  /** 상태가 바뀐 시각(UTC) */
+  statusChangedAt?: string;
+}
+
+/**
+ * 수행할 행위
+ */
+export type RiderOperatingStatusUpdateRequestAction = typeof RiderOperatingStatusUpdateRequestAction[keyof typeof RiderOperatingStatusUpdateRequestAction];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RiderOperatingStatusUpdateRequestAction = {
+  GO_ONLINE: 'GO_ONLINE',
+  GO_OFFLINE: 'GO_OFFLINE',
+} as const;
+
+/**
+ * 운행 상태 변경 요청
+ */
+export interface RiderOperatingStatusUpdateRequest {
+  /** 수행할 행위 */
+  action: RiderOperatingStatusUpdateRequestAction;
 }
 
 /**

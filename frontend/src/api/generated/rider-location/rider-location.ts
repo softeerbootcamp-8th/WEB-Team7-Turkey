@@ -16,7 +16,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
-  ApiResponseRiderLocationUpdateResponse,
+  ApiResponseVoid,
   RiderLocationUpdateRequest
 } from '../turkeyQuickDeliveryAPI.schemas';
 
@@ -29,13 +29,6 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 
 /**
- * 운행 중(AVAILABLE·BUSY)인 라이더의 최신 위치를 갱신한다.
-
-요청이 정상이어도 값을 쓸 수 없으면 200 으로 응답하면서 버린다(응답 reason 참고).
-정확도가 기준을 넘거나(LOW_ACCURACY) 측정 시각이 너무 오래됐거나(STALE)
-이전 위치보다 과거·동일한 시각(NON_MONOTONIC)인 경우다. 실내·지하 측위나 탭 복귀
-직후처럼 정상 운행 중에도 발생하는 조건이라 오류로 응답하지 않는다.
-
  * @summary 라이더 현재 위치 갱신
  */
 export const updateRiderLocation = (
@@ -44,7 +37,7 @@ export const updateRiderLocation = (
 ) => {
       
       
-      return customInstance<ApiResponseRiderLocationUpdateResponse>(
+      return customInstance<ApiResponseVoid>(
       {url: `/api/rider/location`, method: 'POST',
       headers: {'Content-Type': 'application/json', },
       data: riderLocationUpdateRequest, signal
@@ -54,7 +47,7 @@ export const updateRiderLocation = (
   
 
 
-export const getUpdateRiderLocationMutationOptions = <TError = ErrorType<ApiResponseRiderLocationUpdateResponse>,
+export const getUpdateRiderLocationMutationOptions = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateRiderLocation>>, TError,{data: BodyType<RiderLocationUpdateRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateRiderLocation>>, TError,{data: BodyType<RiderLocationUpdateRequest>}, TContext> => {
 
@@ -81,12 +74,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type UpdateRiderLocationMutationResult = NonNullable<Awaited<ReturnType<typeof updateRiderLocation>>>
     export type UpdateRiderLocationMutationBody = BodyType<RiderLocationUpdateRequest>
-    export type UpdateRiderLocationMutationError = ErrorType<ApiResponseRiderLocationUpdateResponse>
+    export type UpdateRiderLocationMutationError = ErrorType<unknown>
 
     /**
  * @summary 라이더 현재 위치 갱신
  */
-export const useUpdateRiderLocation = <TError = ErrorType<ApiResponseRiderLocationUpdateResponse>,
+export const useUpdateRiderLocation = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateRiderLocation>>, TError,{data: BodyType<RiderLocationUpdateRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updateRiderLocation>>,
