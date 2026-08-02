@@ -62,6 +62,12 @@ management:
     web:
       exposure:
         include: health,prometheus
+# --- 공개 접근 도메인 ---
+# CloudFront가 EC2로 요청을 넘길 때 Host 헤더를 오리진(EC2) 도메인으로 덮어써서,
+# springdoc이 자동 추론하는 OpenAPI 서버 URL이 EC2 주소로 잡힌다(OpenApiConfig 참고).
+# 그래서 실제 공개 도메인을 명시적으로 고정한다. 로컬은 application-local.yml에서 비운다.
+app:
+  public-base-url: https://dw1nqa61d1no6.cloudfront.net
 
 # --- 로그인 세션 쿠키 ---
 # Secure는 프로파일별로 다르다: 배포는 CloudFront가 HTTPS를 종단하므로 true,

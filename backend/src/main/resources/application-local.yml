@@ -23,7 +23,8 @@ session:
   cookie:
     secure: false
 
-
+app:
+  public-base-url: ""
 
 logging:
   level:
