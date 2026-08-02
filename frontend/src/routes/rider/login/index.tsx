@@ -1,13 +1,99 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { useState, type FormEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-router'
+import { useRiderLogin } from '@/api/generated/rider-login/rider-login'
+import { resolveGuestGuard, RIDER_STATUS_ROUTE, type SessionInfo } from '@/shared/auth/guard'
 import { validateRedirectSearch } from '@/shared/auth/redirectSearch'
+import { cacheAuthenticatedRider, ensureSessionInfo } from '@/shared/auth/session'
+import {
+  getRiderLoginErrorMessage,
+  validateRiderLogin,
+  type RiderLoginFieldErrors,
+  type RiderLoginFields,
+} from './-loginForm'
 
 export const Route = createFileRoute('/rider/login/')({
   // 가드가 보존한 원래 목적지(#195). 로그인 성공 후 이 경로로 돌려보낸다.
   validateSearch: validateRedirectSearch,
+  beforeLoad: async ({ context }) => {
+    let session: SessionInfo
+    try {
+      session = await ensureSessionInfo(context.queryClient)
+    } catch {
+      return
+    }
+
+    const decision = resolveGuestGuard(session)
+    if (decision.action === 'redirect') {
+      throw redirect({ to: decision.to })
+    }
+  },
   component: RiderLogin,
 })
 
 function RiderLogin() {
+  const router = useRouter()
+  const queryClient = useQueryClient()
+  const search = Route.useSearch()
+  const [fields, setFields] = useState<RiderLoginFields>({ loginId: '', password: '' })
+  const [fieldErrors, setFieldErrors] = useState<RiderLoginFieldErrors>({})
+  const [formError, setFormError] = useState<string | null>(null)
+  const [passwordVisible, setPasswordVisible] = useState(false)
+
+  const loginMutation = useRiderLogin({
+    mutation: {
+      onSuccess: (response) => {
+        if (!response.data) {
+          setFormError('로그인 응답을 확인할 수 없습니다. 다시 시도해 주세요.')
+          return
+        }
+
+        cacheAuthenticatedRider(queryClient, response.data)
+
+        if (search.redirect) {
+          router.history.push(search.redirect)
+          return
+        }
+
+        const target = response.data.operatingStatus
+          ? RIDER_STATUS_ROUTE[response.data.operatingStatus]
+          : '/rider'
+        void router.navigate({ to: target })
+      },
+      onError: (error) => {
+        setFormError(getRiderLoginErrorMessage(error))
+      },
+    },
+  })
+
+  function updateField(field: keyof RiderLoginFields, value: string) {
+    setFields((current) => ({ ...current, [field]: value }))
+    setFieldErrors((current) => ({ ...current, [field]: undefined }))
+    setFormError(null)
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (loginMutation.isPending) {
+      return
+    }
+
+    const errors = validateRiderLogin(fields)
+    setFieldErrors(errors)
+    setFormError(null)
+
+    if (Object.keys(errors).length > 0) {
+      return
+    }
+
+    loginMutation.mutate({
+      data: {
+        loginId: fields.loginId.trim(),
+        password: fields.password,
+      },
+    })
+  }
+
   return (
     <div className="max-w-md mx-auto min-h-screen bg-surface-container-lowest relative flex flex-col shadow-sm">
       {/* TopAppBar */}
@@ -36,25 +122,65 @@ function RiderLogin() {
         </div>
 
         {/* Login Form */}
-        <form className="flex flex-col gap-md w-full max-w-md mx-auto">
+        <form className="flex flex-col gap-md w-full max-w-md mx-auto" onSubmit={handleSubmit} noValidate>
 
           {/* ID Input */}
           <div className="flex flex-col gap-xs">
             <label htmlFor="userId" className="text-label-md font-label-md text-on-surface-variant px-1">아이디</label>
             <div className="relative">
-              <input type="text" id="userId" placeholder="아이디를 입력해주세요" className="w-full h-[52px] bg-surface-container-lowest border border-surface-container rounded-xl px-4 text-body-lg font-body-lg focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all" />
+              <input
+                type="text"
+                id="userId"
+                name="loginId"
+                autoComplete="username"
+                value={fields.loginId}
+                onChange={(event) => updateField('loginId', event.target.value)}
+                aria-invalid={Boolean(fieldErrors.loginId)}
+                aria-describedby={fieldErrors.loginId ? 'rider-loginId-error' : undefined}
+                placeholder="아이디를 입력해주세요"
+                className="w-full h-[52px] bg-surface-container-lowest border border-surface-container rounded-xl px-4 text-body-lg font-body-lg focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all"
+              />
             </div>
+            {fieldErrors.loginId && (
+              <p id="rider-loginId-error" className="px-1 text-body-md text-error" role="alert">
+                {fieldErrors.loginId}
+              </p>
+            )}
           </div>
 
           {/* Password Input */}
           <div className="flex flex-col gap-xs">
             <label htmlFor="password" className="text-label-md font-label-md text-on-surface-variant px-1">비밀번호</label>
             <div className="relative">
-              <input type="password" id="password" placeholder="비밀번호를 입력해주세요" className="w-full h-[52px] bg-surface-container-lowest border border-surface-container rounded-xl px-4 text-body-lg font-body-lg focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all" />
-              <button type="button" className="absolute right-4 top-1/2 transform -translate-y-1/2 text-on-surface-variant hover:text-on-surface" aria-label="비밀번호 표시">
-                <span className="material-symbols-outlined text-[20px]">visibility_off</span>
+              <input
+                type={passwordVisible ? 'text' : 'password'}
+                id="password"
+                name="password"
+                autoComplete="current-password"
+                value={fields.password}
+                onChange={(event) => updateField('password', event.target.value)}
+                aria-invalid={Boolean(fieldErrors.password)}
+                aria-describedby={fieldErrors.password ? 'rider-password-error' : undefined}
+                placeholder="비밀번호를 입력해주세요"
+                className="w-full h-[52px] bg-surface-container-lowest border border-surface-container rounded-xl px-4 pr-12 text-body-lg font-body-lg focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all"
+              />
+              <button
+                type="button"
+                className="absolute right-4 top-1/2 transform -translate-y-1/2 text-on-surface-variant hover:text-on-surface"
+                aria-label={passwordVisible ? '비밀번호 숨기기' : '비밀번호 표시'}
+                aria-pressed={passwordVisible}
+                onClick={() => setPasswordVisible((visible) => !visible)}
+              >
+                <span className="material-symbols-outlined text-[20px]">
+                  {passwordVisible ? 'visibility' : 'visibility_off'}
+                </span>
               </button>
             </div>
+            {fieldErrors.password && (
+              <p id="rider-password-error" className="px-1 text-body-md text-error" role="alert">
+                {fieldErrors.password}
+              </p>
+            )}
           </div>
 
           {/* Options Row */}
@@ -66,9 +192,20 @@ function RiderLogin() {
             </div>
           </div>
 
+          {formError && (
+            <p className="rounded-xl bg-error-container px-4 py-3 text-body-md text-on-error-container" role="alert">
+              {formError}
+            </p>
+          )}
+
           {/* Primary Action */}
-          <button type="submit" className="w-full h-[52px] bg-primary-container text-[#191919] text-headline-sm-mobile font-headline-sm-mobile font-bold rounded-xl mt-sm flex items-center justify-center active:scale-[0.98] transition-transform">
-            로그인
+          <button
+            type="submit"
+            disabled={loginMutation.isPending}
+            aria-busy={loginMutation.isPending}
+            className="w-full h-[52px] bg-primary-container text-[#191919] text-headline-sm-mobile font-headline-sm-mobile font-bold rounded-xl mt-sm flex items-center justify-center active:scale-[0.98] transition-transform disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {loginMutation.isPending ? '로그인 중...' : '로그인'}
           </button>
         </form>
       </main>
