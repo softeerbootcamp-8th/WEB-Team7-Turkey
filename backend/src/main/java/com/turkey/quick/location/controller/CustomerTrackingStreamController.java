@@ -14,7 +14,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @RestController
 @RequiredArgsConstructor
 public class CustomerTrackingStreamController implements CustomerTrackingStreamApi {
-    private static final Long TTL = 1000L;
+    // #77에서 확정된 emitter 타임아웃(5분). new SseEmitter()의 Tomcat 기본값 30초는
+    // 쓰기로 갱신되지 않아 이벤트가 흐르고 있어도 끊기므로 반드시 명시해야 한다.
+    private static final Long TTL_MILLIS = 5 * 60 * 1000L;
     private final SseRegistry registry;
     private final DeliveryTrackingAccessService deliveryTrackingAccessService;
 
@@ -23,7 +25,7 @@ public class CustomerTrackingStreamController implements CustomerTrackingStreamA
         // BusinessException은 GlobalExceptionHandler가 상태 코드·메시지 그대로 처리한다 —
         // 여기서 잡아서 다시 던지면 404(없음/타인 것)와 409(추적 불가 상태)가 구분 안 된다.
         deliveryTrackingAccessService.authorizeTracking(deliveryId, customer.memberId());
-        SseEmitter emitter = new SseEmitter(TTL);
+        SseEmitter emitter = new SseEmitter(TTL_MILLIS);
 
         registry.add(deliveryId, emitter);
         emitter.onCompletion(() -> registry.remove(deliveryId, emitter));
