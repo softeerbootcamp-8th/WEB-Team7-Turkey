@@ -359,6 +359,19 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - `GlobalExceptionHandler`가 `IllegalStateException`을 일괄 400 으로 바꾼다(#67에서 드러남). 서버
   정합성 오류를 사용자 입력 오류와 구분하려면 매번 `BusinessException`을 명시해야 한다는 뜻인데,
   이 관례를 `references/backend.md`에 못 박을지 미결
+- **SSE 재연결이 연결 자리를 재사용하지 않는다**(#79 에서 확인, 사람 결정으로 범위에서 제외).
+  연결 한도 3 + 서버 `retry: 3000` + stale 임계 45초라서, **45초 안에 3번 끊겼다 붙으면 4번째가 429**
+  이고 브라우저 `EventSource` 는 200 아닌 응답에 재연결하지 않아 **추적 화면이 수동 새로고침까지
+  죽는다**(지하철·엘리베이터에서 현실적으로 발생). 해법은 클라이언트가 보낸 불투명 식별자를 emitter
+  id 로 쓰는 것이다 — `RedisTrackingConnectionLimiter` 의 Lua 가 이미 같은 멤버의 재획득을 허용한다.
+  단 그때 **죽어 가는 이전 연결의 늦은 `onCompletion` 이 같은 id 를 이어받은 새 연결을 지우는**
+  use-after-free 를 함께 막아야 한다(`complete()` 는 콜백을 동기로 돌리지 않는다) — 레지스트리 제거를
+  값까지 비교하는 형태로 바꾸면 된다. 별도 이슈로 올릴지 미결
+- 추적 스냅샷(`GET /api/customer/deliveries/{deliveryId}/tracking`, #79)이 **스트림과 같은 게이트를 쓴다**
+  (사람 확인) — 그래서 WAITING·COMPLETED·CANCELED 는 409 고, **완료·취소된 배송의 추적 화면을 그릴 API 가
+  없다**(배송요청 상세 API 는 아직 스텁). 또 `estimatedArrivalAt` 은 항상 null 이며(산정 근거 없음),
+  `steps` 는 `order_status_history` 가 아니라 `delivery_order` 시각 컬럼에서 파생한다 — 그 테이블은
+  엔터티만 있고 **행을 쓰는 코드가 없어 런타임에 비어 있다**(상태 전이 API 이슈에서 작성기 필요)
 - 배차 확정(`POST /api/rider/requests/{deliveryId}/accept`, #56) 실패 사유(취소/이미 배차/라이더
   다른 배송 수행 중)를 `ApiResponse`에 에러코드 필드 없이 `message` 문자열로만 구분함(ADR-006).
   프론트가 사유별로 다른 UX를 보여줘야 하면 에러코드 체계 신설을 별도 이슈로 논의해야 함
