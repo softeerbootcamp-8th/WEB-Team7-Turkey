@@ -1,10 +1,40 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { useChangeOperatingStatus } from '@/api/generated/rider-operating-status/rider-operating-status'
+import { getGetRiderSessionQueryKey } from '@/api/generated/rider-session/rider-session'
+import { getGoOnlineErrorMessage } from './-riderHome'
 
 export const Route = createFileRoute('/rider/_authed/')({
   component: RiderHome,
 })
 
 function RiderHome() {
+  const router = useRouter()
+  const queryClient = useQueryClient()
+  const [startError, setStartError] = useState<string | null>(null)
+  const operatingStatusMutation = useChangeOperatingStatus()
+
+  function startOperating() {
+    if (operatingStatusMutation.isPending) {
+      return
+    }
+
+    setStartError(null)
+    operatingStatusMutation.mutate(
+      { data: { action: 'GO_ONLINE' } },
+      {
+        onSuccess: async () => {
+          queryClient.removeQueries({ queryKey: getGetRiderSessionQueryKey() })
+          await router.navigate({ to: '/rider/requests' })
+        },
+        onError: (error) => {
+          setStartError(getGoOnlineErrorMessage(error))
+        },
+      },
+    )
+  }
+
   return (
     <div className="bg-background text-on-background flex flex-col min-h-screen">
       {/* Top App Bar */}
@@ -30,10 +60,21 @@ function RiderHome() {
             <div className="object-cover w-full h-full bg-surface-container-high"></div>
           </div>
           {/* Primary Action */}
-          <button className="w-full h-[64px] bg-primary-container text-on-primary-container font-headline-sm text-headline-sm rounded-[16px] shadow-[0_4px_12px_rgba(0,0,0,0.08)] flex items-center justify-center space-x-2 hover:bg-primary-fixed transition-colors active:scale-[0.98]">
+          <button
+            type="button"
+            onClick={startOperating}
+            disabled={operatingStatusMutation.isPending}
+            aria-busy={operatingStatusMutation.isPending}
+            className="w-full h-[64px] bg-primary-container text-on-primary-container font-headline-sm text-headline-sm rounded-[16px] shadow-[0_4px_12px_rgba(0,0,0,0.08)] flex items-center justify-center space-x-2 hover:bg-primary-fixed transition-colors active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+          >
             <span className="material-symbols-outlined font-bold">local_shipping</span>
-            <span className="">퀵 시작하기</span>
+            <span>{operatingStatusMutation.isPending ? '운행 시작 중…' : '퀵 시작하기'}</span>
           </button>
+          {startError && (
+            <p role="alert" className="w-full rounded-xl bg-error-container px-4 py-3 text-body-md text-on-error-container">
+              {startError}
+            </p>
+          )}
           {/* Secondary Action */}
           <button className="w-full h-[52px] bg-surface-container-lowest text-on-surface font-label-lg text-label-lg rounded-xl border border-surface-container flex items-center justify-center space-x-2 hover:bg-surface-bright transition-colors active:scale-[0.98]">
             <span className="material-symbols-outlined text-secondary" style={{ fontVariationSettings: '"FILL" 0' }}>search</span>
