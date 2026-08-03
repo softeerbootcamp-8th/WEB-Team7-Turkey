@@ -29,6 +29,7 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 
 /**
+ * 좌표만 전송한다. 추적 대상 배송은 서버가 판정한다. 운행 중(AVAILABLE·BUSY)이 아니면 409.
  * @summary 라이더 현재 위치 갱신
  */
 export const updateRiderLocation = (

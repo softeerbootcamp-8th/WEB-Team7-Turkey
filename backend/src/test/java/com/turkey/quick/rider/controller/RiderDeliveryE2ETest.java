@@ -56,6 +56,47 @@ class RiderDeliveryE2ETest extends IntegrationTestSupport {
     @Autowired PlatformTransactionManager transactionManager;
 
     @Test
+    @DisplayName("BUSY 라이더가 다시 접속하면 현재 배송 단계와 다음 행동을 조회한다")
+    void shouldRestoreCurrentDeliveryAfterLogin() {
+        Fixture fixture = saveAssignedOrder("e2e_rider_86_a", "01086100001");
+        String cookie = loginAndGetSessionCookie(fixture.loginId(), "p@ssw0rd");
+        transition(cookie, fixture.orderId(), "START_MOVING_TO_PICKUP");
+
+        var response = rest.exchange(currentEndpoint(), HttpMethod.GET,
+                new HttpEntity<>(cookieHeaders(cookie)), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<?, ?> data = (Map<?, ?>) response.getBody().data();
+        assertThat(data.get("deliveryId")).isEqualTo(fixture.orderId().intValue());
+        assertThat(data.get("status")).isEqualTo("MOVING_TO_PICKUP");
+        assertThat(data.get("nextAction")).isEqualTo("PICK_UP");
+        assertThat(((Map<?, ?>) data.get("pickup")).get("detailAddress")).isEqualTo("상세");
+        assertThat(((Map<?, ?>) data.get("sender")).get("phoneNumber")).isEqualTo("01011112222");
+    }
+
+    @Test
+    @DisplayName("세션 쿠키 없이 현재 배송을 조회하면 401을 반환한다")
+    void shouldRequireAuthenticationToGetCurrentDelivery() {
+        var response = rest.exchange(currentEndpoint(), HttpMethod.GET,
+                new HttpEntity<>(new HttpHeaders()), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    @DisplayName("BUSY 라이더에게 진행 배송이 없으면 409를 반환한다")
+    void shouldRejectBusyRiderWithoutCurrentDelivery() {
+        saveRider("e2e_rider_86_b", "01086100002", true);
+        String cookie = loginAndGetSessionCookie("e2e_rider_86_b", "p@ssw0rd");
+
+        var response = rest.exchange(currentEndpoint(), HttpMethod.GET,
+                new HttpEntity<>(cookieHeaders(cookie)), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody().success()).isFalse();
+    }
+
+    @Test
     @DisplayName("배정된 라이더가 픽업지 이동을 시작하면 200과 MOVING_TO_PICKUP 상태를 반환한다")
     void shouldStartMovingToPickup() {
         Fixture fixture = saveAssignedOrder("e2e_rider_58_a", "01058100001");
@@ -199,6 +240,10 @@ class RiderDeliveryE2ETest extends IntegrationTestSupport {
 
     private String endpoint(Long orderId) {
         return "/api/rider/deliveries/" + orderId + "/transition";
+    }
+
+    private String currentEndpoint() {
+        return "/api/rider/deliveries/current";
     }
 
     private String completeEndpoint(Long orderId) {

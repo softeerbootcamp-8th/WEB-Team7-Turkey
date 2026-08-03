@@ -92,6 +92,25 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
                                                        @Param("statuses") Set<OrderStatus> statuses);
 
     /**
+     * 진행 배송 화면 복구에 필요한 주문 엔터티를 조회한다(#86).
+     *
+     * <p>DB 생성 컬럼의 UNIQUE 제약상 최대 1건이지만, #86 계약은 다건을 정합성 오류로 명시하므로
+     * {@code Optional} 대신 목록으로 반환해 서비스가 결과 수를 직접 검증한다. 화면 진입 시 한 번만
+     * 호출되는 조회이며, 응답 변환에 필요한 배정 라이더를 함께 로딩한다.
+     */
+    @Query("""
+            select o
+            from DeliveryOrder o
+            join fetch o.assignedRider r
+            where r.memberId = :riderId
+              and o.status in :statuses
+            """)
+    List<DeliveryOrder> findAllInProgressForRider(@Param("riderId") Long riderId,
+                                                 @Param("statuses") Set<OrderStatus> statuses);
+
+    boolean existsByAssignedRider_MemberIdAndStatusIn(Long riderId, Set<OrderStatus> statuses);
+
+    /**
      * 라이더가 수행 중인 배송의 식별자만 조회한다. <b>위치 갱신 핫패스 전용</b>(BUSY 라이더는 5초마다
      * 위치를 보낸다, #81).
      *

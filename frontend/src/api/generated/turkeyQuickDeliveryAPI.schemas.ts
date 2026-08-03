@@ -1261,6 +1261,20 @@ export const RiderDeliveryResponseItemType = {
 } as const;
 
 /**
+ * 현재 배송 상태에서 수행 가능한 다음 행동
+ */
+export type RiderDeliveryResponseNextAction = typeof RiderDeliveryResponseNextAction[keyof typeof RiderDeliveryResponseNextAction];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RiderDeliveryResponseNextAction = {
+  START_MOVING_TO_PICKUP: 'START_MOVING_TO_PICKUP',
+  PICK_UP: 'PICK_UP',
+  START_DELIVERING: 'START_DELIVERING',
+  COMPLETE: 'COMPLETE',
+} as const;
+
+/**
  * 배송 상태
  */
 export type RiderDeliveryResponseStatus = typeof RiderDeliveryResponseStatus[keyof typeof RiderDeliveryResponseStatus];
@@ -1290,6 +1304,8 @@ export interface RiderDeliveryResponse {
   expectedSettlementAmount?: number;
   /** 물품 종류 */
   itemType?: RiderDeliveryResponseItemType;
+  /** 현재 배송 상태에서 수행 가능한 다음 행동 */
+  nextAction?: RiderDeliveryResponseNextAction;
   pickup?: AddressResponse;
   recipient?: ContactResponse;
   sender?: ContactResponse;
@@ -1704,4 +1720,3 @@ export const GetDeliveryRequestsSort = {
   FARE: 'FARE',
   REQUESTED_AT: 'REQUESTED_AT',
 } as const;
-
