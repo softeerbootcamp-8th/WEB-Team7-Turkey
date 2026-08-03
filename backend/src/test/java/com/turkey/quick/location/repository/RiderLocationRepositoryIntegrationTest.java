@@ -180,6 +180,44 @@ class RiderLocationRepositoryIntegrationTest extends IntegrationTestSupport {
     }
 
     @Nested
+    @DisplayName("find (#311 폴링 arm)")
+    class Find {
+
+        @Test
+        @DisplayName("저장된 값이 없으면 빈 값을 돌려준다")
+        void returnsEmptyWhenAbsent() {
+            assertThat(repository.find(RIDER_ID)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("저장된 값을 실제 Redis 에서 읽어 복원한다")
+        void findsStoredLocation() {
+            LocationPayload location = at(minute(0));
+            repository.saveIfNewer(RIDER_ID, location);
+
+            assertThat(repository.find(RIDER_ID)).contains(location);
+        }
+
+        @Test
+        @DisplayName("손상된 값은 예외 없이 빈 값으로 본다")
+        void treatsCorruptedValueAsEmpty() {
+            redisTemplate.opsForValue().set(key(RIDER_ID), "garbage-not-a-location");
+
+            assertThat(repository.find(RIDER_ID)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("saveIfNewer 로 덮인 뒤에는 최신 값을 돌려준다")
+        void reflectsLatestAfterOverwrite() {
+            repository.saveIfNewer(RIDER_ID, at(minute(0)));
+            LocationPayload latest = at(minute(1));
+            repository.saveIfNewer(RIDER_ID, latest);
+
+            assertThat(repository.find(RIDER_ID)).contains(latest);
+        }
+    }
+
+    @Nested
     @DisplayName("동시 요청")
     class ConcurrentWriters {
 
