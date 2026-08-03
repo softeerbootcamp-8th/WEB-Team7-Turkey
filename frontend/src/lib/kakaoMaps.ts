@@ -35,7 +35,7 @@ export function loadKakaoMaps(): Promise<typeof kakao> {
     }
 
     const script = document.createElement('script')
-    script.src = `${SDK_SRC_PREFIX}?appkey=${appKey}&autoload=false`
+    script.src = `${SDK_SRC_PREFIX}?appkey=${appKey}&autoload=false&libraries=services`
     script.async = true
     script.onload = () => {
       window.kakao.maps.load(() => resolve(window.kakao))
