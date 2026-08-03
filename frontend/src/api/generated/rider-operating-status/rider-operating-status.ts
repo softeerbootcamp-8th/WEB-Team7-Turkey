@@ -131,10 +131,10 @@ export function useGetRiderOperatingStatus<TData = Awaited<ReturnType<typeof get
 
 
 /**
- * 콜 받기(GO_ONLINE) / 운행 종료(GO_OFFLINE). 목표 상태가 아니라 행위를 받는다. 배송 수행 중(BUSY)에는 종료할 수 없다.
+ * 콜 받기(GO_ONLINE) / 운행 종료(GO_OFFLINE). 목표 상태가 아니라 행위를 받는다. 배송 수행 중(BUSY)에는 직접 변경할 수 없고, 이미 같은 상태면 오류 없이 현재 상태를 반환한다.
  * @summary 운행 상태 변경
  */
-export const changeOperatingStatus = (
+export const changeRiderOperatingStatus = (
     riderOperatingStatusUpdateRequest: BodyType<RiderOperatingStatusUpdateRequest>,
  options?: SecondParameter<typeof customInstance>,) => {
       
@@ -149,11 +149,11 @@ export const changeOperatingStatus = (
   
 
 
-export const getChangeOperatingStatusMutationOptions = <TError = ErrorType<ApiResponseRiderOperatingStatusResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof changeOperatingStatus>>, TError,{data: BodyType<RiderOperatingStatusUpdateRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
-): UseMutationOptions<Awaited<ReturnType<typeof changeOperatingStatus>>, TError,{data: BodyType<RiderOperatingStatusUpdateRequest>}, TContext> => {
+export const getChangeRiderOperatingStatusMutationOptions = <TError = ErrorType<ApiResponseRiderOperatingStatusResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof changeRiderOperatingStatus>>, TError,{data: BodyType<RiderOperatingStatusUpdateRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof changeRiderOperatingStatus>>, TError,{data: BodyType<RiderOperatingStatusUpdateRequest>}, TContext> => {
 
-const mutationKey = ['changeOperatingStatus'];
+const mutationKey = ['changeRiderOperatingStatus'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
@@ -163,10 +163,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof changeOperatingStatus>>, {data: BodyType<RiderOperatingStatusUpdateRequest>}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof changeRiderOperatingStatus>>, {data: BodyType<RiderOperatingStatusUpdateRequest>}> = (props) => {
           const {data} = props ?? {};
 
-          return  changeOperatingStatus(data,requestOptions)
+          return  changeRiderOperatingStatus(data,requestOptions)
         }
 
         
@@ -174,23 +174,23 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
   return  { mutationFn, ...mutationOptions }}
 
-    export type ChangeOperatingStatusMutationResult = NonNullable<Awaited<ReturnType<typeof changeOperatingStatus>>>
-    export type ChangeOperatingStatusMutationBody = BodyType<RiderOperatingStatusUpdateRequest>
-    export type ChangeOperatingStatusMutationError = ErrorType<ApiResponseRiderOperatingStatusResponse>
+    export type ChangeRiderOperatingStatusMutationResult = NonNullable<Awaited<ReturnType<typeof changeRiderOperatingStatus>>>
+    export type ChangeRiderOperatingStatusMutationBody = BodyType<RiderOperatingStatusUpdateRequest>
+    export type ChangeRiderOperatingStatusMutationError = ErrorType<ApiResponseRiderOperatingStatusResponse>
 
     /**
  * @summary 운행 상태 변경
  */
-export const useChangeOperatingStatus = <TError = ErrorType<ApiResponseRiderOperatingStatusResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof changeOperatingStatus>>, TError,{data: BodyType<RiderOperatingStatusUpdateRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
+export const useChangeRiderOperatingStatus = <TError = ErrorType<ApiResponseRiderOperatingStatusResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof changeRiderOperatingStatus>>, TError,{data: BodyType<RiderOperatingStatusUpdateRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof changeOperatingStatus>>,
+        Awaited<ReturnType<typeof changeRiderOperatingStatus>>,
         TError,
         {data: BodyType<RiderOperatingStatusUpdateRequest>},
         TContext
       > => {
 
-      const mutationOptions = getChangeOperatingStatusMutationOptions(options);
+      const mutationOptions = getChangeRiderOperatingStatusMutationOptions(options);
 
       return useMutation(mutationOptions, queryClient);
     }

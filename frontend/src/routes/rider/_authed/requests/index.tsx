@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { isAxiosError } from 'axios'
 import { useGetDeliveryRequests } from '@/api/generated/rider-request/rider-request'
-import { useChangeOperatingStatus } from '@/api/generated/rider-operating-status/rider-operating-status'
+import { useChangeRiderOperatingStatus } from '@/api/generated/rider-operating-status/rider-operating-status'
 import { getGetRiderSessionQueryKey } from '@/api/generated/rider-session/rider-session'
 import type { ItemFilter } from './-requestList'
 import {
@@ -30,7 +30,7 @@ function RiderRequests() {
     { radiusMeters, sort: 'DISTANCE' },
     { query: { retry: false } },
   )
-  const operatingStatusMutation = useChangeOperatingStatus()
+  const operatingStatusMutation = useChangeRiderOperatingStatus()
 
   const requests = requestsQuery.data?.data ?? []
   const visibleRequests = filterRequestsByItem(requests, itemFilter)

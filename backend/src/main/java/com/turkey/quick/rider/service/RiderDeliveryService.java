@@ -26,6 +26,7 @@ import com.turkey.quick.rider.repository.RiderProfileRepository;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,6 +46,51 @@ public class RiderDeliveryService {
     private final RiderSettlementRepository riderSettlementRepository;
     private final PointWalletRepository pointWalletRepository;
     private final PointTransactionRepository pointTransactionRepository;
+
+    /** 새로고침·재로그인 뒤 현재 배송 단계 화면을 복구한다(#86). */
+    @Transactional(readOnly = true)
+    public RiderDeliveryResponse getCurrentDelivery(AuthenticatedRider rider) {
+        List<DeliveryOrder> deliveries = deliveryOrderRepository.findAllInProgressForRider(
+                rider.memberId(), OrderStatus.trackableStatuses());
+
+        if (deliveries.size() > 1) {
+            log.error("event=RIDER_DELIVERY_CONSISTENCY_ERROR riderId={} reason=MULTIPLE_IN_PROGRESS count={}",
+                    rider.memberId(), deliveries.size());
+            throw new BusinessException(HttpStatus.CONFLICT,
+                    "진행 중 배송이 여러 건 존재합니다. 고객센터에 문의해 주세요.");
+        }
+
+        if (deliveries.isEmpty()) {
+            if (rider.operatingStatus() == OperatingStatus.BUSY) {
+                log.error("event=RIDER_DELIVERY_CONSISTENCY_ERROR riderId={} reason=BUSY_WITHOUT_DELIVERY",
+                        rider.memberId());
+                throw new BusinessException(HttpStatus.CONFLICT,
+                        "배송 수행 상태와 진행 중 배송 정보가 일치하지 않습니다.");
+            }
+            return null;
+        }
+
+        DeliveryOrder order = deliveries.getFirst();
+        if (rider.operatingStatus() != OperatingStatus.BUSY) {
+            log.error("event=RIDER_DELIVERY_CONSISTENCY_ERROR riderId={} orderId={} reason=DELIVERY_WITHOUT_BUSY status={}",
+                    rider.memberId(), order.getId(), rider.operatingStatus());
+            throw new BusinessException(HttpStatus.CONFLICT,
+                    "배송 수행 상태와 진행 중 배송 정보가 일치하지 않습니다.");
+        }
+        if (order.getAssignedRider() == null
+                || !order.getAssignedRider().getMemberId().equals(rider.memberId())) {
+            log.error("event=RIDER_DELIVERY_CONSISTENCY_ERROR riderId={} orderId={} reason=ASSIGNMENT_MISMATCH",
+                    rider.memberId(), order.getId());
+            throw new BusinessException(HttpStatus.CONFLICT,
+                    "배송 배정 정보가 현재 라이더와 일치하지 않습니다.");
+        }
+
+        OrderFareSnapshot estimate = orderFareSnapshotRepository
+                .findByOrder_IdAndFareType(order.getId(), FareType.ESTIMATE)
+                .orElseThrow(() -> new IllegalStateException(
+                        "진행 중 주문의 예상 운임 스냅샷이 없습니다. orderId=" + order.getId()));
+        return RiderDeliveryResponse.from(order, estimate.getTotalFare());
+    }
 
     /** 배정된 라이더가 배송 단계를 전이하며, 라이더의 BUSY 상태는 변경하지 않는다. */
     @Transactional

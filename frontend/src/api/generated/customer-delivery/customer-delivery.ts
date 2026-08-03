@@ -140,10 +140,10 @@ export function useGetDeliveries<TData = Awaited<ReturnType<typeof getDeliveries
 
 
 /**
- * 배송요청을 WAITING 으로 생성하고 예상 운임(ESTIMATE) 스냅샷을 함께 남긴다. 고객은 진행 중(WAITING~DELIVERING) 요청을 1건만 가질 수 있다. 같은 requestKey 로 재전송하면 새로 만들지 않고 기존 결과를 돌려준다.
+ * 배송요청을 WAITING 으로 생성하고 예상 운임(ESTIMATE) 스냅샷을 남긴 뒤 그 요금만큼 포인트를 차감한다(REQ-ORD-002 + CUS-PAY-002). 셋은 하나의 트랜잭션이라 어느 하나가 실패하면 전부 롤백된다 — 주문만 생기거나 포인트만 빠져나가는 상태는 만들어지지 않는다. 요금은 좌표로 서버가 다시 계산하며, 요청의 estimatedFare 는 대조용이다. 화면이 안내한 금액과 서버 계산이 다르면 주문을 만들지 않고 409 로 알린다 — 사용자가 동의하지 않은 금액을 결제하지 않기 위해서다. 고객은 진행 중(WAITING~DELIVERING) 요청을 1건만 가질 수 있다. 같은 requestKey 로 재전송하면 새로 만들지 않고 기존 결과를 돌려주며 포인트도 다시 차감하지 않는다.
  * @summary 배송요청 생성
  */
-export const createDelivery = (
+export const createCustomerDelivery = (
     deliveryCreateRequest: BodyType<DeliveryCreateRequest>,
  options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
 ) => {
@@ -159,11 +159,11 @@ export const createDelivery = (
   
 
 
-export const getCreateDeliveryMutationOptions = <TError = ErrorType<ApiResponseDeliveryCreateResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDelivery>>, TError,{data: BodyType<DeliveryCreateRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
-): UseMutationOptions<Awaited<ReturnType<typeof createDelivery>>, TError,{data: BodyType<DeliveryCreateRequest>}, TContext> => {
+export const getCreateCustomerDeliveryMutationOptions = <TError = ErrorType<ApiResponseDeliveryCreateResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCustomerDelivery>>, TError,{data: BodyType<DeliveryCreateRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCustomerDelivery>>, TError,{data: BodyType<DeliveryCreateRequest>}, TContext> => {
 
-const mutationKey = ['createDelivery'];
+const mutationKey = ['createCustomerDelivery'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
@@ -173,10 +173,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createDelivery>>, {data: BodyType<DeliveryCreateRequest>}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCustomerDelivery>>, {data: BodyType<DeliveryCreateRequest>}> = (props) => {
           const {data} = props ?? {};
 
-          return  createDelivery(data,requestOptions)
+          return  createCustomerDelivery(data,requestOptions)
         }
 
         
@@ -184,23 +184,23 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
   return  { mutationFn, ...mutationOptions }}
 
-    export type CreateDeliveryMutationResult = NonNullable<Awaited<ReturnType<typeof createDelivery>>>
-    export type CreateDeliveryMutationBody = BodyType<DeliveryCreateRequest>
-    export type CreateDeliveryMutationError = ErrorType<ApiResponseDeliveryCreateResponse>
+    export type CreateCustomerDeliveryMutationResult = NonNullable<Awaited<ReturnType<typeof createCustomerDelivery>>>
+    export type CreateCustomerDeliveryMutationBody = BodyType<DeliveryCreateRequest>
+    export type CreateCustomerDeliveryMutationError = ErrorType<ApiResponseDeliveryCreateResponse>
 
     /**
  * @summary 배송요청 생성
  */
-export const useCreateDelivery = <TError = ErrorType<ApiResponseDeliveryCreateResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDelivery>>, TError,{data: BodyType<DeliveryCreateRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
+export const useCreateCustomerDelivery = <TError = ErrorType<ApiResponseDeliveryCreateResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCustomerDelivery>>, TError,{data: BodyType<DeliveryCreateRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof createDelivery>>,
+        Awaited<ReturnType<typeof createCustomerDelivery>>,
         TError,
         {data: BodyType<DeliveryCreateRequest>},
         TContext
       > => {
 
-      const mutationOptions = getCreateDeliveryMutationOptions(options);
+      const mutationOptions = getCreateCustomerDeliveryMutationOptions(options);
 
       return useMutation(mutationOptions, queryClient);
     }
@@ -428,7 +428,7 @@ export const useCancelDelivery = <TError = ErrorType<ApiResponseDeliveryCancelRe
       return useMutation(mutationOptions, queryClient);
     }
     /**
- * 추적 화면 진입 시 한 번 그릴 상태·타임라인·라이더 정보를 조회한다. 이후 위치·상태 갱신은 location 도메인의 SSE 스트림이 밀어 준다(폴링하지 않는다(변동가능)).
+ * 추적 화면 진입 시 한 번 그릴 상태·타임라인·라이더 정보를 조회한다. 이후 위치·상태 갱신은 location 도메인의 SSE 스트림이 밀어 준다(폴링하지 않는다(변동가능)). 실패 판정은 스트림과 동일하다: 404(없거나 타인 주문), 409(WAITING·COMPLETED·CANCELED).
  * @summary 배송 추적 스냅샷
  */
 export const getDeliveryTracking = (
@@ -453,7 +453,7 @@ export const getGetDeliveryTrackingQueryKey = (deliveryId?: number,) => {
     }
 
     
-export const getGetDeliveryTrackingQueryOptions = <TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<unknown>>(deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryTracking>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+export const getGetDeliveryTrackingQueryOptions = <TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<ApiResponseDeliveryTrackingResponse>>(deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryTracking>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -472,10 +472,10 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type GetDeliveryTrackingQueryResult = NonNullable<Awaited<ReturnType<typeof getDeliveryTracking>>>
-export type GetDeliveryTrackingQueryError = ErrorType<unknown>
+export type GetDeliveryTrackingQueryError = ErrorType<ApiResponseDeliveryTrackingResponse>
 
 
-export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<unknown>>(
+export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<ApiResponseDeliveryTrackingResponse>>(
  deliveryId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryTracking>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getDeliveryTracking>>,
@@ -485,7 +485,7 @@ export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeli
       >, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<unknown>>(
+export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<ApiResponseDeliveryTrackingResponse>>(
  deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryTracking>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getDeliveryTracking>>,
@@ -495,7 +495,7 @@ export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeli
       >, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<unknown>>(
+export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<ApiResponseDeliveryTrackingResponse>>(
  deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryTracking>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -503,7 +503,7 @@ export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeli
  * @summary 배송 추적 스냅샷
  */
 
-export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<unknown>>(
+export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<ApiResponseDeliveryTrackingResponse>>(
  deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryTracking>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient 
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
