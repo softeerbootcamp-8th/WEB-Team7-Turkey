@@ -5,8 +5,10 @@ positions:
   filename: /tmp/positions.yaml
 
 clients:
-  # <모니터링-EC2-사설IP> 를 실제 값으로 바꿔넣는다.
-  - url: http://<모니터링-EC2-사설IP>:3100/loki/api/v1/push
+  # 모니터링 EC2 "사설" IP로 향해야 한다 — 공인 IP로 보내면 같은 VPC 안이어도 IGW를 거쳐
+  # 나갔다 들어오면서 출발지 IP가 바뀔 수 있고, 그러면 보안그룹의 "앱 EC2 사설 IP만 허용"
+  # 규칙에 안 걸려 조용히 드롭된다(에러가 아니라 타임아웃으로 보임).
+  - url: http://10.0.10.178:3100/loki/api/v1/push
 
 scrape_configs:
   # myapp.service 가 stdout 으로 남기는 로그를 journald 에서 그대로 읽는다 —

@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# app-ec2/install-node-exporter.sh 와 동일한 내용이다. Redis EC2는 별개 호스트라
-# 공용 스크립트로 묶지 않고 그대로 복제해서 둔다(호스트마다 독립적으로 실행되는 설치
-# 스크립트라 공유 모듈화의 이득이 없다).
+# DB EC2에서 실행. app-ec2/redis-ec2 와 동일한 내용이다(호스트마다 독립 실행이라 그대로 복제).
 set -euo pipefail
 
 # dirname "$0" 는 상대경로로 실행하면(./install-node-exporter.sh) 상대경로를 돌려주는데,

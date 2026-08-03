@@ -6,7 +6,10 @@ global:
 
 scrape_configs:
   # 앱 자체 지표(JVM, GC, HTTP 처리시간, DB 커넥션 풀) — application.yml 의 management.server.port
+  # Spring Boot Actuator 는 Prometheus 포맷을 기본 /metrics 가 아니라 /actuator/prometheus 에
+  # 노출한다(exporter 관례와 달라서 metrics_path 를 명시해야 한다 — 안 그러면 404 로 계속 DOWN).
   - job_name: spring-app
+    metrics_path: /actuator/prometheus
     static_configs:
       - targets: ["10.0.10.215:8081"]
 
@@ -29,3 +32,8 @@ scrape_configs:
   - job_name: mysql
     static_configs:
       - targets: ["mysqld-exporter:9104"]
+
+  # DB EC2 호스트 지표(CPU, 메모리, 디스크, 네트워크)
+  - job_name: node-db
+    static_configs:
+      - targets: ["10.0.138.148:9100"]

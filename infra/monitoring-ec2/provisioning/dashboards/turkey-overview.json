@@ -1,0 +1,174 @@
+{
+  "title": "Turkey Overview",
+  "uid": "turkey-overview",
+  "schemaVersion": 39,
+  "timezone": "browser",
+  "editable": true,
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "타겟 상태 (up)",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "up", "legendFormat": "{{job}}", "datasource": { "type": "prometheus", "uid": "prometheus" } }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "value": null, "color": "red" }, { "value": 1, "color": "green" }] }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "요청 처리량 (RPS)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum(rate(http_server_requests_seconds_count{job=\"spring-app\"}[1m]))", "legendFormat": "RPS", "datasource": { "type": "prometheus", "uid": "prometheus" } }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "5xx 에러율",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" } },
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_requests_seconds_count{job=\"spring-app\",outcome=\"SERVER_ERROR\"}[5m])) / sum(rate(http_server_requests_seconds_count{job=\"spring-app\"}[5m]))",
+          "legendFormat": "5xx 비율",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "응답시간 p95",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{job=\"spring-app\"}[5m])) by (le))",
+          "legendFormat": "p95",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "JVM 힙 사용률",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0 } },
+      "targets": [
+        {
+          "expr": "sum(jvm_memory_used_bytes{job=\"spring-app\",area=\"heap\"}) / sum(jvm_memory_max_bytes{job=\"spring-app\",area=\"heap\"})",
+          "legendFormat": "heap 사용률",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "호스트 CPU 사용률 (앱/Redis/DB)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percent", "max": 100, "min": 0 } },
+      "targets": [
+        {
+          "expr": "100 - (avg by (job) (rate(node_cpu_seconds_total{mode=\"idle\", job=~\"node-app|node-redis|node-db\"}[5m])) * 100)",
+          "legendFormat": "{{job}}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "호스트 메모리 사용률 (앱/Redis/DB)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 20, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0 } },
+      "targets": [
+        {
+          "expr": "1 - (node_memory_MemAvailable_bytes{job=~\"node-app|node-redis|node-db\"} / node_memory_MemTotal_bytes{job=~\"node-app|node-redis|node-db\"})",
+          "legendFormat": "{{job}}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" }
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Redis 커넥션 수",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 28, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "redis_connected_clients{job=\"redis\"}", "legendFormat": "connected clients", "datasource": { "type": "prometheus", "uid": "prometheus" } }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "MySQL 커넥션 수",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 28, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "mysql_global_status_threads_connected{job=\"mysql\"}", "legendFormat": "threads_connected", "datasource": { "type": "prometheus", "uid": "prometheus" } }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "최근 에러 로그",
+      "type": "logs",
+      "gridPos": { "x": 0, "y": 36, "w": 24, "h": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "expr": "{job=\"spring-app\"} |= \"ERROR\"", "datasource": { "type": "loki", "uid": "loki" } }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "최근 앱 로그 전체",
+      "type": "logs",
+      "gridPos": { "x": 0, "y": 44, "w": 24, "h": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "expr": "{job=\"spring-app\"}", "datasource": { "type": "loki", "uid": "loki" } }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Redis 내부 로그",
+      "type": "logs",
+      "gridPos": { "x": 0, "y": 52, "w": 12, "h": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "expr": "{job=\"redis\"}", "datasource": { "type": "loki", "uid": "loki" } }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "MySQL 내부 로그",
+      "type": "logs",
+      "gridPos": { "x": 12, "y": 52, "w": 12, "h": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "expr": "{job=\"mysql\"}", "datasource": { "type": "loki", "uid": "loki" } }
+      ]
+    }
+  ]
+}

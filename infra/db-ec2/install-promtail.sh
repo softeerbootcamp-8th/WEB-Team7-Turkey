@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 앱 EC2에서 실행하기 전에 promtail-config.yaml 의 <모니터링-EC2-사설IP> 를 채워야 한다.
+# DB EC2에서 실행. app-ec2/install-promtail.sh 와 동일한 내용이다(호스트마다 독립 실행이라 그대로 복제).
 set -euo pipefail
 
 # dirname "$0" 는 상대경로로 실행하면(./install-promtail.sh) 상대경로를 돌려주는데,
