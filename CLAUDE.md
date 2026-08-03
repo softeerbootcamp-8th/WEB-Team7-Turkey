@@ -207,9 +207,17 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   하나뿐이고 반경 계산은 Java에서 한다(#101에서 정리될 것). 이름이 둘 다 "location"으로 읽혀
   헷갈리므로 `RiderGeoRepository` → `RiderDispatchCandidateRepository` 개명을 검토 중(미결).
   **서버측 필터(#82)를 되살리면 최신 위치를 상태 무관으로 되돌려야 한다**(기준선이 필요하다).
-- **저장한 최신 위치를 읽는 코드가 없다**(#317). `RiderLocationRepository`에 `saveIfNewer`만 있고
-  `find`/`decode`는 만들지 않았다 — 호출자가 없어서다. 소비자(#311 폴링 arm 또는 SSE `init`
-  스냅샷)를 만드는 이슈에서 함께 추가한다. 그때까지 값 형식은 `encode` 단위 테스트로만 지켜진다
+- ~~저장한 최신 위치를 읽는 코드가 없다(#317). `RiderLocationRepository`에 `saveIfNewer`만 있고
+  `find`/`decode`는 만들지 않았다 — 호출자가 없어서다.~~ **해소(#311, 2026-08-03)**: 고객 위치
+  폴링 API(`GET /api/customer/deliveries/{deliveryId}/location`, `CustomerLocationQueryService`)가
+  첫 호출자로 `find`/`decode`를 추가했다.
+- **폴링 응답과 SSE `init` 스냅샷의 DTO 공유는 아직 미결이다**(#311). 이슈 #311은 원래 SSE의
+  `TrackingInitPayload`(orderId, status, location)와 응답을 공유할 계획이었으나, 그 타입은 #77에서
+  만들어졌다가 위치 추적 단순화 PR #289(커밋 `e04b35a`)에서 삭제됐고 #317이 SSE 팬아웃을 되돌릴 때도
+  복원되지 않았다 — 지금 SSE `subscribeTracking`은 `"connected"` 코멘트만 보내고 위치 스냅샷을 담은
+  init 이벤트가 없다. 그래서 #311은 폴링 전용 `location/dto/CustomerDeliveryLocationResponse`를
+  새로 만들었다(사람 확인, 2026-08-03). SSE에 init 스냅샷이 다시 필요해지면 그 이슈에서 이 DTO를
+  재사용할지 새로 만들지 판단한다.
 - ~~라이더 위치 POST가 배송 ID를 요청 본문으로 직접 받는다(#290) — 아무 배송 ID나 넣으면 남의
   고객 화면에 위치를 흘려보낼 수 있는 구멍(#291)~~ **해소(#317)**: 요청 본문은 좌표만 담고,
   `location/service/RiderLocationService`가 세션의 라이더로 수행 중 배송을 DB에서 풀어 채널을

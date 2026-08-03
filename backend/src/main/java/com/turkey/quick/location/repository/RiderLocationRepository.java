@@ -1,10 +1,14 @@
 package com.turkey.quick.location.repository;
 
 import com.turkey.quick.location.dto.LocationPayload;
+import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Optional;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Repository;
@@ -18,15 +22,15 @@ import org.springframework.stereotype.Repository;
  * 키</b>가 남고, 그 라이더가 다시 위치를 보내지 않으면 옛 좌표가 영구히 남는다.
  * {@code SET ... EX} 는 값과 TTL 이 원자적으로 함께 걸려 그 창이 없다.
  *
- * <p><b>지금 이 값을 읽는 코드는 없다</b>(#317 범위). 소비자 후보는 #311 폴링 arm 과 SSE
- * {@code init} 스냅샷이고, 그 이슈에서 {@code find}/{@code decode} 를 추가한다 — 호출자 없는
- * getter 를 미리 두지 않았다. 그때까지 형식 계약을 지키는 것은 {@link #encode} 단위 테스트와
- * 실제 Redis 통합 테스트다.
+ * <p>{@code find}/{@code decode} 는 #311(고객 위치 폴링 arm)이 첫 호출자로 추가했다(#317 당시엔
+ * 호출자가 없어 비워 뒀었다). 형식 계약은 {@link #encode} 단위 테스트와 실제 Redis 통합 테스트가
+ * 지킨다.
  *
  * <p>{@code RiderGeoRepository} 와 같은 패키지·같은 관례다(인터페이스 없이 구현체 하나,
  * 자동설정 {@code StringRedisTemplate} 주입). 인메모리 대체를 두지 않은 이유: 이 클래스에서 검증할
  * 가치가 있는 것은 Lua 의 원자성인데 그건 인메모리 구현으로 재현할 수 없다.
  */
+@Slf4j
 @Repository
 public class RiderLocationRepository {
 
@@ -107,6 +111,49 @@ public class RiderLocationRepository {
 
     private static String key(Long riderId) {
         return KEY_FORMAT.formatted(riderId);
+    }
+
+    /**
+     * 라이더의 최신 위치를 읽는다.
+     *
+     * @return 저장된 값이 없거나(미전송·TTL 만료) 형식이 깨져 있으면 빈 값. Redis 연결 자체가
+     *         끊긴 경우는 예외로 이 메서드 밖으로 나간다 — 호출자가 "위치 없음"과 구분해야 한다
+     *         (#311, 부하테스트 폴링 arm은 이 둘을 각각 200/503으로 나눈다).
+     */
+    public Optional<LocationPayload> find(Long riderId) {
+        String stored = redisTemplate.opsForValue().get(key(riderId));
+        if (stored == null) {
+            return Optional.empty();
+        }
+        LocationPayload decoded = decode(stored);
+        if (decoded == null) {
+            // #297 이전 형식이 남아 있거나 손상된 값이다. saveIfNewer 는 다음 정상 쓰기가 이 값을
+            // 덮도록 두므로(Lua의 손상값 처리), 읽기 쪽도 같은 태도로 "없음"으로 본다 — 실제 장애가
+            // 아니라 자연히 회복되는 상태라 503으로 격상하지 않는다.
+            log.warn("event=RIDER_LOCATION_DECODE_FAILED riderId={}", riderId);
+            return Optional.empty();
+        }
+        return Optional.of(decoded);
+    }
+
+    /**
+     * {@link #encode}의 역변환. 형식이 맞지 않으면 예외 대신 {@code null}을 돌려준다 — 호출자
+     * ({@link #find})가 이를 "없음"으로 처리한다.
+     */
+    static LocationPayload decode(String stored) {
+        String[] parts = stored.split(DELIMITER, -1);
+        if (parts.length != 4) {
+            return null;
+        }
+        try {
+            Instant measuredAt = MEASURED_AT_FORMAT.parse(parts[0], Instant::from);
+            BigDecimal latitude = new BigDecimal(parts[1]);
+            BigDecimal longitude = new BigDecimal(parts[2]);
+            BigDecimal accuracyMeters = parts[3].isEmpty() ? null : new BigDecimal(parts[3]);
+            return new LocationPayload(latitude, longitude, measuredAt, accuracyMeters);
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /**

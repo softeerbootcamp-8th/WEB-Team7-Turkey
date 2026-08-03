@@ -6,6 +6,7 @@ import com.turkey.quick.location.dto.LocationPayload;
 import java.math.BigDecimal;
 import java.time.Instant;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -72,5 +73,44 @@ class RiderLocationRepositoryTest {
         // 다른 문자열로 저장돼 인스턴스 간 비교가 무의미해진다.
         assertThat(RiderLocationRepository.encode(at("2026-08-03T01:02:03.456Z")))
                 .startsWith("2026-08-03T01:02:03.456");
+    }
+
+    @Nested
+    @DisplayName("decode — encode 의 역변환(#311)")
+    class Decode {
+
+        @Test
+        @DisplayName("encode 한 값을 그대로 복원한다")
+        void roundTripsWithEncode() {
+            LocationPayload location = at("2026-08-03T01:02:03.456Z");
+
+            LocationPayload decoded = RiderLocationRepository.decode(RiderLocationRepository.encode(location));
+
+            assertThat(decoded).isEqualTo(location);
+        }
+
+        @Test
+        @DisplayName("정확도가 없는 값도 복원한다")
+        void roundTripsWithoutAccuracy() {
+            LocationPayload noAccuracy = new LocationPayload(new BigDecimal("37.4979"),
+                    new BigDecimal("127.0276"), Instant.parse("2026-08-03T01:02:03.456Z"), null);
+
+            LocationPayload decoded = RiderLocationRepository.decode(RiderLocationRepository.encode(noAccuracy));
+
+            assertThat(decoded).isEqualTo(noAccuracy);
+        }
+
+        @Test
+        @DisplayName("필드 개수가 다르면 null 을 돌려준다")
+        void returnsNullWhenFieldCountMismatches() {
+            // #297 이전 형식(좌표가 앞) 등 다른 필드 개수의 값이 남아 있을 수 있다.
+            assertThat(RiderLocationRepository.decode("37.4979,127.0276")).isNull();
+        }
+
+        @Test
+        @DisplayName("손상된 값은 예외 대신 null 을 돌려준다")
+        void returnsNullForCorruptedValue() {
+            assertThat(RiderLocationRepository.decode("garbage-not-a-location,,,")).isNull();
+        }
     }
 }
