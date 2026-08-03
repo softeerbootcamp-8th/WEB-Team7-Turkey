@@ -1,12 +1,20 @@
 package com.turkey.quick.rider.repository;
 
 import com.turkey.quick.rider.domain.RiderProfile;
+import jakarta.persistence.LockModeType;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface RiderProfileRepository extends JpaRepository<RiderProfile, Long> {
+
+    /** 배송 완료 시 BUSY→AVAILABLE 전이를 다른 상태 변경과 직렬화한다. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select r from RiderProfile r where r.memberId = :riderId")
+    Optional<RiderProfile> findByIdForUpdate(@Param("riderId") Long riderId);
 
     /**
      * 배차 확정(#56, ADR-006)의 두 번째 조건부 UPDATE. AVAILABLE인 행만 BUSY로 바꾸고,

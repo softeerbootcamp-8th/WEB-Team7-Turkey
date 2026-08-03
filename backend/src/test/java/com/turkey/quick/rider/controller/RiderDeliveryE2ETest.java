@@ -16,6 +16,8 @@ import com.turkey.quick.order.domain.OrderFareSnapshot;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.order.repository.FarePolicyRepository;
 import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
+import com.turkey.quick.payment.domain.PointWallet;
+import com.turkey.quick.payment.repository.PointWalletRepository;
 import com.turkey.quick.rider.domain.RiderProfile;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
@@ -50,6 +52,7 @@ class RiderDeliveryE2ETest extends IntegrationTestSupport {
     @Autowired DeliveryOrderRepository deliveryOrderRepository;
     @Autowired FarePolicyRepository farePolicyRepository;
     @Autowired OrderFareSnapshotRepository orderFareSnapshotRepository;
+    @Autowired PointWalletRepository pointWalletRepository;
     @Autowired PlatformTransactionManager transactionManager;
 
     @Test
@@ -69,6 +72,94 @@ class RiderDeliveryE2ETest extends IntegrationTestSupport {
                 .isNotNull();
         assertThat(riderProfileRepository.findById(fixture.riderId()).orElseThrow().getOperatingStatus().name())
                 .isEqualTo("BUSY");
+    }
+
+    @Test
+    @DisplayName("픽업지로 이동 중인 라이더가 픽업 완료를 요청하면 200과 PICKED_UP 상태를 반환한다")
+    void shouldPickUp() {
+        Fixture fixture = saveAssignedOrder("e2e_rider_59_a", "01059100001");
+        String cookie = loginAndGetSessionCookie(fixture.loginId(), "p@ssw0rd");
+        rest.exchange(endpoint(fixture.orderId()), HttpMethod.POST,
+                request(cookie, "START_MOVING_TO_PICKUP"), ApiResponse.class);
+
+        var response = rest.exchange(endpoint(fixture.orderId()), HttpMethod.POST,
+                request(cookie, "PICK_UP"), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().success()).isTrue();
+        Map<?, ?> data = (Map<?, ?>) response.getBody().data();
+        assertThat(data.get("status")).isEqualTo("PICKED_UP");
+        assertThat(deliveryOrderRepository.findById(fixture.orderId()).orElseThrow().getPickedUpAt())
+                .isNotNull();
+        assertThat(riderProfileRepository.findById(fixture.riderId()).orElseThrow().getOperatingStatus().name())
+                .isEqualTo("BUSY");
+    }
+
+    @Test
+    @DisplayName("동일한 픽업 완료 요청을 다시 보내면 409를 반환한다")
+    void shouldRejectDuplicatePickUpRequest() {
+        Fixture fixture = saveAssignedOrder("e2e_rider_59_b", "01059100002");
+        String cookie = loginAndGetSessionCookie(fixture.loginId(), "p@ssw0rd");
+        rest.exchange(endpoint(fixture.orderId()), HttpMethod.POST,
+                request(cookie, "START_MOVING_TO_PICKUP"), ApiResponse.class);
+        rest.exchange(endpoint(fixture.orderId()), HttpMethod.POST,
+                request(cookie, "PICK_UP"), ApiResponse.class);
+
+        var response = rest.exchange(endpoint(fixture.orderId()), HttpMethod.POST,
+                request(cookie, "PICK_UP"), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody().success()).isFalse();
+    }
+
+    @Test
+    @DisplayName("픽업 완료 주문의 배송을 시작하면 200과 DELIVERING 상태를 반환한다")
+    void shouldStartDelivering() {
+        Fixture fixture = saveAssignedOrder("e2e_rider_65_a", "01065100001");
+        String cookie = loginAndGetSessionCookie(fixture.loginId(), "p@ssw0rd");
+        transition(cookie, fixture.orderId(), "START_MOVING_TO_PICKUP");
+        transition(cookie, fixture.orderId(), "PICK_UP");
+
+        var response = transition(cookie, fixture.orderId(), "START_DELIVERING");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<?, ?> data = (Map<?, ?>) response.getBody().data();
+        assertThat(data.get("status")).isEqualTo("DELIVERING");
+        assertThat(deliveryOrderRepository.findById(fixture.orderId()).orElseThrow().getDeliveringAt())
+                .isNotNull();
+    }
+
+    @Test
+    @DisplayName("완료 인증을 제출하면 배송 완료와 라이더 해제 및 정산 적립을 처리한다")
+    void shouldCompleteDelivery() {
+        Fixture fixture = saveAssignedOrder("e2e_rider_62_a", "01062100001");
+        String cookie = loginAndGetSessionCookie(fixture.loginId(), "p@ssw0rd");
+        transition(cookie, fixture.orderId(), "START_MOVING_TO_PICKUP");
+        transition(cookie, fixture.orderId(), "PICK_UP");
+        transition(cookie, fixture.orderId(), "START_DELIVERING");
+
+        var response = rest.exchange(completeEndpoint(fixture.orderId()), HttpMethod.POST,
+                completeRequest(cookie), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<?, ?> data = (Map<?, ?>) response.getBody().data();
+        assertThat(data.get("status")).isEqualTo("COMPLETED");
+        assertThat(data.get("operatingStatus")).isEqualTo("AVAILABLE");
+        assertThat(((Number) data.get("settlementAmount")).longValue()).isEqualTo(3100L);
+        assertThat(pointWalletRepository.findByMemberId(fixture.riderId()).orElseThrow().getBalance())
+                .isEqualTo(3100L);
+    }
+
+    @Test
+    @DisplayName("완료 인증정보가 없으면 배송 완료 요청을 400으로 거부한다")
+    void shouldRejectCompletionWithoutProof() {
+        Fixture fixture = saveAssignedOrder("e2e_rider_62_b", "01062100002");
+        String cookie = loginAndGetSessionCookie(fixture.loginId(), "p@ssw0rd");
+
+        var response = rest.exchange(completeEndpoint(fixture.orderId()), HttpMethod.POST,
+                new HttpEntity<>(Map.of(), cookieHeaders(cookie)), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
     @Test
@@ -110,12 +201,36 @@ class RiderDeliveryE2ETest extends IntegrationTestSupport {
         return "/api/rider/deliveries/" + orderId + "/transition";
     }
 
+    private String completeEndpoint(Long orderId) {
+        return "/api/rider/deliveries/" + orderId + "/complete";
+    }
+
+    private org.springframework.http.ResponseEntity<ApiResponse> transition(
+            String cookie, Long orderId, String action) {
+        return rest.exchange(endpoint(orderId), HttpMethod.POST,
+                request(cookie, action), ApiResponse.class);
+    }
+
     private HttpEntity<Map<String, String>> request(String cookie) {
+        return request(cookie, "START_MOVING_TO_PICKUP");
+    }
+
+    private HttpEntity<Map<String, String>> request(String cookie, String action) {
+        return new HttpEntity<>(Map.of("action", action), cookieHeaders(cookie));
+    }
+
+    private HttpEntity<Map<String, String>> completeRequest(String cookie) {
+        return new HttpEntity<>(Map.of(
+                "proofType", "PHOTO",
+                "proofValue", "proof/e2e-62.jpg"), cookieHeaders(cookie));
+    }
+
+    private HttpHeaders cookieHeaders(String cookie) {
         HttpHeaders headers = new HttpHeaders();
         if (cookie != null) {
             headers.add(HttpHeaders.COOKIE, cookie);
         }
-        return new HttpEntity<>(Map.of("action", "START_MOVING_TO_PICKUP"), headers);
+        return headers;
     }
 
     private String loginAndGetSessionCookie(String loginId, String password) {
@@ -154,6 +269,7 @@ class RiderDeliveryE2ETest extends IntegrationTestSupport {
                             "라이더", phoneNumber, MemberRole.RIDER));
 
             RiderProfile rider = RiderProfile.create(member);
+            pointWalletRepository.save(PointWallet.create(member));
             rider.goOnline();
 
             if (busy) {

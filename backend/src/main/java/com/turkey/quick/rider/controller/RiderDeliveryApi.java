@@ -13,8 +13,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 /**
  * 라이더 진행 중 배송 전체 API 계약.
  *
- * <p>단계 전이는 #58에서 구현하고, 진행 배송 조회·완료는 각각의 후속 이슈에서 구현한다.
- * 아직 구현되지 않은 메서드는 문서 계약으로만 유지하며 실제 라우트로 노출하지 않는다.
+ * <p>단계 전이는 #58·#59·#65에서, 배송 완료는 #62에서 구현한다.
+ * 진행 배송 조회는 후속 이슈의 문서 계약으로 유지한다.
  */
 @Tag(name = "rider-delivery", description = "라이더 진행 중 배송 — 조회·단계 전이·완료")
 public interface RiderDeliveryApi extends RiderDeliveryTransitionApi {

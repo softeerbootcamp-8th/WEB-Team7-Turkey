@@ -3,11 +3,13 @@ package com.turkey.quick.order.repository;
 import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.TrackableDelivery;
+import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -21,6 +23,11 @@ import org.springframework.data.repository.query.Param;
  * 호출자 없는 쿼리는 테스트만 통과시키고 아무것도 하지 않는다.
  */
 public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Long> {
+
+    /** 배송 완료 트랜잭션에서 주문 한 행을 잠가 중복 완료를 직렬화한다. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select o from DeliveryOrder o where o.id = :orderId")
+    Optional<DeliveryOrder> findByIdForUpdate(@Param("orderId") Long orderId);
 
     /**
      * 고객 본인의 배송요청을 실시간 구독 판정에 필요한 값만 뽑아 조회한다(#77 흐름 ②).
@@ -152,4 +159,27 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
     int startMovingToPickupIfAssigned(@Param("orderId") Long orderId,
                                       @Param("riderId") Long riderId,
                                       @Param("startedAt") LocalDateTime startedAt);
+
+    /**
+     * 배정된 라이더의 물품 픽업 완료(#59)를 조건부 UPDATE로 처리한다.
+     * MOVING_TO_PICKUP 상태인 한 요청만 PICKED_UP으로 바꾸므로 중복·동시 요청은 하나만 성공한다.
+     */
+    @Modifying(clearAutomatically = true)
+    @Query(value = "UPDATE delivery_order "
+            + "SET status = 'PICKED_UP', picked_up_at = :pickedUpAt, updated_at = :pickedUpAt "
+            + "WHERE order_id = :orderId AND assigned_rider_id = :riderId AND status = 'MOVING_TO_PICKUP'",
+            nativeQuery = true)
+    int pickUpIfMovingToPickup(@Param("orderId") Long orderId,
+                               @Param("riderId") Long riderId,
+                               @Param("pickedUpAt") LocalDateTime pickedUpAt);
+
+    /** PICKED_UP 상태인 배정 주문 한 건만 DELIVERING으로 전이하고 배송 시작 시각을 기록한다(#65). */
+    @Modifying(clearAutomatically = true)
+    @Query(value = "UPDATE delivery_order "
+            + "SET status = 'DELIVERING', delivering_at = :deliveringAt, updated_at = :deliveringAt "
+            + "WHERE order_id = :orderId AND assigned_rider_id = :riderId AND status = 'PICKED_UP'",
+            nativeQuery = true)
+    int startDeliveringIfPickedUp(@Param("orderId") Long orderId,
+                                  @Param("riderId") Long riderId,
+                                  @Param("deliveringAt") LocalDateTime deliveringAt);
 }
