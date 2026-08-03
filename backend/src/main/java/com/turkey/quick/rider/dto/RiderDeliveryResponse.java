@@ -48,6 +48,9 @@ public record RiderDeliveryResponse(
         @Schema(description = "예상 정산액(원)", example = "6400")
         Long expectedSettlementAmount,
 
+        @Schema(description = "현재 배송 상태에서 수행 가능한 다음 행동")
+        RiderDeliveryNextAction nextAction,
+
         @Schema(description = "상태 전이 타임라인(도달한 단계만)")
         List<DeliveryStatusStepResponse> steps,
 
@@ -69,6 +72,7 @@ public record RiderDeliveryResponse(
                 new ContactResponse(order.getRecipient().getName(), order.getRecipient().getPhoneNumber()),
                 order.getStraightDistanceMeters(),
                 expectedSettlementAmount,
+                RiderDeliveryNextAction.from(order.getStatus()),
                 steps(order),
                 order.getAssignedAt());
     }

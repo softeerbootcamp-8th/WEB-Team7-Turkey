@@ -2,6 +2,8 @@ package com.turkey.quick.rider.service;
 
 import com.turkey.quick.common.exception.BusinessException;
 import com.turkey.quick.location.repository.RiderGeoRepository;
+import com.turkey.quick.order.domain.OrderStatus;
+import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.rider.domain.OperatingStatus;
 import com.turkey.quick.rider.domain.RiderProfile;
 import com.turkey.quick.rider.dto.RiderOperatingAction;
@@ -38,15 +40,28 @@ public class RiderOperatingStatusChangeService {
 
     private final RiderProfileRepository riderProfileRepository;
     private final RiderGeoRepository riderGeoRepository;
+    private final DeliveryOrderRepository deliveryOrderRepository;
 
     @Transactional
     public RiderOperatingStatusResponse changeOperatingStatus(Long riderId, RiderOperatingAction action) {
         RiderProfile profile = riderProfileRepository.findById(riderId).orElseThrow();
         OperatingStatus current = profile.getOperatingStatus();
+        boolean hasInProgressDelivery = deliveryOrderRepository
+                .existsByAssignedRider_MemberIdAndStatusIn(riderId, OrderStatus.trackableStatuses());
 
         if (current == OperatingStatus.BUSY) {
+            if (!hasInProgressDelivery) {
+                log.error("event=RIDER_DELIVERY_CONSISTENCY_ERROR riderId={} reason=BUSY_WITHOUT_DELIVERY",
+                        riderId);
+            }
             throw new BusinessException(HttpStatus.CONFLICT,
                     "배송 진행 중에는 운행 상태를 직접 변경할 수 없습니다.");
+        }
+        if (hasInProgressDelivery) {
+            log.error("event=RIDER_DELIVERY_CONSISTENCY_ERROR riderId={} reason=DELIVERY_WITHOUT_BUSY status={}",
+                    riderId, current);
+            throw new BusinessException(HttpStatus.CONFLICT,
+                    "진행 중 배송 정보와 라이더 상태가 일치하지 않아 상태를 변경할 수 없습니다.");
         }
 
         OperatingStatus target = switch (action) {

@@ -6,7 +6,6 @@ import com.turkey.quick.rider.dto.RiderDeliveryCompleteRequest;
 import com.turkey.quick.rider.dto.RiderDeliveryCompleteResponse;
 import com.turkey.quick.rider.dto.RiderDeliveryResponse;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
@@ -14,7 +13,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
  * 라이더 진행 중 배송 전체 API 계약.
  *
  * <p>단계 전이는 #58·#59·#65에서, 배송 완료는 #62에서 구현한다.
- * 진행 배송 조회는 후속 이슈의 문서 계약으로 유지한다.
+ * 진행 배송 조회는 #86에서 구현한다.
  */
 @Tag(name = "rider-delivery", description = "라이더 진행 중 배송 — 조회·단계 전이·완료")
 public interface RiderDeliveryApi extends RiderDeliveryTransitionApi {
@@ -25,7 +24,9 @@ public interface RiderDeliveryApi extends RiderDeliveryTransitionApi {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "200", description = "조회 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "401", description = "인증되지 않은 라이더")
+                    responseCode = "401", description = "인증되지 않은 라이더"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "409", description = "라이더 상태와 진행 배송 정보 불일치")
     })
     ApiResponse<RiderDeliveryResponse> getCurrentDelivery(AuthenticatedRider rider);
 
@@ -46,6 +47,6 @@ public interface RiderDeliveryApi extends RiderDeliveryTransitionApi {
     })
     ApiResponse<RiderDeliveryCompleteResponse> completeDelivery(
             AuthenticatedRider rider,
-            @Parameter(description = "배송요청 식별자", example = "1024") Long deliveryId,
+            Long deliveryId,
             RiderDeliveryCompleteRequest request);
 }

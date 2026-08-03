@@ -28,6 +28,7 @@ import com.turkey.quick.rider.domain.OperatingStatus;
 import com.turkey.quick.rider.domain.RiderProfile;
 import com.turkey.quick.rider.dto.RiderDeliveryAction;
 import com.turkey.quick.rider.dto.RiderDeliveryCompleteRequest;
+import com.turkey.quick.rider.dto.RiderDeliveryNextAction;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
 import java.math.BigDecimal;
@@ -59,6 +60,67 @@ class RiderDeliveryServiceIntegrationTest extends IntegrationTestSupport {
     @Autowired RiderSettlementRepository riderSettlementRepository;
     @Autowired PointWalletRepository pointWalletRepository;
     @Autowired PlatformTransactionManager transactionManager;
+
+    @Test
+    @DisplayName("진행 배송을 다시 조회하면 현재 단계와 다음 행동 및 배정 후 상세정보를 복구한다")
+    void shouldRestoreCurrentDeliveryAtEveryStage() {
+        Fixture fixture = saveAssignedOrder(true, "integration_rider_86_a", "01086000001");
+
+        var assigned = riderDeliveryService.getCurrentDelivery(authenticated(fixture));
+        assertThat(assigned.deliveryId()).isEqualTo(fixture.orderId());
+        assertThat(assigned.status()).isEqualTo(OrderStatus.ASSIGNED);
+        assertThat(assigned.nextAction()).isEqualTo(RiderDeliveryNextAction.START_MOVING_TO_PICKUP);
+        assertThat(assigned.pickup().detailAddress()).isEqualTo("상세");
+        assertThat(assigned.sender().phoneNumber()).isEqualTo("01011112222");
+
+        riderDeliveryService.transition(authenticated(fixture), fixture.orderId(),
+                RiderDeliveryAction.START_MOVING_TO_PICKUP);
+        assertThat(riderDeliveryService.getCurrentDelivery(authenticated(fixture)).nextAction())
+                .isEqualTo(RiderDeliveryNextAction.PICK_UP);
+
+        riderDeliveryService.transition(authenticated(fixture), fixture.orderId(), RiderDeliveryAction.PICK_UP);
+        assertThat(riderDeliveryService.getCurrentDelivery(authenticated(fixture)).nextAction())
+                .isEqualTo(RiderDeliveryNextAction.START_DELIVERING);
+
+        riderDeliveryService.transition(authenticated(fixture), fixture.orderId(),
+                RiderDeliveryAction.START_DELIVERING);
+        assertThat(riderDeliveryService.getCurrentDelivery(authenticated(fixture)).nextAction())
+                .isEqualTo(RiderDeliveryNextAction.COMPLETE);
+    }
+
+    @Test
+    @DisplayName("BUSY 라이더에게 진행 중 배송이 없으면 정합성 오류로 거부한다")
+    void shouldRejectBusyRiderWithoutCurrentDelivery() {
+        RiderProfile rider = saveRider("integration_rider_86_b", "01086000002", true);
+        AuthenticatedRider authenticated = new AuthenticatedRider(
+                rider.getMemberId(), "integration_rider_86_b", "라이더", OperatingStatus.BUSY);
+
+        assertThatThrownBy(() -> riderDeliveryService.getCurrentDelivery(authenticated))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(error -> assertThat(((BusinessException) error).getStatus())
+                        .isEqualTo(HttpStatus.CONFLICT));
+    }
+
+    @Test
+    @DisplayName("진행 배송이 있는데 라이더가 BUSY가 아니면 정합성 오류로 거부한다")
+    void shouldRejectCurrentDeliveryWhenRiderIsNotBusy() {
+        Fixture fixture = saveAssignedOrder(false, "integration_rider_86_c", "01086000003");
+
+        assertThatThrownBy(() -> riderDeliveryService.getCurrentDelivery(authenticated(fixture)))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(error -> assertThat(((BusinessException) error).getStatus())
+                        .isEqualTo(HttpStatus.CONFLICT));
+    }
+
+    @Test
+    @DisplayName("BUSY가 아니고 진행 배송도 없으면 조회 결과가 없다")
+    void shouldReturnNullWhenThereIsNoCurrentDelivery() {
+        RiderProfile rider = saveRider("integration_rider_86_d", "01086000004", false);
+        AuthenticatedRider authenticated = new AuthenticatedRider(
+                rider.getMemberId(), "integration_rider_86_d", "라이더", OperatingStatus.AVAILABLE);
+
+        assertThat(riderDeliveryService.getCurrentDelivery(authenticated)).isNull();
+    }
 
     @Test
     @DisplayName("배정된 BUSY 라이더가 출발하면 주문 상태와 이동 시작 시각만 변경한다")

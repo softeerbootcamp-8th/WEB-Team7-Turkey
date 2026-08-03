@@ -57,6 +57,12 @@ export interface AddressResponse {
   roadAddress?: string;
 }
 
+export interface ApiResponseCustomerDeliveryLocationResponse {
+  data?: CustomerDeliveryLocationResponse;
+  message?: string;
+  success?: boolean;
+}
+
 export interface ApiResponseCustomerLoginResponse {
   data?: CustomerLoginResponse;
   message?: string;
@@ -149,6 +155,12 @@ export interface ApiResponsePointBalanceResponse {
   success?: boolean;
 }
 
+export interface ApiResponsePointChargeCancelResponse {
+  data?: PointChargeCancelResponse;
+  message?: string;
+  success?: boolean;
+}
+
 export interface ApiResponsePointChargeConfirmResponse {
   data?: PointChargeConfirmResponse;
   message?: string;
@@ -167,6 +179,12 @@ export interface ApiResponsePointTransactionListResponse {
   success?: boolean;
 }
 
+export interface ApiResponseRiderDeliveryCompleteResponse {
+  data?: RiderDeliveryCompleteResponse;
+  message?: string;
+  success?: boolean;
+}
+
 export interface ApiResponseRiderDeliveryRequestAcceptResponse {
   data?: RiderDeliveryRequestAcceptResponse;
   message?: string;
@@ -175,6 +193,12 @@ export interface ApiResponseRiderDeliveryRequestAcceptResponse {
 
 export interface ApiResponseRiderDeliveryRequestDetailResponse {
   data?: RiderDeliveryRequestDetailResponse;
+  message?: string;
+  success?: boolean;
+}
+
+export interface ApiResponseRiderDeliveryResponse {
+  data?: RiderDeliveryResponse;
   message?: string;
   success?: boolean;
 }
@@ -255,6 +279,34 @@ export interface ContactResponse {
   name?: string;
   /** 전화번호 */
   phoneNumber?: string;
+}
+
+/**
+ * 현재 배송 상태
+ */
+export type CustomerDeliveryLocationResponseStatus = typeof CustomerDeliveryLocationResponseStatus[keyof typeof CustomerDeliveryLocationResponseStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const CustomerDeliveryLocationResponseStatus = {
+  WAITING: 'WAITING',
+  ASSIGNED: 'ASSIGNED',
+  MOVING_TO_PICKUP: 'MOVING_TO_PICKUP',
+  PICKED_UP: 'PICKED_UP',
+  DELIVERING: 'DELIVERING',
+  COMPLETED: 'COMPLETED',
+  CANCELED: 'CANCELED',
+} as const;
+
+/**
+ * 고객 위치 폴링 스냅샷(부하테스트용)
+ */
+export interface CustomerDeliveryLocationResponse {
+  /** 배송요청 식별자 */
+  deliveryId?: number;
+  location?: LocationPayload;
+  /** 현재 배송 상태 */
+  status?: CustomerDeliveryLocationResponseStatus;
 }
 
 export interface CustomerLoginRequest {
@@ -382,6 +434,8 @@ export const DeliveryCreateRequestItemType = {
  */
 export interface DeliveryCreateRequest {
   destination: AddressRequest;
+  /** 화면이 사용자에게 안내한 예상 요금(원). 서버 재계산 결과와 다르면 주문을 만들지 않는다. 이 값이 결제 금액으로 쓰이지는 않는다. */
+  estimatedFare: number;
   /** 물품 종류 */
   itemType: DeliveryCreateRequestItemType;
   pickup: AddressRequest;
@@ -689,6 +743,20 @@ export interface FareQuoteResponse {
   fare?: FareBreakdownResponse;
 }
 
+/**
+ * 라이더의 마지막으로 알려진 위치. 없으면 null
+ */
+export interface LocationPayload {
+  /** 측정 정확도(미터). 없으면 null */
+  accuracyMeters?: number;
+  /** 위도 */
+  latitude?: number;
+  /** 경도 */
+  longitude?: number;
+  /** 측정 시각(UTC) */
+  measuredAt?: string;
+}
+
 export interface LoginIdAvailabilityResponse {
   /** 사용 가능 여부 */
   available?: boolean;
@@ -770,15 +838,48 @@ export interface PointBalanceResponse {
 }
 
 /**
+ * 충전 상태. 취소 성공 시 CANCELED.
+ */
+export type PointChargeCancelResponseStatus = typeof PointChargeCancelResponseStatus[keyof typeof PointChargeCancelResponseStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PointChargeCancelResponseStatus = {
+  PENDING: 'PENDING',
+  PAID: 'PAID',
+  FAILED: 'FAILED',
+  CANCELED: 'CANCELED',
+  REFUNDED: 'REFUNDED',
+} as const;
+
+/**
+ * 포인트 충전 취소 결과
+ */
+export interface PointChargeCancelResponse {
+  /** 현재 잔액. 취소는 잔액을 바꾸지 않으므로 취소 전 값과 같다. */
+  balance?: number;
+  /** 취소 사유. 서버가 채운다. */
+  cancelReason?: string;
+  /** 충전 식별자 */
+  pointChargeId?: number;
+  /** 취소된 충전 요청 금액. 승인된 적이 없으므로 결제되지 않은 금액이다. */
+  requestedAmount?: number;
+  /** 충전 상태. 취소 성공 시 CANCELED. */
+  status?: PointChargeCancelResponseStatus;
+}
+
+/**
  * 포인트 충전 승인 요청
  */
 export interface PointChargeConfirmRequest {
+  /** 결제 금액. 서버가 기억하는 요청 금액과 대조하는 데만 쓴다. */
+  amount?: number;
   /**
-   * PG 승인 식별자. MVP 모킹에서는 생략 가능(서버가 모의 키 생성).
+   * 결제창을 통과해 받아 온 인증 토큰(토스 paymentKey · 카카오 pg_token 등).
    * @minLength 0
-   * @maxLength 100
+   * @maxLength 200
    */
-  providerPaymentKey?: string;
+  authToken: string;
 }
 
 /**
@@ -955,6 +1056,79 @@ export interface PointTransactionResponse {
 }
 
 /**
+ * 인증 방식
+ */
+export type RiderDeliveryCompleteRequestProofType = typeof RiderDeliveryCompleteRequestProofType[keyof typeof RiderDeliveryCompleteRequestProofType];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RiderDeliveryCompleteRequestProofType = {
+  PHOTO: 'PHOTO',
+  RECIPIENT_CONFIRMATION: 'RECIPIENT_CONFIRMATION',
+  AUTH_CODE: 'AUTH_CODE',
+} as const;
+
+/**
+ * 배송 완료 요청(인증 참조값)
+ */
+export interface RiderDeliveryCompleteRequest {
+  /** 인증 방식 */
+  proofType: RiderDeliveryCompleteRequestProofType;
+  /**
+   * 인증 참조값(사진 URL/스토리지 키, 수령인 확인 참조, 인증코드)
+   * @minLength 0
+   * @maxLength 500
+   */
+  proofValue: string;
+}
+
+/**
+ * 라이더 운행 상태(완료 시 AVAILABLE)
+ */
+export type RiderDeliveryCompleteResponseOperatingStatus = typeof RiderDeliveryCompleteResponseOperatingStatus[keyof typeof RiderDeliveryCompleteResponseOperatingStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RiderDeliveryCompleteResponseOperatingStatus = {
+  UNAVAILABLE: 'UNAVAILABLE',
+  AVAILABLE: 'AVAILABLE',
+  BUSY: 'BUSY',
+} as const;
+
+/**
+ * 배송 상태(완료 시 COMPLETED)
+ */
+export type RiderDeliveryCompleteResponseStatus = typeof RiderDeliveryCompleteResponseStatus[keyof typeof RiderDeliveryCompleteResponseStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RiderDeliveryCompleteResponseStatus = {
+  WAITING: 'WAITING',
+  ASSIGNED: 'ASSIGNED',
+  MOVING_TO_PICKUP: 'MOVING_TO_PICKUP',
+  PICKED_UP: 'PICKED_UP',
+  DELIVERING: 'DELIVERING',
+  COMPLETED: 'COMPLETED',
+  CANCELED: 'CANCELED',
+} as const;
+
+/**
+ * 배송 완료 결과
+ */
+export interface RiderDeliveryCompleteResponse {
+  /** 완료 시각(UTC) */
+  completedAt?: string;
+  /** 배송요청 식별자 */
+  deliveryId?: number;
+  /** 라이더 운행 상태(완료 시 AVAILABLE) */
+  operatingStatus?: RiderDeliveryCompleteResponseOperatingStatus;
+  /** 확정된 정산 금액(원) */
+  settlementAmount?: number;
+  /** 배송 상태(완료 시 COMPLETED) */
+  status?: RiderDeliveryCompleteResponseStatus;
+}
+
+/**
  * 라이더 운행 상태(확정 시 BUSY)
  */
 export type RiderDeliveryRequestAcceptResponseOperatingStatus = typeof RiderDeliveryRequestAcceptResponseOperatingStatus[keyof typeof RiderDeliveryRequestAcceptResponseOperatingStatus];
@@ -1071,9 +1245,101 @@ export interface RiderDeliveryRequestSummaryResponse {
   straightDistanceMeters?: number;
 }
 
+/**
+ * 물품 종류
+ */
+export type RiderDeliveryResponseItemType = typeof RiderDeliveryResponseItemType[keyof typeof RiderDeliveryResponseItemType];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RiderDeliveryResponseItemType = {
+  DOCUMENT: 'DOCUMENT',
+  SMALL_PARCEL: 'SMALL_PARCEL',
+  MEDIUM_PARCEL: 'MEDIUM_PARCEL',
+  LARGE_PARCEL: 'LARGE_PARCEL',
+  FOOD: 'FOOD',
+} as const;
+
+/**
+ * 현재 배송 상태에서 수행 가능한 다음 행동
+ */
+export type RiderDeliveryResponseNextAction = typeof RiderDeliveryResponseNextAction[keyof typeof RiderDeliveryResponseNextAction];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RiderDeliveryResponseNextAction = {
+  START_MOVING_TO_PICKUP: 'START_MOVING_TO_PICKUP',
+  PICK_UP: 'PICK_UP',
+  START_DELIVERING: 'START_DELIVERING',
+  COMPLETE: 'COMPLETE',
+} as const;
+
+/**
+ * 배송 상태
+ */
+export type RiderDeliveryResponseStatus = typeof RiderDeliveryResponseStatus[keyof typeof RiderDeliveryResponseStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RiderDeliveryResponseStatus = {
+  WAITING: 'WAITING',
+  ASSIGNED: 'ASSIGNED',
+  MOVING_TO_PICKUP: 'MOVING_TO_PICKUP',
+  PICKED_UP: 'PICKED_UP',
+  DELIVERING: 'DELIVERING',
+  COMPLETED: 'COMPLETED',
+  CANCELED: 'CANCELED',
+} as const;
+
+/**
+ * 라이더 진행 중 배송
+ */
+export interface RiderDeliveryResponse {
+  /** 배차 시각(UTC) */
+  assignedAt?: string;
+  /** 배송요청 식별자 */
+  deliveryId?: number;
+  destination?: AddressResponse;
+  /** 예상 정산액(원) */
+  expectedSettlementAmount?: number;
+  /** 물품 종류 */
+  itemType?: RiderDeliveryResponseItemType;
+  /** 현재 배송 상태에서 수행 가능한 다음 행동 */
+  nextAction?: RiderDeliveryResponseNextAction;
+  pickup?: AddressResponse;
+  recipient?: ContactResponse;
+  sender?: ContactResponse;
+  /** 배송 상태 */
+  status?: RiderDeliveryResponseStatus;
+  /** 상태 전이 타임라인(도달한 단계만) */
+  steps?: DeliveryStatusStepResponse[];
+  /** 픽업지-도착지 직선거리(m) */
+  straightDistanceMeters?: number;
+}
+
+/**
+ * 수행할 행위
+ */
+export type RiderDeliveryTransitionRequestAction = typeof RiderDeliveryTransitionRequestAction[keyof typeof RiderDeliveryTransitionRequestAction];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RiderDeliveryTransitionRequestAction = {
+  START_MOVING_TO_PICKUP: 'START_MOVING_TO_PICKUP',
+  PICK_UP: 'PICK_UP',
+  START_DELIVERING: 'START_DELIVERING',
+} as const;
+
+/**
+ * 배송 단계 전이 요청
+ */
+export interface RiderDeliveryTransitionRequest {
+  /** 수행할 행위 */
+  action: RiderDeliveryTransitionRequestAction;
+}
+
 export interface RiderLocationUpdateRequest {
   accuracyMeters?: number;
-  deliveryId: number;
   /**
    * @minimum -90
    * @maximum 90

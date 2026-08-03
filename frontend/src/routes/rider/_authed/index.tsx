@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import {
   getGetRiderOperatingStatusQueryKey,
-  useChangeOperatingStatus,
+  useChangeRiderOperatingStatus,
   useGetRiderOperatingStatus,
 } from '@/api/generated/rider-operating-status/rider-operating-status'
 import { getGetRiderSessionQueryKey } from '@/api/generated/rider-session/rider-session'
@@ -18,7 +18,7 @@ function RiderHome() {
   const queryClient = useQueryClient()
   const [statusError, setStatusError] = useState<string | null>(null)
   const operatingStatusQuery = useGetRiderOperatingStatus({ query: { retry: false } })
-  const operatingStatusMutation = useChangeOperatingStatus()
+  const operatingStatusMutation = useChangeRiderOperatingStatus()
   const operatingStatus = operatingStatusQuery.data?.data?.operatingStatus
   const isAvailable = operatingStatus === 'AVAILABLE'
 

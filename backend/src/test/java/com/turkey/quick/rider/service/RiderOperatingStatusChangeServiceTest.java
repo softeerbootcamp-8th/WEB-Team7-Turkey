@@ -11,6 +11,8 @@ import com.turkey.quick.common.exception.BusinessException;
 import com.turkey.quick.location.repository.RiderGeoRepository;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
+import com.turkey.quick.order.domain.OrderStatus;
+import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.rider.domain.OperatingStatus;
 import com.turkey.quick.rider.domain.RiderProfile;
 import com.turkey.quick.rider.dto.RiderOperatingAction;
@@ -32,13 +34,16 @@ class RiderOperatingStatusChangeServiceTest {
 
     private RiderProfileRepository riderProfileRepository;
     private RiderGeoRepository riderGeoRepository;
+    private DeliveryOrderRepository deliveryOrderRepository;
     private RiderOperatingStatusChangeService service;
 
     @BeforeEach
     void setUp() {
         riderProfileRepository = mock(RiderProfileRepository.class);
         riderGeoRepository = mock(RiderGeoRepository.class);
-        service = new RiderOperatingStatusChangeService(riderProfileRepository, riderGeoRepository);
+        deliveryOrderRepository = mock(DeliveryOrderRepository.class);
+        service = new RiderOperatingStatusChangeService(
+                riderProfileRepository, riderGeoRepository, deliveryOrderRepository);
     }
 
     private RiderProfile profileWith(OperatingStatus status) {
@@ -110,6 +115,21 @@ class RiderOperatingStatusChangeServiceTest {
                 .satisfies(e -> assertThat(((BusinessException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT));
 
         assertThat(profile.getOperatingStatus()).isEqualTo(OperatingStatus.BUSY);
+        verify(riderGeoRepository, never()).remove(MEMBER_ID);
+    }
+
+    @Test
+    @DisplayName("진행 배송이 있는데 BUSY가 아닌 라이더의 상태 변경은 정합성 오류로 거부한다")
+    void activeDeliveryWithNonBusyRiderIsRejected() {
+        RiderProfile profile = profileWith(OperatingStatus.AVAILABLE);
+        when(deliveryOrderRepository.existsByAssignedRider_MemberIdAndStatusIn(
+                MEMBER_ID, OrderStatus.trackableStatuses())).thenReturn(true);
+
+        assertThatThrownBy(() -> service.changeOperatingStatus(MEMBER_ID, RiderOperatingAction.GO_OFFLINE))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT));
+
+        assertThat(profile.getOperatingStatus()).isEqualTo(OperatingStatus.AVAILABLE);
         verify(riderGeoRepository, never()).remove(MEMBER_ID);
     }
 }
