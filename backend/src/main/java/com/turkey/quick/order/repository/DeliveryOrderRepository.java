@@ -114,4 +114,18 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
             + "assigned_at = :assignedAt WHERE order_id = :orderId AND status = 'WAITING'", nativeQuery = true)
     int assignIfWaiting(@Param("orderId") Long orderId, @Param("riderId") Long riderId,
                         @Param("assignedAt") LocalDateTime assignedAt);
+
+    /**
+     * 배정된 라이더의 픽업지 이동 시작(#58)을 조건부 UPDATE로 처리한다.
+     * 주문·라이더·현재 상태를 WHERE 절에서 함께 검증하므로 같은 요청이 동시에 들어와도
+     * 정확히 한 요청만 ASSIGNED → MOVING_TO_PICKUP 전이에 성공한다.
+     */
+    @Modifying(clearAutomatically = true)
+    @Query(value = "UPDATE delivery_order "
+            + "SET status = 'MOVING_TO_PICKUP', moving_to_pickup_at = :startedAt, updated_at = :startedAt "
+            + "WHERE order_id = :orderId AND assigned_rider_id = :riderId AND status = 'ASSIGNED'",
+            nativeQuery = true)
+    int startMovingToPickupIfAssigned(@Param("orderId") Long orderId,
+                                      @Param("riderId") Long riderId,
+                                      @Param("startedAt") LocalDateTime startedAt);
 }
