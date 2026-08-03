@@ -23,6 +23,18 @@ declare global {
         setMap(map: Map | null): void
       }
 
+      class Polyline {
+        constructor(options: {
+          path: LatLng[]
+          strokeWeight?: number
+          strokeColor?: string
+          strokeOpacity?: number
+          strokeStyle?: string
+          map?: Map
+        })
+        setMap(map: Map | null): void
+      }
+
       function load(callback: () => void): void
     }
   }
