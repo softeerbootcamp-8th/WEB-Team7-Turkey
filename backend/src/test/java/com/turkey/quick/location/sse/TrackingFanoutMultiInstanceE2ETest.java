@@ -100,10 +100,12 @@ class TrackingFanoutMultiInstanceE2ETest extends IntegrationTestSupport {
         return headers;
     }
 
-    private Map<String, Object> locationBody(Long deliveryId, String latitude) {
-        // #290 이후 배송 식별자가 요청 본문으로 온다. 이 값이 곧 팬아웃 채널 키다.
+    /**
+     * <b>배송 식별자를 싣지 않는다.</b> 서버가 세션의 라이더로 "수행 중 배송"을 DB 에서 풀어
+     * 채널을 정한다 — 그래서 이 테스트는 팬아웃뿐 아니라 <b>발행 대상 판정까지</b> 검증한다.
+     */
+    private Map<String, Object> locationBody(String latitude) {
         Map<String, Object> body = new HashMap<>();
-        body.put("deliveryId", deliveryId);
         body.put("latitude", latitude);
         body.put("longitude", "127.0276");
         body.put("measuredAt", Instant.now().toString());
@@ -111,9 +113,9 @@ class TrackingFanoutMultiInstanceE2ETest extends IntegrationTestSupport {
         return body;
     }
 
-    private void postLocation(String url, Long deliveryId, String latitude, String riderCookie) {
+    private void postLocation(String url, String latitude, String riderCookie) {
         var posted = rest.exchange(url, HttpMethod.POST,
-                new HttpEntity<>(locationBody(deliveryId, latitude), withCookie(riderCookie)),
+                new HttpEntity<>(locationBody(latitude), withCookie(riderCookie)),
                 ApiResponse.class);
         assertThat(posted.getStatusCode()).as("위치 갱신 %s", url).isEqualTo(HttpStatus.OK);
     }
@@ -140,7 +142,7 @@ class TrackingFanoutMultiInstanceE2ETest extends IntegrationTestSupport {
                     .isNotSameAs(registryA);
 
             // 라이더 위치를 인스턴스 B 로 보낸다. B 는 emitter 가 없다 — Pub/Sub 팬아웃뿐이다.
-            postLocation(secondary.url(RIDER_LOCATION), scenario.deliveryId(), "37.4979", riderCookie);
+            postLocation(secondary.url(RIDER_LOCATION), "37.4979", riderCookie);
 
             assertThat(client.awaitData(AWAIT)).contains("\"latitude\":37.4979");
         }
@@ -156,8 +158,7 @@ class TrackingFanoutMultiInstanceE2ETest extends IntegrationTestSupport {
         String riderCookie = loginOnA(RIDER_LOGIN, scenario.riderLoginId());
 
         try (var client = SseTestClient.get(streamUrlOnA(scenario.deliveryId()), customerCookie)) {
-            postLocation("http://localhost:%d%s".formatted(port, RIDER_LOCATION),
-                    scenario.deliveryId(), "37.5665", riderCookie);
+            postLocation("http://localhost:%d%s".formatted(port, RIDER_LOCATION), "37.5665", riderCookie);
 
             assertThat(client.awaitData(AWAIT)).contains("\"latitude\":37.5665");
         }
@@ -173,7 +174,7 @@ class TrackingFanoutMultiInstanceE2ETest extends IntegrationTestSupport {
         String riderCookie = loginOnA(RIDER_LOGIN, scenario.riderLoginId());
 
         try (var client = SseTestClient.get(streamUrlOnA(scenario.deliveryId()), customerCookie)) {
-            postLocation(secondary.url(RIDER_LOCATION), scenario.deliveryId(), "37.4979", riderCookie);
+            postLocation(secondary.url(RIDER_LOCATION), "37.4979", riderCookie);
 
             assertThat(client.awaitData(AWAIT))
                     .contains("\"latitude\":37.4979")
@@ -195,10 +196,10 @@ class TrackingFanoutMultiInstanceE2ETest extends IntegrationTestSupport {
         String otherRiderCookie = loginOnA(RIDER_LOGIN, other.riderLoginId());
 
         try (var client = SseTestClient.get(streamUrlOnA(watched.deliveryId()), watcherCookie)) {
-            postLocation(secondary.url(RIDER_LOCATION), other.deliveryId(), "38.1111", otherRiderCookie);
+            postLocation(secondary.url(RIDER_LOCATION), "38.1111", otherRiderCookie);
 
             // 자기 배송으로 한 번 더 보내 "그 사이에 아무것도 오지 않았다"를 확인할 기준점을 만든다.
-            postLocation(secondary.url(RIDER_LOCATION), watched.deliveryId(), "37.4979",
+            postLocation(secondary.url(RIDER_LOCATION), "37.4979",
                     loginOnA(RIDER_LOGIN, watched.riderLoginId()));
 
             // 자기 배송의 좌표가 먼저 도착해야 한다. 남의 좌표가 섞였다면 이 프레임이 38.1111 이다.

@@ -90,9 +90,9 @@ class RiderLocationUpdateE2ETest extends IntegrationTestSupport {
         return setCookie.split(";")[0];
     }
 
-    private Map<String, Object> locationRequest(long deliveryId) {
+    private Map<String, Object> locationRequest() {
+        // 배송 식별자를 싣지 않는다 — 서버가 세션의 라이더로 수행 중 배송을 판정한다(#317).
         return Map.of(
-                "deliveryId", deliveryId,
                 "latitude", "37.4979",
                 "longitude", "127.0276",
                 "measuredAt", Instant.now().toString());
@@ -114,7 +114,7 @@ class RiderLocationUpdateE2ETest extends IntegrationTestSupport {
         String cookie = login("e2e_location_available");
 
         var response = rest.exchange(LOCATION_ENDPOINT, HttpMethod.POST,
-                withCookie(locationRequest(1L), cookie), ApiResponse.class);
+                withCookie(locationRequest(), cookie), ApiResponse.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody().success()).isTrue();
@@ -127,7 +127,7 @@ class RiderLocationUpdateE2ETest extends IntegrationTestSupport {
         String cookie = login("e2e_location_busy");
 
         var response = rest.exchange(LOCATION_ENDPOINT, HttpMethod.POST,
-                withCookie(locationRequest(2L), cookie), ApiResponse.class);
+                withCookie(locationRequest(), cookie), ApiResponse.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
@@ -139,7 +139,7 @@ class RiderLocationUpdateE2ETest extends IntegrationTestSupport {
         String cookie = login("e2e_location_unavailable");
 
         var response = rest.exchange(LOCATION_ENDPOINT, HttpMethod.POST,
-                withCookie(locationRequest(3L), cookie), ApiResponse.class);
+                withCookie(locationRequest(), cookie), ApiResponse.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(response.getBody().message()).isEqualTo("운행 중이 아닙니다.");
@@ -151,7 +151,7 @@ class RiderLocationUpdateE2ETest extends IntegrationTestSupport {
         Member member = saveRider("e2e_location_geo_available", "01011110005", OperatingStatus.AVAILABLE);
         String cookie = login("e2e_location_geo_available");
 
-        rest.exchange(LOCATION_ENDPOINT, HttpMethod.POST, withCookie(locationRequest(5L), cookie), ApiResponse.class);
+        rest.exchange(LOCATION_ENDPOINT, HttpMethod.POST, withCookie(locationRequest(), cookie), ApiResponse.class);
 
         assertThat(riderGeoRepository.findPosition(member.getId())).isPresent();
     }
@@ -164,7 +164,7 @@ class RiderLocationUpdateE2ETest extends IntegrationTestSupport {
         assertThat(riderGeoRepository.findPosition(member.getId())).isPresent();
         String cookie = login("e2e_location_geo_busy");
 
-        rest.exchange(LOCATION_ENDPOINT, HttpMethod.POST, withCookie(locationRequest(6L), cookie), ApiResponse.class);
+        rest.exchange(LOCATION_ENDPOINT, HttpMethod.POST, withCookie(locationRequest(), cookie), ApiResponse.class);
 
         assertThat(riderGeoRepository.findPosition(member.getId())).isEmpty();
     }
@@ -177,7 +177,7 @@ class RiderLocationUpdateE2ETest extends IntegrationTestSupport {
         Member member = saveRider("e2e_location_latest", "01011110007", OperatingStatus.BUSY);
         String cookie = login("e2e_location_latest");
 
-        rest.exchange(LOCATION_ENDPOINT, HttpMethod.POST, withCookie(locationRequest(7L), cookie), ApiResponse.class);
+        rest.exchange(LOCATION_ENDPOINT, HttpMethod.POST, withCookie(locationRequest(), cookie), ApiResponse.class);
 
         String key = "rider:location:%d".formatted(member.getId());
         assertThat(redisTemplate.opsForValue().get(key))
@@ -190,7 +190,7 @@ class RiderLocationUpdateE2ETest extends IntegrationTestSupport {
     @DisplayName("세션 쿠키 없이 위치를 보내면 401을 반환한다")
     void rejectsWithoutSessionCookie() {
         var response = rest.exchange(LOCATION_ENDPOINT, HttpMethod.POST,
-                withCookie(locationRequest(4L), null), ApiResponse.class);
+                withCookie(locationRequest(), null), ApiResponse.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }

@@ -18,10 +18,10 @@ import org.springframework.stereotype.Component;
  * 실패가 올라가면 위치 갱신 자체가 실패한다 — 그러면 Redis 장애가 고객 추적을 넘어 배차 후보
  * 갱신(#83)까지 같이 죽인다. 전달은 at-most-once 이고 유실은 다음 위치(BUSY 5초 주기)가 복구한다.
  *
- * <p>옛 구현({@code RedisTrackingEventPublisher})이 채널 키를 만들기 위해 감내했던 MySQL 조회
- * ({@code findInProgressByRiderId})는 없다. #290 이후 {@code deliveryId} 가 요청 본문으로 오기
- * 때문이다 — 그 대가로 <b>라이더가 그 배송에 실제로 배정됐는지는 검증되지 않는다</b>(#291 에서 남은
- * 구멍, 별건).
+ * <p><b>채널 키를 정하는 책임은 여기 없다.</b> 호출자({@code RiderLocationService})가
+ * {@code findInProgressByRiderId} 로 라이더의 수행 중 배송을 풀어 넘긴다 — 그래서 라이더가 자기
+ * 배송 외의 채널로 발행할 방법이 없다. 옛 구현({@code RedisTrackingEventPublisher})은 그 조회를
+ * 이 클래스 안에서 했고, 그 사이 기간(#290)에는 클라이언트가 보낸 배송 id 를 그대로 믿었다.
  *
  * <p><b>{@code PUBLISH} 의 수신자 수는 쓰지 않는다.</b> 모든 인스턴스가 패턴
  * ({@code tracking:order:*})으로 구독하므로 자기 자신이 포함돼 항상 1 이상이고, 즉 "앱이 떠 있는가"

@@ -139,6 +139,10 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - 실시간 라이더 위치 전달은 **SSE** 사용(Polling 아님). **서버는 위치를 검증·필터링하지 않고
   받는 즉시 중계한다**(#297) — "변경됐을 때만"이 아니라 유효한 위치가 올 때마다 그 배송을
   구독 중인 고객에게 전송한다. 최신 위치 저장은 중계와 별개로 이루어진다(위 Redis 항목).
+  - **위치 갱신 요청은 좌표만 담는다.** 배송 식별자는 `location/service/RiderLocationService`가
+    세션의 라이더로 DB에서 풀어낸다(#317). 상태 조건이 붙은 그 조회가 안전장치다 — 배송이
+    완료되면 결과가 비어 발행이 멈춘다. **라이더→배송 매핑을 캐시하지 않는다**(무효화를 놓치면
+    다음 배송 경로가 이전 고객에게 흘러간다). AVAILABLE 라이더는 발행할 채널이 없어 조회조차 하지 않는다.
   - 전달 경로는 **Redis Pub/Sub 팬아웃**이다(#317). 라이더 위치 POST →
     `location/sse/TrackingPublisher`가 배송별 채널(`location/sse/TrackingChannel`,
     `tracking:order:{deliveryId}`)로 발행 → **모든 인스턴스**가 패턴 구독
@@ -206,10 +210,23 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - **저장한 최신 위치를 읽는 코드가 없다**(#317). `RiderLocationRepository`에 `saveIfNewer`만 있고
   `find`/`decode`는 만들지 않았다 — 호출자가 없어서다. 소비자(#311 폴링 arm 또는 SSE `init`
   스냅샷)를 만드는 이슈에서 함께 추가한다. 그때까지 값 형식은 `encode` 단위 테스트로만 지켜진다
-- **라이더 위치 POST가 배송 ID를 요청 본문으로 직접 받는다**(#290). 서버가 DB로 "라이더의 진행
-  중 배송"을 조회하지 않기 때문이다. 그 라이더가 실제로 그 배송에 배정됐는지는 검증하지 않고
-  운행 상태(AVAILABLE/BUSY)만 확인한다(#291) — 아무 배송 ID나 넣으면 남의 고객 화면에 위치를
-  흘려보낼 수 있는 구멍이다
+- ~~라이더 위치 POST가 배송 ID를 요청 본문으로 직접 받는다(#290) — 아무 배송 ID나 넣으면 남의
+  고객 화면에 위치를 흘려보낼 수 있는 구멍(#291)~~ **해소(#317)**: 요청 본문은 좌표만 담고,
+  `location/service/RiderLocationService`가 세션의 라이더로 수행 중 배송을 DB에서 풀어 채널을
+  정한다. 라이더가 자기 배송 외의 채널로 발행할 방법이 없다. (그 필드가 `@NotNull`이라 좌표만
+  보내는 안드로이드 클라이언트의 위치 전송이 **전부 400이던 버그**도 같이 닫혔다.)
+- **추적 가능 상태 집합이 두 곳에 있다**(#317). 위치 갱신 핫패스가
+  `DeliveryOrderRepository.findInProgressIdByActiveRiderId`(생성 컬럼 `active_rider_id` +
+  `uk_delivery_active_rider` 유니크 인덱스 단일 행 조회)를 쓰면서, "어느 상태가 진행 중인가"가
+  **V10 마이그레이션의 CASE 식과 `OrderStatus.trackableStatuses()` 양쪽에 존재**한다.
+  `DeliveryOrderActiveRiderIntegrationTest`가 모든 상태를 실제로 만들어 동치를 고정하지만,
+  **상태를 추가할 때 Flyway 마이그레이션도 함께 바꿔야 한다는 규칙이 코드로 강제되지는 않는다.**
+  화면 진입 시 1회 부르는 `findInProgressByRiderId`(상태까지 필요)는 그대로 남아 있다 —
+  그쪽은 이력 전체를 훑는 형태라 5초 주기 경로에 쓰면 안 된다.
+- **라이더 위치 갱신 한 번이 MySQL 3회 + Redis 3회를 쓴다**(#317). 인터셉터의 `member`·
+  `rider_profile` PK 조회 2회 + 배송 조회 1회, GEO 반영 + 최신 위치 Lua + PUBLISH. BUSY 5초
+  주기라 동시 배송 수에 비례한다. 인터셉터 비용은 모든 라이더 API 공통 구조여서 손대지 않았고
+  **#311 폴링 arm 비교의 핵심 변수**다 — 부하 테스트에서 확인할 항목
 - **오류 응답에 Content-Type 을 명시해야 한다**(#77 에서 드러남, `GlobalExceptionHandler` 에 적용,
   단순화 이후에도 유효). 지정하지 않으면 스프링이 `Accept` 로 컨텐트 협상을 하고, 브라우저
   `EventSource` 는 `Accept: text/event-stream` 만 보내므로 401·409·429 가 전부 **406** 으로

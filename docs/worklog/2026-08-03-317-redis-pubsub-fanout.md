@@ -85,10 +85,45 @@ SSE 프레임 형식도 그대로다 — 이벤트 이름 없는 기본 `message
   재현이 불가능하다. 어차피 실제 Redis 통합 테스트가 필요하므로 인터페이스의 존재 이유가 없다.
   같은 패키지의 `RiderGeoRepository`(구현체 하나, 인터페이스 없음)와 관례를 맞췄다.
 
-- **발행 경로에 MySQL 조회를 넣지 않았다** — 옛 `RedisTrackingEventPublisher` 는 채널 키(주문)를
-  만들기 위해 `findInProgressByRiderId` 를 불렀고 그 javadoc 이 길게 그 대가를 변호했다. #290 이후
-  `deliveryId` 가 요청 본문으로 오므로 그 조회 자체가 사라진다. 대가는 그대로 남는다 — **라이더가
-  그 배송에 실제로 배정됐는지는 여전히 검증하지 않는다**(#291 에서 알려진 구멍, 별건).
+- **요청 DTO 에서 `deliveryId` 를 없애고 서버가 배송을 판정하게 했다** (리뷰 지적으로 수정).
+  이건 설계 개선이 아니라 **라이브 버그 수정이다** — 안드로이드 클라이언트
+  (`mobile/android/.../RiderLocationService:224-228`)는 좌표·시각·정확도만 보내는데 DTO 가
+  `@NotNull Long deliveryId` 를 요구해서 **실제 위치 전송이 전부 400** 이었다. 게다가 AVAILABLE
+  라이더는 채워 넣을 값 자체가 없다.
+  - 부수 효과로 **#291 의 구멍이 닫혔다.** 예전에는 아무 배송 id 나 넣어 남의 고객 화면에 위치를
+    흘릴 수 있었는데, 이제 서버가 세션의 라이더로 배송을 풀어내므로 자기 배송 외의 채널로 발행할
+    방법이 없다.
+  - 이 판정을 위해 `location/service/RiderLocationService` 를 **신설했다**(사람 지시). 그 전까지
+    이 경로에 서비스가 없어 컨트롤러가 다 했는데, DB 조회가 들어오면서 컨트롤러에 두기엔 층이
+    맞지 않았다. 컨트롤러는 `service.update(rider, request.toLocationPayload())` 한 줄이 됐다.
+  - `TrackingFixture` 도 함께 고쳐야 했다. `DeliveryOrder.assign` 은 주문만 바꾸고 라이더 프로필은
+    건드리지 않는데(실제 배차는 두 전이를 한 트랜잭션에서 함께 한다, ADR-006), 픽스처가 그 짝을
+    안 채우면 **배정된 배송이 있는데 라이더는 AVAILABLE** 인 상태가 만들어져 발행이 일어나지 않는다.
+    `rider.assign()` / COMPLETED 는 `rider.release()` 를 추가했다.
+
+- **5초 주기 조회를 유지하되 쿼리 형태를 바꿨다** (리뷰 지적). BUSY 라이더는 5초마다 위치를 보내므로
+  이 조회가 핫패스에 있다.
+  - **조회를 없애고 라이더→배송 매핑을 캐시하지 않았다.** 그 조회의 상태 조건이 **안전장치**다 —
+    배송이 완료·취소되면 결과가 비어 발행이 멈추고 스트림이 조용해진다. 캐시는 무효화를 한 번
+    놓치는 순간 그 라이더의 *다음* 배송 경로가 이전 고객에게 흘러가고, 하필 그 무효화 지점(배송
+    완료 시 연결 종료)이 아직 구현되지 않았다(#80). 마이크로 최적화로 안전 속성을 파는 거래다.
+  - 대신 **인덱스를 제대로 타게 했다.** 기존 `findInProgressByRiderId` 는
+    `assigned_rider_id = ? AND status IN (4개)` 라 `idx_delivery_rider_completed` 로 **그 라이더의
+    전체 주문 이력을 훑은 뒤** 상태를 걸러서, 운행 기간이 길어질수록 5초마다의 비용이 커진다.
+    V10 에 이미 있던 생성 컬럼 `active_rider_id`(진행 중 네 상태일 때만 값을 갖는다) +
+    `uk_delivery_active_rider` UNIQUE 를 쓰는 `findInProgressIdByActiveRiderId` 를 추가해
+    **유니크 인덱스 단일 행 조회**로 만들었다. 이력 크기와 무관하다.
+  - 실측한 쿼리 플랜: 기존은 `type=ref`, `key=idx_delivery_rider_completed`, `Using where`.
+    신규는 `const`(유니크 인덱스 등가 조회일 때만 나오는 접근 방식)다.
+  - 기존 메서드는 남겼다 — `RiderOperatingStatusQueryService` 가 쓰고 거기서는 `status` 도 필요하며
+    화면 진입 시 1회라 스캔 형태가 문제되지 않는다.
+  - **대가**: "어느 상태가 진행 중인가"가 DDL 의 CASE 식과 `OrderStatus.trackableStatuses()`
+    **두 곳에 존재**하게 됐다. `DeliveryOrderActiveRiderIntegrationTest` 가 모든 상태를 실제로
+    만들어 "조회 결과 유무 == `isTrackable()`" 을 단언해 그 동치를 고정한다. DDL 텍스트를 파싱하지
+    않는 것이 요점이다.
+  - **인터셉터 비용은 손대지 않았다.** `RiderSessionInterceptor` 가 매 요청 `member` ·
+    `rider_profile` 을 PK 로 2회 조회하므로, 배송 조회는 2회에서 3회가 되는 것이다. 인터셉터는 모든
+    라이더 API 공통 구조이고 #311 폴링 arm 비교의 핵심 변수라 여기서 바꾸면 비교가 흐려진다.
 
 - **`SseRelay.publish` 가 객체가 아니라 JSON 문자열을 받게 바꿨다** — 구독자가 역직렬화→재직렬화
   하지 않고 그대로 흘린다. 페이로드 계약이 발행 지점 한 곳에만 존재하는 대신, **롤링 배포 중
@@ -142,7 +177,8 @@ SSE 프레임 형식도 그대로다 — 이벤트 이름 없는 기본 `message
 | 단위 | `location/sse/TrackingSubscriberTest` | 원본 JSON 무변경 전달, 파싱 불가 채널 drop, 빈 본문도 해석하지 않고 전달 |
 | 단위 | `location/sse/SseRelayTest` | 문자열 페이로드 전송, 미구독 no-op, 실패 emitter 축출, emitter 간 실패 격리 |
 | 단위 | `location/repository/RiderLocationRepositoryTest` | `encode` 필드 순서·빈 정확도, **접두어 항상 23자**, **사전순 = 시간순**(자정·해 경계 포함) |
-| 단위 | `location/controller/RiderLocationUpdateControllerTest` | 운행 상태별 GEO 반영, **BUSY 만 최신 위치 저장 / AVAILABLE 은 저장하지 않음**, 배송 채널 발행, **Redis 실패(GEO·저장 각각)에도 발행과 200 유지** |
+| 단위 | `location/service/RiderLocationServiceTest` | 운행 상태별 GEO 반영, **BUSY 만 최신 위치 저장 / AVAILABLE 은 저장도 조회도 발행도 안 함**, **DB 로 풀어낸 배송으로만 발행**, 유니크 인덱스 조회를 쓰는지, 수행 중 배송 없는 BUSY 는 조용히 건너뜀, **Redis·MySQL 실패 각각에도 200 유지**, UNAVAILABLE 409 |
+| 통합 | `order/repository/DeliveryOrderActiveRiderIntegrationTest` | **DDL 생성 컬럼 `active_rider_id` ↔ `OrderStatus.trackableStatuses()` 동치** — 7개 상태를 실제로 만들어 조회 결과 유무가 `isTrackable()` 과 일치하는지, 라이더 미배정 배송은 안 걸리는지 |
 | 통합 | `location/repository/RiderLocationRepositoryIntegrationTest` | 실제 Redis 로 조건부 갱신: 최초/최신/과거/동일 시각/밀리초 경계/손상된 값 덮어쓰기/TTL 원자 설정/거절 시 TTL 미연장. **16스레드 경쟁**: 같은 시각이면 정확히 1개만 성공, 다른 시각이면 최종값이 항상 최신(5라운드) |
 | E2E | `location/sse/TrackingFanoutMultiInstanceE2ETest` | **A 연결 → B POST → A 도달**(팬아웃을 증명하는 유일한 테스트), 같은 인스턴스 경로, 프론트 파서 계약, 다른 배송 구독자에게 누출 없음, A 세션으로 B API 호출(스티키 세션 불필요) |
 | E2E | `location/controller/CustomerTrackingStreamE2ETest` | 기존 검증 유지 + 끊긴 연결 정리를 실제 실패 경로로 |
@@ -152,7 +188,7 @@ SSE 프레임 형식도 그대로다 — 이벤트 이름 없는 기본 `message
 
 ```text
 cd backend && docker compose up -d      # mysql:8.4, redis:7.4 (healthy)
-./gradlew test → BUILD SUCCESSFUL, 459 tests, 0 failures, 0 errors, 0 skipped
+./gradlew test → BUILD SUCCESSFUL, 473 tests, 0 failures, 0 errors, 0 skipped
 cd frontend && pnpm typecheck → tsc -b --noEmit, 출력 없음(통과)
 ```
 
@@ -192,4 +228,11 @@ cd frontend && pnpm typecheck → tsc -b --noEmit, 출력 없음(통과)
 - **`server.shutdown` 미결이 그대로다.** SSE 가 끝나지 않아 종료마다 graceful 대기 30초를 소진한 뒤
   강제 중단된다(2인스턴스 테스트에서 그대로 관측됐다). 팬아웃 executor 는
   `waitForTasksToCompleteOnShutdown=false` 라 이 대기에 더하지 않는다.
+- **라이더 위치 갱신 한 번이 MySQL 3회 + Redis 3회를 쓴다.** 인터셉터의 `member`·`rider_profile`
+  PK 조회 2회 + 배송 조회 1회, 그리고 GEO 반영 + 최신 위치 Lua + PUBLISH. BUSY 5초 주기라
+  동시 배송 수에 비례한다. 인터셉터 비용은 모든 라이더 API 공통 구조여서 이번에 손대지 않았고,
+  **#311 폴링 arm 과의 비교에서 핵심 변수**이기도 하다 — 부하 테스트에서 확인할 항목.
+- **추적 가능 상태 집합이 DDL 과 자바 두 곳에 있다**(위 「스스로 판단한 것」). 동치 테스트로 막아
+  뒀지만, 상태를 추가할 때 Flyway 마이그레이션(생성 컬럼 CASE)도 함께 바꿔야 한다는 규칙이
+  코드로 강제되지는 않는다.
 - **프로젝트 보드 Status 를 옮기지 못했다** — `gh` 토큰에 `read:project` 스코프가 없다.
