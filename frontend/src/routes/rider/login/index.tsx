@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-router'
 import { useRiderLogin } from '@/api/generated/rider-login/rider-login'
-import { resolveGuestGuard, RIDER_STATUS_ROUTE, type SessionInfo } from '@/shared/auth/guard'
+import { resolveGuestGuard, type SessionInfo } from '@/shared/auth/guard'
 import { validateRedirectSearch } from '@/shared/auth/redirectSearch'
 import { cacheAuthenticatedRider, ensureSessionInfo } from '@/shared/auth/session'
 import {
@@ -55,10 +55,7 @@ function RiderLogin() {
           return
         }
 
-        const target = response.data.operatingStatus
-          ? RIDER_STATUS_ROUTE[response.data.operatingStatus]
-          : '/rider'
-        void router.navigate({ to: target })
+        void router.navigate({ to: '/rider' })
       },
       onError: (error) => {
         setFormError(getRiderLoginErrorMessage(error))

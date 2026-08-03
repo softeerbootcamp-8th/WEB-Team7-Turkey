@@ -21,7 +21,7 @@ export const RIDER_LOGIN = '/rider/login'
 /** 역할을 모르는 채 로그인이 필요할 때(account/*) 보낼 곳. 역할 선택은 랜딩이 담당한다. */
 export const ROLE_NEUTRAL_LANDING = '/'
 
-/** 라이더 운행 상태 ↔ 해당 상태에서 머물러야 하는 화면 (CLAUDE.md 「라이더 상태 ↔ 화면 매핑」) */
+/** 라이더 운행 상태 ↔ 상태별 업무 화면. 라이더 홈은 모든 상태에서 열 수 있다. */
 export const RIDER_STATUS_ROUTE = {
   UNAVAILABLE: '/rider',
   AVAILABLE: '/rider/requests',
@@ -31,12 +31,13 @@ export const RIDER_STATUS_ROUTE = {
 /**
  * 상태 정합성을 강제하는 화면 집합.
  *
- * 위 3개 화면끼리만 서로 리다이렉트한다. `rider/history`·`rider/points`·`rider/requests/$deliveryId`
- * 까지 강제하면 BUSY 라이더가 정산·이력 화면을 아예 열 수 없다(상태 홈으로 계속 튕겨나감).
- * 상태 매핑의 목적은 "홈/콜목록/진행배송 중 지금 맞는 화면으로 보내기"이지 라이더를 한 화면에
- * 가두는 것이 아니다.
+ * 콜 목록과 진행 배송 화면에만 상태 정합성을 적용한다. 홈은 퀵 시작·종료를 제어하는
+ * 대시보드이므로 모든 상태에서 열 수 있고, 이력·정산·콜 상세도 상태와 무관하게 열린다.
  */
-const STATUS_ENFORCED_ROUTES: ReadonlySet<string> = new Set(Object.values(RIDER_STATUS_ROUTE))
+const STATUS_ENFORCED_ROUTES: ReadonlySet<string> = new Set([
+  RIDER_STATUS_ROUTE.AVAILABLE,
+  RIDER_STATUS_ROUTE.BUSY,
+])
 
 /** 원래 목적지를 `?redirect=` 로 보존할 수 있는(= validateSearch 가 걸린) 라우트만 온다. */
 export type LoginRedirectTarget = typeof CUSTOMER_LOGIN | typeof RIDER_LOGIN | typeof ROLE_NEUTRAL_LANDING
@@ -111,14 +112,13 @@ export function resolveGuestGuard(session: SessionInfo): GuardDecision {
   return { action: 'allow' }
 }
 
-/** 루트 랜딩(`/`) 진입. 로그인 상태라면 역할과 현재 운행 상태에 맞는 첫 화면으로 보낸다. */
+/** 루트 랜딩(`/`) 진입. 로그인 상태라면 역할별 홈으로 보낸다. */
 export function resolveLandingGuard(session: SessionInfo): GuardDecision {
   if (session.role === 'CUSTOMER') {
     return { action: 'redirect', to: CUSTOMER_HOME }
   }
   if (session.role === 'RIDER') {
-    const status = session.rider.operatingStatus
-    return { action: 'redirect', to: status ? RIDER_STATUS_ROUTE[status] : RIDER_HOME }
+    return { action: 'redirect', to: RIDER_HOME }
   }
   return { action: 'allow' }
 }
