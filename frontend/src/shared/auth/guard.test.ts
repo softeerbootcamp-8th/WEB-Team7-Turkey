@@ -62,9 +62,7 @@ describe('resolveRiderGuard - 인증·역할', () => {
 
 describe('resolveRiderGuard - 운행 상태 ↔ 화면 정합성', () => {
   it.each([
-    ['BUSY', '/rider', '/rider/delivery'],
     ['BUSY', '/rider/requests', '/rider/delivery'],
-    ['AVAILABLE', '/rider', '/rider/requests'],
     ['AVAILABLE', '/rider/delivery', '/rider/requests'],
     ['UNAVAILABLE', '/rider/requests', '/rider'],
     ['UNAVAILABLE', '/rider/delivery', '/rider'],
@@ -75,9 +73,13 @@ describe('resolveRiderGuard - 운행 상태 ↔ 화면 정합성', () => {
   it.each([
     ['BUSY', '/rider/delivery'],
     ['AVAILABLE', '/rider/requests'],
-    ['UNAVAILABLE', '/rider'],
-  ] as const)('%s 상태가 이미 %s 에 있으면 통과시킨다', (status, pathname) => {
+  ] as const)('%s 상태가 알맞은 업무 화면 %s 에 있으면 통과시킨다', (status, pathname) => {
     expect(resolveRiderGuard(rider(status), pathname, pathname)).toEqual({ action: 'allow' })
+  })
+
+  it.each(['UNAVAILABLE', 'AVAILABLE', 'BUSY'] as const)('%s 상태에서도 라이더 홈을 표시한다', (status) => {
+    expect(resolveRiderGuard(rider(status), '/rider', '/rider')).toEqual({ action: 'allow' })
+    expect(resolveRiderGuard(rider(status), '/rider/', '/rider/')).toEqual({ action: 'allow' })
   })
 
   it.each([
@@ -94,10 +96,7 @@ describe('resolveRiderGuard - 운행 상태 ↔ 화면 정합성', () => {
 
   it('경로 끝의 슬래시는 같은 화면으로 본다', () => {
     expect(resolveRiderGuard(rider('BUSY'), '/rider/delivery/', '/rider/delivery/')).toEqual({ action: 'allow' })
-    expect(resolveRiderGuard(rider('AVAILABLE'), '/rider/', '/rider/')).toEqual({
-      action: 'redirect',
-      to: '/rider/requests',
-    })
+    expect(resolveRiderGuard(rider('AVAILABLE'), '/rider/requests/', '/rider/requests/')).toEqual({ action: 'allow' })
   })
 })
 
@@ -121,12 +120,8 @@ describe('resolveLandingGuard', () => {
     expect(resolveLandingGuard(customer)).toEqual({ action: 'redirect', to: '/customer' })
   })
 
-  it.each([
-    ['UNAVAILABLE', '/rider'],
-    ['AVAILABLE', '/rider/requests'],
-    ['BUSY', '/rider/delivery'],
-  ] as const)('%s 라이더는 %s 로 보낸다', (status, expected) => {
-    expect(resolveLandingGuard(rider(status))).toEqual({ action: 'redirect', to: expected })
+  it.each(['UNAVAILABLE', 'AVAILABLE', 'BUSY'] as const)('%s 라이더는 라이더 홈으로 보낸다', (status) => {
+    expect(resolveLandingGuard(rider(status))).toEqual({ action: 'redirect', to: '/rider' })
   })
 
   it('운행 상태가 없는 라이더는 라이더 홈으로 보낸다', () => {

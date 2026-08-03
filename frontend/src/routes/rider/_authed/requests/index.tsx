@@ -71,13 +71,23 @@ function RiderRequests() {
     <div className="mx-auto flex min-h-screen w-full max-w-[604px] flex-col bg-surface font-sans text-on-surface shadow-sm">
       <header className="sticky top-0 z-20 border-b border-outline-variant bg-surface-container-lowest px-5 pb-4 pt-5">
         <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="mb-1 flex items-center gap-2">
-              <span className="h-2.5 w-2.5 rounded-full bg-tertiary" aria-hidden="true" />
-              <span className="text-label-md font-bold text-tertiary">운행 중</span>
+          <div className="flex min-w-0 items-start gap-3">
+            <button
+              type="button"
+              aria-label="라이더 홈으로 돌아가기"
+              onClick={() => void router.navigate({ to: '/rider' })}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-on-surface transition-colors hover:bg-surface-container-low"
+            >
+              <span className="material-symbols-outlined">arrow_back</span>
+            </button>
+            <div className="min-w-0">
+              <div className="mb-1 flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-tertiary" aria-hidden="true" />
+                <span className="text-label-md font-bold text-tertiary">운행 중</span>
+              </div>
+              <h1 className="text-headline-lg font-bold tracking-tight">주변 배차 콜</h1>
+              <p className="mt-1 text-body-md text-secondary">가까운 픽업지부터 보여드려요.</p>
             </div>
-            <h1 className="text-headline-lg font-bold tracking-tight">주변 배차 콜</h1>
-            <p className="mt-1 text-body-md text-secondary">가까운 픽업지부터 보여드려요.</p>
           </div>
           <button
             type="button"

@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { useChangeOperatingStatus } from '@/api/generated/rider-operating-status/rider-operating-status'
 import { getGetRiderSessionQueryKey } from '@/api/generated/rider-session/rider-session'
-import { getGoOnlineErrorMessage } from './-riderHome'
+import { getOperatingStatusErrorMessage } from './-riderHome'
 
 export const Route = createFileRoute('/rider/_authed/')({
   component: RiderHome,
@@ -12,24 +12,34 @@ export const Route = createFileRoute('/rider/_authed/')({
 function RiderHome() {
   const router = useRouter()
   const queryClient = useQueryClient()
-  const [startError, setStartError] = useState<string | null>(null)
+  const { session } = Route.useRouteContext()
+  const [statusError, setStatusError] = useState<string | null>(null)
   const operatingStatusMutation = useChangeOperatingStatus()
+  const operatingStatus = session.role === 'RIDER'
+    ? (session.rider.operatingStatus ?? 'UNAVAILABLE')
+    : 'UNAVAILABLE'
+  const isAvailable = operatingStatus === 'AVAILABLE'
+  const isBusy = operatingStatus === 'BUSY'
 
-  function startOperating() {
-    if (operatingStatusMutation.isPending) {
+  function toggleOperating() {
+    if (operatingStatusMutation.isPending || isBusy) {
       return
     }
 
-    setStartError(null)
+    const action = isAvailable ? 'GO_OFFLINE' : 'GO_ONLINE'
+    setStatusError(null)
     operatingStatusMutation.mutate(
-      { data: { action: 'GO_ONLINE' } },
+      { data: { action } },
       {
         onSuccess: async () => {
           queryClient.removeQueries({ queryKey: getGetRiderSessionQueryKey() })
-          await router.navigate({ to: '/rider/requests' })
+          await router.invalidate()
+          if (action === 'GO_ONLINE') {
+            await router.navigate({ to: '/rider/requests' })
+          }
         },
         onError: (error) => {
-          setStartError(getGoOnlineErrorMessage(error))
+          setStatusError(getOperatingStatusErrorMessage(error, action))
         },
       },
     )
@@ -52,7 +62,9 @@ function RiderHome() {
           {/* Welcome Text */}
           <div className="space-y-sm mb-lg">
             <h2 className="font-headline-md text-headline-md text-on-surface">반갑습니다!</h2>
-            <p className="font-body-lg text-body-lg text-secondary">안전 운행하세요</p>
+            <p className="font-body-lg text-body-lg text-secondary">
+              {isBusy ? '현재 배송을 진행하고 있어요.' : isAvailable ? '퀵 운행 중입니다.' : '퀵을 시작하고 콜을 확인해 보세요.'}
+            </p>
           </div>
           {/* Illustration/Hero Image */}
           <div className="w-full max-w-xs h-48 mb-xl rounded-xl overflow-hidden shadow-sm bg-surface-container-highest relative flex items-center justify-center">
@@ -62,18 +74,50 @@ function RiderHome() {
           {/* Primary Action */}
           <button
             type="button"
-            onClick={startOperating}
-            disabled={operatingStatusMutation.isPending}
+            onClick={toggleOperating}
+            disabled={operatingStatusMutation.isPending || isBusy}
             aria-busy={operatingStatusMutation.isPending}
-            className="w-full h-[64px] bg-primary-container text-on-primary-container font-headline-sm text-headline-sm rounded-[16px] shadow-[0_4px_12px_rgba(0,0,0,0.08)] flex items-center justify-center space-x-2 hover:bg-primary-fixed transition-colors active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+            aria-pressed={isAvailable || isBusy}
+            className={`w-full h-[64px] font-headline-sm text-headline-sm rounded-[16px] shadow-[0_4px_12px_rgba(0,0,0,0.08)] flex items-center justify-center space-x-2 transition-colors active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 ${
+              isAvailable || isBusy
+                ? 'bg-surface-container-high text-on-surface hover:bg-surface-container-highest'
+                : 'bg-primary-container text-on-primary-container hover:bg-primary-fixed'
+            }`}
           >
-            <span className="material-symbols-outlined font-bold">local_shipping</span>
-            <span>{operatingStatusMutation.isPending ? '운행 시작 중…' : '퀵 시작하기'}</span>
+            <span className="material-symbols-outlined font-bold">{isAvailable || isBusy ? 'toggle_on' : 'toggle_off'}</span>
+            <span>
+              {operatingStatusMutation.isPending
+                ? (isAvailable ? '운행 종료 중…' : '운행 시작 중…')
+                : (isAvailable || isBusy ? '퀵 종료하기' : '퀵 시작하기')}
+            </span>
           </button>
-          {startError && (
+          {isBusy && (
+            <p className="w-full text-body-md text-secondary">배송을 완료한 뒤 퀵을 종료할 수 있습니다.</p>
+          )}
+          {statusError && (
             <p role="alert" className="w-full rounded-xl bg-error-container px-4 py-3 text-body-md text-on-error-container">
-              {startError}
+              {statusError}
             </p>
+          )}
+          {isAvailable && (
+            <button
+              type="button"
+              onClick={() => void router.navigate({ to: '/rider/requests' })}
+              className="w-full h-[56px] bg-tertiary text-on-tertiary font-headline-sm text-title-md rounded-[16px] shadow-sm flex items-center justify-center space-x-2 hover:opacity-90 transition-opacity active:scale-[0.98]"
+            >
+              <span className="material-symbols-outlined">list_alt</span>
+              <span>콜 목록 보기</span>
+            </button>
+          )}
+          {isBusy && (
+            <button
+              type="button"
+              onClick={() => void router.navigate({ to: '/rider/delivery' })}
+              className="w-full h-[56px] bg-primary-container text-on-primary-container font-headline-sm text-title-md rounded-[16px] shadow-sm flex items-center justify-center space-x-2 hover:bg-primary-fixed transition-colors active:scale-[0.98]"
+            >
+              <span className="material-symbols-outlined">local_shipping</span>
+              <span>진행 배송 보기</span>
+            </button>
           )}
           {/* Secondary Action */}
           <button className="w-full h-[52px] bg-surface-container-lowest text-on-surface font-label-lg text-label-lg rounded-xl border border-surface-container flex items-center justify-center space-x-2 hover:bg-surface-bright transition-colors active:scale-[0.98]">

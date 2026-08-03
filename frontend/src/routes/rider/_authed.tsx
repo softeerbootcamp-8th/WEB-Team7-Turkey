@@ -5,9 +5,8 @@ import { SessionErrorScreen } from '@/shared/auth/SessionErrorScreen'
 import { useLocationSender } from '@/shared/hooks/useLocationSender'
 
 /**
- * 라이더 전용 화면의 인증 가드. 인증·역할 확인에 더해 운행 상태와 화면의 정합성까지 본다
- * (`UNAVAILABLE`→홈, `AVAILABLE`→콜 목록, `BUSY`→진행 배송). 강제 대상은 그 3개 화면끼리이고,
- * 이력·정산 화면은 상태와 무관하게 열린다 — 판정 근거는 `shared/auth/guard.ts` 참고.
+ * 라이더 전용 화면의 인증 가드. 홈은 모든 운행 상태에서 열고, 콜 목록·진행 배송 화면은
+ * 현재 운행 상태와 맞을 때만 연다. 이력·정산 화면은 상태와 무관하게 열린다.
  */
 export const Route = createFileRoute('/rider/_authed')({
   beforeLoad: async ({ context, location }) => {
