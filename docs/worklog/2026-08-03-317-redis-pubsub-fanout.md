@@ -95,6 +95,18 @@ SSE 프레임 형식도 그대로다 — 이벤트 이름 없는 기본 `message
   구·신 형식이 그대로 클라이언트로 나갈 수 있다**(필드 추가만 허용, 제거·의미 변경 금지 — Flyway,
   Redis 값 형식에 이은 세 번째 배포 호환성 표면).
 
+- **최신 위치는 BUSY 라이더만 저장한다** (리뷰 지적으로 수정). 처음에는 예전 구현처럼 운행 상태와
+  무관하게 저장했는데, 그 구현이 상태를 안 가린 이유는 **서버측 필터(#82)의 기준선**이 필요했기
+  때문이다. 이번에 필터를 되살리지 않았으므로 AVAILABLE 라이더의 최신 위치는 **읽을 사람이 없는
+  죽은 데이터**다(배송을 맡지 않은 라이더에게는 추적 중인 고객이 없다). AVAILABLE 30초 주기마다
+  Lua `EVAL` 을 한 번씩 쓰고, 배송과 무관한 좌표를 10분간 남기는 비용만 남는다.
+  - `else` 분기에 얹지 않고 **명시적으로 `== BUSY`** 를 검사한다. `else` 는 "BUSY"가 아니라
+    "AVAILABLE 이 아님"이고 그게 BUSY 로 좁혀지는 근거가 호출자의 가드(`LOCATION_ALLOWED_STATUSES`)
+    에 있어서, 허용 상태가 하나 늘면 그 상태의 위치가 조용히 저장되기 시작한다. 그 상수 자신의
+    주석이 경계하는 실패 모드와 같다. GEO 쪽 `else` 는 그대로 뒀다 — `remove` 는 멱등이고
+    "후보에서 뺀다"는 새 상태가 흘러들어도 안전한 방향이다.
+  - **필터를 되살리면 상태 무관 저장으로 되돌려야 한다**(기준선 필요). 되돌리는 비용은 한 줄이다.
+
 - **컨트롤러에 서비스 계층을 새로 만들지 않았다** — #297 이후 이 경로에 서비스가 없고, 늘어난 것이
   Redis 쓰기 한 줄이다. GEO 후보 반영과 최신 위치 저장을 **하나의 `try/catch` 로 묶었다**(둘 다
   Redis 쓰기이고 실패 처리가 같다). 순서는 GEO 먼저다 — 배차 후보는 실제로 쓰이는 값이고, 최신
@@ -130,7 +142,7 @@ SSE 프레임 형식도 그대로다 — 이벤트 이름 없는 기본 `message
 | 단위 | `location/sse/TrackingSubscriberTest` | 원본 JSON 무변경 전달, 파싱 불가 채널 drop, 빈 본문도 해석하지 않고 전달 |
 | 단위 | `location/sse/SseRelayTest` | 문자열 페이로드 전송, 미구독 no-op, 실패 emitter 축출, emitter 간 실패 격리 |
 | 단위 | `location/repository/RiderLocationRepositoryTest` | `encode` 필드 순서·빈 정확도, **접두어 항상 23자**, **사전순 = 시간순**(자정·해 경계 포함) |
-| 단위 | `location/controller/RiderLocationUpdateControllerTest` | 운행 상태별 GEO 반영, 상태 무관 최신 위치 저장, 배송 채널 발행, **Redis 실패(GEO·저장 각각)에도 발행과 200 유지** |
+| 단위 | `location/controller/RiderLocationUpdateControllerTest` | 운행 상태별 GEO 반영, **BUSY 만 최신 위치 저장 / AVAILABLE 은 저장하지 않음**, 배송 채널 발행, **Redis 실패(GEO·저장 각각)에도 발행과 200 유지** |
 | 통합 | `location/repository/RiderLocationRepositoryIntegrationTest` | 실제 Redis 로 조건부 갱신: 최초/최신/과거/동일 시각/밀리초 경계/손상된 값 덮어쓰기/TTL 원자 설정/거절 시 TTL 미연장. **16스레드 경쟁**: 같은 시각이면 정확히 1개만 성공, 다른 시각이면 최종값이 항상 최신(5라운드) |
 | E2E | `location/sse/TrackingFanoutMultiInstanceE2ETest` | **A 연결 → B POST → A 도달**(팬아웃을 증명하는 유일한 테스트), 같은 인스턴스 경로, 프론트 파서 계약, 다른 배송 구독자에게 누출 없음, A 세션으로 B API 호출(스티키 세션 불필요) |
 | E2E | `location/controller/CustomerTrackingStreamE2ETest` | 기존 검증 유지 + 끊긴 연결 정리를 실제 실패 경로로 |

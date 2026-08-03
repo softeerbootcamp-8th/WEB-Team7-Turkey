@@ -126,7 +126,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
     (고객 예시: `customer/config/CustomerWebMvcConfig`, #27) 새 고객/라이더 전용 API를 추가할 때
     이 등록을 빠뜨리면 그 API는 인증 없이 열린 채로 배포된다 — 리뷰 시 반드시 확인할 것.
 - Redis는 현재 **세션 저장 / GEO 위치 검색(배차 후보용, `RiderGeoRepository`) / 휴대전화
-  인증번호(TTL) / 라이더 최신 위치(`RiderLocationRepository`, TTL 10분) / SSE 이벤트
+  인증번호(TTL) / 라이더 최신 위치(`RiderLocationRepository`, **BUSY 라이더만**, TTL 10분) / SSE 이벤트
   팬아웃(Pub/Sub)** 에 쓴다. 영속 원본 저장소로는 쓰지 않는다.
   뒤의 둘은 #297(2026-08-02)로 제거했다가 **스케일 아웃 대비로 #317(2026-08-03)에서 되돌린
   것이다** — 단, 서버측 위치 필터는 되살리지 않았다(아래 SSE 항목).
@@ -194,6 +194,15 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - **팬아웃 디스패처 풀 크기 4가 적절한지 미검증**(`RedisMessageListenerConfig`). 같은 채널 메시지의
   처리 순서가 뒤집힐 수 있고, 그 복구는 프론트가 `measuredAt`이 역행하는 이벤트를 버리는 것에
   의존하는데 **현재 `useTrackingStream`에 그 가드가 없다.** 부하 테스트에서 확인할 항목
+- **위치 관련 Redis 저장소가 둘이고 대상이 운행 상태로 갈린다.** 배차 후보(`RiderGeoRepository`,
+  `riders:geo` GEO ZSET)는 **AVAILABLE** 라이더의 집합이고, 최신 위치(`RiderLocationRepository`,
+  `rider:location:{riderId}`)는 **BUSY** 만 저장한다(#317). 합칠 수 없는 이유는 ① 멤버십 자체가
+  배차 자격이라 두 집합이 다르고 ② GEO ZSET에는 `measuredAt`·정확도를 넣을 자리가 없고(Lua 조건부
+  갱신이 비교할 값) ③ ZSET은 키 단위 TTL만 되기 때문이다. 단 **`GEOSEARCH`(주변 라이더 검색)가
+  아직 없어** ZSET을 쓸 이유가 절반만 실현된 상태다 — 현재 geo 읽기는 `findPosition(자기 id)`
+  하나뿐이고 반경 계산은 Java에서 한다(#101에서 정리될 것). 이름이 둘 다 "location"으로 읽혀
+  헷갈리므로 `RiderGeoRepository` → `RiderDispatchCandidateRepository` 개명을 검토 중(미결).
+  **서버측 필터(#82)를 되살리면 최신 위치를 상태 무관으로 되돌려야 한다**(기준선이 필요하다).
 - **저장한 최신 위치를 읽는 코드가 없다**(#317). `RiderLocationRepository`에 `saveIfNewer`만 있고
   `find`/`decode`는 만들지 않았다 — 호출자가 없어서다. 소비자(#311 폴링 arm 또는 SSE `init`
   스냅샷)를 만드는 이슈에서 함께 추가한다. 그때까지 값 형식은 `encode` 단위 테스트로만 지켜진다

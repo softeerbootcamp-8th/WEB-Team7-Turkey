@@ -73,17 +73,24 @@ class RiderLocationUpdateControllerTest {
     }
 
     @Test
-    @DisplayName("운행 상태와 무관하게 최신 위치를 저장한다")
-    void savesLatestLocationRegardlessOfOperatingStatus() {
-        // 배차 후보는 AVAILABLE 만 등록하지만(#83) 최신 위치는 BUSY 에서도 저장해야 한다 —
-        // 추적 중 재접속한 고객이 보게 될 값이 이것이다.
-        RiderLocationUpdateRequest available = request();
-        controller.updateRiderLocation(available, rider(OperatingStatus.AVAILABLE));
-        then(riderLocationRepository).should().saveIfNewer(RIDER_ID, available.toLocationPayload());
-
+    @DisplayName("BUSY 라이더의 최신 위치만 저장한다")
+    void savesLatestLocationOnlyWhenBusy() {
+        // 두 저장소의 대상이 상태로 갈린다: 배차 후보(GEO)는 AVAILABLE, 최신 위치는 BUSY.
+        // 추적 중인 고객이 보게 될 값이 이것이고, 배송을 맡지 않은 라이더에게는 읽을 사람이 없다.
         RiderLocationUpdateRequest busy = request();
         controller.updateRiderLocation(busy, rider(OperatingStatus.BUSY));
+
         then(riderLocationRepository).should().saveIfNewer(RIDER_ID, busy.toLocationPayload());
+    }
+
+    @Test
+    @DisplayName("AVAILABLE 라이더의 최신 위치는 저장하지 않는다")
+    void doesNotSaveLatestLocationWhenAvailable() {
+        // else 분기에 얹으면 허용 상태가 하나 늘었을 때 조용히 저장되기 시작하므로, 명시적으로
+        // BUSY 만 저장한다. 서버측 필터(#82)를 되살리면 기준선이 필요해져 이 단언이 바뀐다.
+        controller.updateRiderLocation(request(), rider(OperatingStatus.AVAILABLE));
+
+        then(riderLocationRepository).should(never()).saveIfNewer(eq(RIDER_ID), any());
     }
 
     @Test

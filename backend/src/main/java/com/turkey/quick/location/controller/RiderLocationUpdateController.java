@@ -44,9 +44,18 @@ public class RiderLocationUpdateController implements RiderLocationUpdateApi {
     /**
      * 배차 후보 반영(#83)과 최신 위치 저장(#317). 둘 다 Redis 쓰기이고 실패 처리가 같아 한 번에 묶는다.
      *
-     * <p>AVAILABLE이면 이 위치로 배차 후보를 등록·갱신하고, BUSY면 후보에서 뺀다 — 위치
-     * 전송(추적 중계용)은 BUSY에서도 계속되지만 배차 대상은 아니어야 하기 때문이다.
-     * 최신 위치는 운행 상태와 무관하게 저장한다.
+     * <p><b>두 저장소의 대상이 운행 상태로 갈린다.</b> 배차 후보(GEO)는 AVAILABLE 라이더의 집합이고
+     * (BUSY면 후보에서 뺀다 — 위치 전송은 BUSY에서도 계속되지만 배차 대상은 아니어야 한다),
+     * 최신 위치는 BUSY 라이더 — 지금 고객이 추적하고 있을 수 있는 라이더 — 만 저장한다.
+     * AVAILABLE 라이더의 최신 위치를 저장하지 않는 이유는 <b>읽을 사람이 없어서</b>다: 배송을 맡지
+     * 않은 라이더에게는 추적 중인 고객이 없다. 예전 구현이 상태와 무관하게 저장한 것은 서버측
+     * 위치 필터(#82)의 기준선이 필요했기 때문이고, 그 필터를 되살리면 여기도 함께 되돌려야 한다.
+     *
+     * <p><b>최신 위치 저장을 {@code else} 에 얹지 않은 이유</b>는 {@code LOCATION_ALLOWED_STATUSES}
+     * 를 허용 목록으로 둔 것과 같다 — {@code else} 는 "BUSY"가 아니라 "AVAILABLE이 아님"이고, 그게
+     * BUSY로 좁혀지는 근거는 이 메서드가 아니라 호출자의 가드에 있다. 허용 상태가 하나 늘면 그
+     * 상태의 위치가 <b>조용히 저장되기 시작한다.</b> 반면 GEO 쪽 {@code else} 는 그대로 둔다 —
+     * {@code remove} 는 멱등이고 "후보에서 뺀다"는 새 상태가 흘러들어도 항상 안전한 방향이다.
      *
      * <p>Redis 갱신이 실패해도 이 요청(SSE 중계) 자체는 계속 성공해야 하므로 예외를 삼키고
      * 로깅만 한다(이슈 예외 처리 조항). 배차 후보는 실패하면 그 라이더가 후보에서 빠진 채로 남는 것
@@ -60,7 +69,9 @@ public class RiderLocationUpdateController implements RiderLocationUpdateApi {
             } else {
                 riderGeoRepository.remove(rider.memberId());
             }
-            riderLocationRepository.saveIfNewer(rider.memberId(), request.toLocationPayload());
+            if (rider.operatingStatus() == OperatingStatus.BUSY) {
+                riderLocationRepository.saveIfNewer(rider.memberId(), request.toLocationPayload());
+            }
         } catch (RuntimeException e) {
             log.warn("event=RIDER_LOCATION_REDIS_SYNC_FAILED riderId={} operatingStatus={}",
                     rider.memberId(), rider.operatingStatus(), e);
