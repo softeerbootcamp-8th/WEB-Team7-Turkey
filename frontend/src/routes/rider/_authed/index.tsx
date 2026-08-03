@@ -1,9 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
-import { useChangeOperatingStatus } from '@/api/generated/rider-operating-status/rider-operating-status'
+import {
+  getGetRiderOperatingStatusQueryKey,
+  useChangeOperatingStatus,
+  useGetRiderOperatingStatus,
+} from '@/api/generated/rider-operating-status/rider-operating-status'
 import { getGetRiderSessionQueryKey } from '@/api/generated/rider-session/rider-session'
-import { getOperatingStatusErrorMessage } from './-riderHome'
+import { getOperatingStatusErrorMessage, getOperatingStatusQueryErrorMessage } from './-riderHome'
 
 export const Route = createFileRoute('/rider/_authed/')({
   component: RiderHome,
@@ -12,17 +16,20 @@ export const Route = createFileRoute('/rider/_authed/')({
 function RiderHome() {
   const router = useRouter()
   const queryClient = useQueryClient()
-  const { session } = Route.useRouteContext()
   const [statusError, setStatusError] = useState<string | null>(null)
+  const operatingStatusQuery = useGetRiderOperatingStatus({ query: { retry: false } })
   const operatingStatusMutation = useChangeOperatingStatus()
-  const operatingStatus = session.role === 'RIDER'
-    ? (session.rider.operatingStatus ?? 'UNAVAILABLE')
-    : 'UNAVAILABLE'
+  const operatingStatus = operatingStatusQuery.data?.data?.operatingStatus
   const isAvailable = operatingStatus === 'AVAILABLE'
-  const isBusy = operatingStatus === 'BUSY'
+
+  useEffect(() => {
+    if (operatingStatus === 'BUSY') {
+      void router.navigate({ to: '/rider/delivery', replace: true })
+    }
+  }, [operatingStatus, router])
 
   function toggleOperating() {
-    if (operatingStatusMutation.isPending || isBusy) {
+    if (!operatingStatus || operatingStatusMutation.isPending) {
       return
     }
 
@@ -31,7 +38,8 @@ function RiderHome() {
     operatingStatusMutation.mutate(
       { data: { action } },
       {
-        onSuccess: async () => {
+        onSuccess: async (response) => {
+          queryClient.setQueryData(getGetRiderOperatingStatusQueryKey(), response)
           queryClient.removeQueries({ queryKey: getGetRiderSessionQueryKey() })
           await router.invalidate()
           if (action === 'GO_ONLINE') {
@@ -40,93 +48,135 @@ function RiderHome() {
         },
         onError: (error) => {
           setStatusError(getOperatingStatusErrorMessage(error, action))
+          void operatingStatusQuery.refetch()
         },
       },
     )
   }
 
+  if (operatingStatusQuery.isPending || operatingStatus === 'BUSY') {
+    return <RiderHomeFeedback icon="progress_activity" message="라이더 상태를 확인하고 있어요." spin />
+  }
+
+  if (operatingStatusQuery.isError || !operatingStatus) {
+    return (
+      <RiderHomeFeedback
+        icon="cloud_off"
+        message={getOperatingStatusQueryErrorMessage(operatingStatusQuery.error)}
+        onRetry={() => void operatingStatusQuery.refetch()}
+      />
+    )
+  }
+
   return (
-    <div className="bg-background text-on-background flex flex-col min-h-screen">
-      {/* Top App Bar */}
-      <header className="w-full top-0 sticky bg-surface dark:bg-surface-dim z-50">
-        <div className="flex items-center justify-between px-container-margin h-[64px]">
-          <h1 className="font-headline-lg text-headline-lg font-bold text-on-surface dark:text-on-surface tracking-tight">Quick</h1>
-          <button className="p-2 hover:bg-surface-container dark:hover:bg-surface-container-high transition-colors rounded-full active:scale-95 duration-150 flex items-center justify-center text-secondary dark:text-secondary-fixed-dim">
-            <span className="material-symbols-outlined" data-icon="settings">settings</span>
+    <div className="bg-background text-on-background flex min-h-screen flex-col">
+      <header className="sticky top-0 z-50 w-full bg-surface dark:bg-surface-dim">
+        <div className="flex h-[64px] items-center justify-between px-container-margin">
+          <h1 className="font-headline-lg text-headline-lg font-bold tracking-tight text-on-surface dark:text-on-surface">Quick</h1>
+          <button
+            type="button"
+            aria-label="설정"
+            onClick={() => void router.navigate({ to: '/account/settings' })}
+            className="flex items-center justify-center rounded-full p-2 text-secondary transition-colors duration-150 hover:bg-surface-container active:scale-95 dark:text-secondary-fixed-dim dark:hover:bg-surface-container-high"
+          >
+            <span className="material-symbols-outlined" aria-hidden="true">settings</span>
           </button>
         </div>
       </header>
-      {/* Main Content */}
-      <main aria-label="라이더 홈" className="flex-grow flex flex-col items-center justify-center px-container-margin py-xl pb-32">
-        <div className="w-full max-w-md text-center space-y-lg flex flex-col items-center">
-          {/* Welcome Text */}
-          <div className="space-y-sm mb-lg">
+
+      <main aria-label="라이더 홈" className="flex flex-grow flex-col items-center justify-center px-container-margin py-xl pb-32">
+        <div className="flex w-full max-w-md flex-col items-center space-y-lg text-center">
+          <div className="mb-lg space-y-sm">
             <h2 className="font-headline-md text-headline-md text-on-surface">반갑습니다!</h2>
             <p className="font-body-lg text-body-lg text-secondary">
-              {isBusy ? '현재 배송을 진행하고 있어요.' : isAvailable ? '퀵 운행 중입니다.' : '퀵을 시작하고 콜을 확인해 보세요.'}
+              {isAvailable ? '퀵 운행 중입니다. 새로운 콜을 확인해 보세요.' : '퀵을 시작하고 콜을 확인해 보세요.'}
             </p>
           </div>
-          {/* Illustration/Hero Image */}
-          <div className="w-full max-w-xs h-48 mb-xl rounded-xl overflow-hidden shadow-sm bg-surface-container-highest relative flex items-center justify-center">
-            {/* TODO: 실제 이미지 연결 (오토바이 배달 서비스 이미지) */}
-            <div className="object-cover w-full h-full bg-surface-container-high"></div>
+
+          <div className="relative mb-xl flex h-48 w-full max-w-xs items-center justify-center overflow-hidden rounded-xl bg-primary-fixed shadow-sm">
+            <div className="absolute -bottom-14 -left-10 h-36 w-36 rounded-full bg-primary-container/70" />
+            <div className="absolute -right-8 -top-10 h-32 w-32 rounded-full bg-tertiary-fixed/60" />
+            <div className="relative flex h-28 w-28 items-center justify-center rounded-full bg-surface-container-lowest shadow-md">
+              <span className="material-symbols-outlined text-6xl text-primary" aria-hidden="true">two_wheeler</span>
+            </div>
+            <span className="absolute bottom-4 right-4 rounded-full bg-surface-container-lowest px-3 py-1 font-label-md text-label-md text-on-surface shadow-sm">
+              {isAvailable ? '콜 받는 중' : '운행 대기'}
+            </span>
           </div>
-          {/* Primary Action */}
+
           <button
             type="button"
             onClick={toggleOperating}
-            disabled={operatingStatusMutation.isPending || isBusy}
+            disabled={operatingStatusMutation.isPending}
             aria-busy={operatingStatusMutation.isPending}
-            aria-pressed={isAvailable || isBusy}
-            className={`w-full h-[64px] font-headline-sm text-headline-sm rounded-[16px] shadow-[0_4px_12px_rgba(0,0,0,0.08)] flex items-center justify-center space-x-2 transition-colors active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 ${
-              isAvailable || isBusy
+            aria-pressed={isAvailable}
+            className={`flex h-[64px] w-full items-center justify-center space-x-2 rounded-[16px] font-headline-sm text-headline-sm shadow-[0_4px_12px_rgba(0,0,0,0.08)] transition-colors active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 ${
+              isAvailable
                 ? 'bg-surface-container-high text-on-surface hover:bg-surface-container-highest'
                 : 'bg-primary-container text-on-primary-container hover:bg-primary-fixed'
             }`}
           >
-            <span className="material-symbols-outlined font-bold">{isAvailable || isBusy ? 'toggle_on' : 'toggle_off'}</span>
+            <span className="material-symbols-outlined font-bold" aria-hidden="true">{isAvailable ? 'toggle_on' : 'toggle_off'}</span>
             <span>
               {operatingStatusMutation.isPending
                 ? (isAvailable ? '운행 종료 중…' : '운행 시작 중…')
-                : (isAvailable || isBusy ? '퀵 종료하기' : '퀵 시작하기')}
+                : (isAvailable ? '퀵 종료하기' : '퀵 시작하기')}
             </span>
           </button>
-          {isBusy && (
-            <p className="w-full text-body-md text-secondary">배송을 완료한 뒤 퀵을 종료할 수 있습니다.</p>
-          )}
+
           {statusError && (
             <p role="alert" className="w-full rounded-xl bg-error-container px-4 py-3 text-body-md text-on-error-container">
               {statusError}
             </p>
           )}
+
           {isAvailable && (
             <button
               type="button"
               onClick={() => void router.navigate({ to: '/rider/requests' })}
-              className="w-full h-[56px] bg-tertiary text-on-tertiary font-headline-sm text-title-md rounded-[16px] shadow-sm flex items-center justify-center space-x-2 hover:opacity-90 transition-opacity active:scale-[0.98]"
+              className="flex h-[56px] w-full items-center justify-center space-x-2 rounded-[16px] bg-tertiary font-headline-sm text-title-md text-on-tertiary shadow-sm transition-opacity hover:opacity-90 active:scale-[0.98]"
             >
-              <span className="material-symbols-outlined">list_alt</span>
+              <span className="material-symbols-outlined" aria-hidden="true">list_alt</span>
               <span>콜 목록 보기</span>
             </button>
           )}
-          {isBusy && (
-            <button
-              type="button"
-              onClick={() => void router.navigate({ to: '/rider/delivery' })}
-              className="w-full h-[56px] bg-primary-container text-on-primary-container font-headline-sm text-title-md rounded-[16px] shadow-sm flex items-center justify-center space-x-2 hover:bg-primary-fixed transition-colors active:scale-[0.98]"
-            >
-              <span className="material-symbols-outlined">local_shipping</span>
-              <span>진행 배송 보기</span>
-            </button>
-          )}
-          {/* Secondary Action */}
-          <button className="w-full h-[52px] bg-surface-container-lowest text-on-surface font-label-lg text-label-lg rounded-xl border border-surface-container flex items-center justify-center space-x-2 hover:bg-surface-bright transition-colors active:scale-[0.98]">
-            <span className="material-symbols-outlined text-secondary" style={{ fontVariationSettings: '"FILL" 0' }}>search</span>
-            <span className="">배송 이력 조회하기</span>
+
+          <button
+            type="button"
+            onClick={() => void router.navigate({ to: '/rider/history' })}
+            className="flex h-[52px] w-full items-center justify-center space-x-2 rounded-xl border border-surface-container bg-surface-container-lowest font-label-lg text-label-lg text-on-surface transition-colors hover:bg-surface-bright active:scale-[0.98]"
+          >
+            <span className="material-symbols-outlined text-secondary" aria-hidden="true">history</span>
+            <span>배송 이력 조회하기</span>
           </button>
         </div>
       </main>
-      {/* Bottom Navigation Bar */}
     </div>
+  )
+}
+
+function RiderHomeFeedback({
+  icon,
+  message,
+  spin = false,
+  onRetry,
+}: {
+  icon: string
+  message: string
+  spin?: boolean
+  onRetry?: () => void
+}) {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-background px-container-margin text-center">
+      <div className="flex max-w-sm flex-col items-center gap-4">
+        <span className={`material-symbols-outlined text-5xl text-secondary ${spin ? 'animate-spin' : ''}`} aria-hidden="true">{icon}</span>
+        <p role={onRetry ? 'alert' : 'status'} className="font-body-lg text-body-lg text-on-surface">{message}</p>
+        {onRetry && (
+          <button type="button" onClick={onRetry} className="rounded-xl bg-primary-container px-6 py-3 font-label-lg text-on-primary-container">
+            다시 시도
+          </button>
+        )}
+      </div>
+    </main>
   )
 }
