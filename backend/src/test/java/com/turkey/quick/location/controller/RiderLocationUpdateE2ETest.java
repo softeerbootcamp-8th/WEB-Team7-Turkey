@@ -14,6 +14,7 @@ import com.turkey.quick.support.IntegrationTestSupport;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +25,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -60,6 +62,9 @@ class RiderLocationUpdateE2ETest extends IntegrationTestSupport {
 
     @Autowired
     private RiderGeoRepository riderGeoRepository;
+
+    @Autowired
+    private StringRedisTemplate redisTemplate;
 
     /** Member 저장과 RiderProfile(@MapsId) 저장을 한 트랜잭션으로 묶는다(RiderDeliveryRequestE2ETest와 같은 이유). */
     private Member saveRider(String loginId, String phoneNumber, OperatingStatus targetStatus) {
@@ -162,6 +167,23 @@ class RiderLocationUpdateE2ETest extends IntegrationTestSupport {
         rest.exchange(LOCATION_ENDPOINT, HttpMethod.POST, withCookie(locationRequest(6L), cookie), ApiResponse.class);
 
         assertThat(riderGeoRepository.findPosition(member.getId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("위치를 보내면 최신 위치가 Redis 에 남는다(#317)")
+    void latestLocationIsStoredInRedis() {
+        // 읽는 API 는 아직 없지만(#317 범위) 저장 자체가 스케일 아웃 준비의 절반이라, 실제로
+        // 키가 생기고 TTL 이 걸리는지는 HTTP 경로에서 한 번 확인해 둔다.
+        Member member = saveRider("e2e_location_latest", "01011110007", OperatingStatus.BUSY);
+        String cookie = login("e2e_location_latest");
+
+        rest.exchange(LOCATION_ENDPOINT, HttpMethod.POST, withCookie(locationRequest(7L), cookie), ApiResponse.class);
+
+        String key = "rider:location:%d".formatted(member.getId());
+        assertThat(redisTemplate.opsForValue().get(key))
+                .as("측정 시각이 맨 앞에 오는 형식")
+                .startsWith("20");
+        assertThat(redisTemplate.getExpire(key, TimeUnit.SECONDS)).isPositive();
     }
 
     @Test
