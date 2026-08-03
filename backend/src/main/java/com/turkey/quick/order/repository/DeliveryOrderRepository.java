@@ -57,8 +57,8 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
                                                               @Param("customerId") Long customerId);
 
     /**
-     * 라이더가 지금 수행 중인 배송을 찾는다. 위치 이벤트를 어느 주문 채널로 발행할지 정하는 데
-     * 쓴다(#78 흐름 ①).
+     * 라이더가 지금 수행 중인 배송을 상태까지 함께 조회한다. 화면 진입 시 한 번 부르는 경로용이다
+     * ({@code RiderOperatingStatusQueryService}).
      *
      * <p><b>결과가 최대 1건인 것은 DB 가 보장한다.</b> {@code delivery_order} 의 생성 컬럼
      * {@code active_rider_id} 에 걸린 {@code uk_delivery_active_rider} UNIQUE 가 "라이더당 진행 중
@@ -69,10 +69,10 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
      * 스트림은 조용해진다. 이 조건이 없으면 완료 후에도 그 라이더의 <i>다음</i> 배송 경로가
      * 이전 고객에게 계속 흘러간다 — 채널 키를 라이더가 아니라 주문으로 고른 이유가 이것이다.
      *
-     * <p>이 조회는 <b>#78 전용이 아니다.</b> 위치 이력 저장(#102)도
-     * {@code rider_location_history.order_id} 가 NOT NULL(V15)이라 같은 경로에서 주문을 풀어야
-     * 한다. 그래서 {@code status} 를 함께 돌려준다 — 그쪽은 {@code DELIVERING} 만 저장하는 더
-     * 좁은 정책이므로 받아서 스스로 걸러야 한다.
+     * <p><b>위치 갱신 핫패스는 이 메서드를 쓰지 않는다.</b> 이 조회는
+     * {@code idx_delivery_rider_completed (assigned_rider_id, completed_at DESC)} 를 타고 그 라이더의
+     * <b>전체 주문 이력</b>을 훑은 뒤 상태로 걸러서, 운행 기간이 길어질수록 비용이 커진다. 5초 주기로
+     * 불리는 쪽은 {@link #findInProgressIdByActiveRiderId} 를 쓴다.
      */
     @Query("""
             select new com.turkey.quick.order.dto.TrackableDelivery(
@@ -83,6 +83,30 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
             """)
     Optional<TrackableDelivery> findInProgressByRiderId(@Param("riderId") Long riderId,
                                                        @Param("statuses") Set<OrderStatus> statuses);
+
+    /**
+     * 라이더가 수행 중인 배송의 식별자만 조회한다. <b>위치 갱신 핫패스 전용</b>(BUSY 라이더는 5초마다
+     * 위치를 보낸다, #81).
+     *
+     * <p><b>생성 컬럼의 유니크 인덱스를 그대로 탄다.</b> {@code active_rider_id} 는 진행 중일 때만
+     * {@code assigned_rider_id} 값을 갖고 그 외에는 NULL 인 생성 컬럼이고(V10),
+     * {@code uk_delivery_active_rider} 가 걸려 있다. 그래서 이 조회는 <b>라이더당 최대 1행을 가리키는
+     * 유니크 인덱스 단일 행 조회</b>이며 주문 이력이 아무리 쌓여도 비용이 늘지 않는다.
+     * {@link #findInProgressByRiderId} 는 이력 전체를 훑은 뒤 상태로 걸러 그렇지 않다.
+     *
+     * <p><b>상태 조건을 SQL 에 쓰지 않는 이유</b>: 생성 컬럼의 CASE 식이 이미 그 조건이다. 대신
+     * <b>추적 가능한 상태 집합이 DDL 과 {@link OrderStatus#trackableStatuses()} 두 곳에 존재하게
+     * 된다</b> — 그 동치는 {@code DeliveryOrderActiveRiderIntegrationTest} 가 모든 상태를 돌며
+     * 고정한다. 열거형에 상태를 추가하고 마이그레이션을 빠뜨리면 그 테스트가 깨진다.
+     *
+     * <p>JPQL 이 아니라 네이티브 쿼리인 이유: 생성 컬럼을 엔터티에 매핑하지 않아도 되고
+     * ({@code ddl-auto: validate} 와 얽히지 않는다), 호출자가 필요한 것은 식별자 하나뿐이다.
+     * 같은 리포지토리의 {@link #assignIfWaiting} 도 네이티브 쿼리다.
+     */
+    @Query(value = "SELECT order_id FROM delivery_order WHERE active_rider_id = :riderId",
+           nativeQuery = true)
+    Optional<Long> findInProgressIdByActiveRiderId(@Param("riderId") Long riderId);
+
     List<DeliveryOrder> findByStatus(OrderStatus status);
 
     /**

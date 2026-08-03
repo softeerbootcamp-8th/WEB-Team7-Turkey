@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.turkey.quick.common.response.ApiResponse;
 import com.turkey.quick.location.dto.LocationPayload;
 import com.turkey.quick.location.sse.SseRegistry;
-import com.turkey.quick.location.sse.SseRelay;
+import com.turkey.quick.location.sse.TrackingPublisher;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.support.IntegrationTestSupport;
 import com.turkey.quick.support.TrackingFixture;
@@ -52,7 +52,7 @@ class CustomerTrackingStreamE2ETest extends IntegrationTestSupport {
     private SseRegistry registry;
 
     @Autowired
-    private SseRelay sseRelay;
+    private TrackingPublisher trackingPublisher;
 
     @Autowired
     private TestRestTemplate rest;
@@ -87,13 +87,8 @@ class CustomerTrackingStreamE2ETest extends IntegrationTestSupport {
         assertThat(registry.connectionOf(scenario.deliveryId())).hasSize(1);
 
         response.body().close();
-        // heartbeat가 없어(위치 추적 단순화, #297) 서버는 클라이언트가 닫은 것을 스스로 알아채지
-        // 못한다 — 다음 쓰기 시도가 실패해야 registry.remove가 불린다(SseRelay#publish). 그래서
-        // 클라이언트 close만으로는 정리되지 않고, 실제 위치 전송을 한 번 트리거해야 한다.
-        sseRelay.publish(scenario.deliveryId(), new LocationPayload(
-                new BigDecimal("37.5000000"), new BigDecimal("127.0000000"), Instant.now(), null));
 
-        awaitUntilEmpty(scenario.deliveryId());
+        awaitCleanupWhilePublishing(scenario.deliveryId());
     }
 
     @Test
@@ -195,14 +190,29 @@ class CustomerTrackingStreamE2ETest extends IntegrationTestSupport {
         return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
     }
 
-    /** 이 저장소는 Awaitility를 쓰지 않으므로, 비동기 정리(onTimeout/onCompletion)를 짧게 폴링한다. */
-    private void awaitUntilEmpty(long deliveryId) throws InterruptedException {
-        long deadline = System.currentTimeMillis() + Duration.ofSeconds(2).toMillis();
+    /**
+     * 레지스트리가 비워질 때까지 위치를 계속 발행한다. 이 저장소는 Awaitility 를 쓰지 않아 직접
+     * 폴링한다.
+     *
+     * <p><b>발행을 한 번만 하면 안 된다</b>(#317 에서 실측). heartbeat 가 없어 서버는 클라이언트가
+     * 닫은 것을 스스로 알지 못하고, 끊긴 연결에 대한 <b>첫 쓰기는 소켓 버퍼에 들어가 성공하는 경우가
+     * 많다</b> — 실패가 올라오는 것은 그 다음 쓰기부터다. 그래서 정리 시점은 "쓰기 1회 후"가 아니라
+     * "쓰기가 실제로 실패한 뒤"다.
+     *
+     * <p>운영에서 이게 뜻하는 것: 탭을 닫은 고객의 연결은 <b>위치 전송 두 번 주기</b>
+     * (BUSY 5초 기준 약 10초)까지 레지스트리에 남는다. emitter 타임아웃(5분)이 최종 상한이다.
+     */
+    private void awaitCleanupWhilePublishing(long deliveryId) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + Duration.ofSeconds(10).toMillis();
         while (System.currentTimeMillis() < deadline) {
             if (registry.connectionOf(deliveryId).isEmpty()) {
                 return;
             }
-            Thread.sleep(50);
+            // 팬아웃 도입 이후 이 발행은 Redis Pub/Sub 을 한 바퀴 돌아 sse-fanout-* 스레드에서
+            // 실제 쓰기가 일어난다 — 그 왕복까지 이 대기에 포함된다.
+            trackingPublisher.publish(deliveryId, new LocationPayload(
+                    new BigDecimal("37.5000000"), new BigDecimal("127.0000000"), Instant.now(), null));
+            Thread.sleep(100);
         }
         assertThat(registry.connectionOf(deliveryId)).isEmpty();
     }

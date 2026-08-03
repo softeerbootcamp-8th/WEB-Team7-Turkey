@@ -126,21 +126,38 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
     (고객 예시: `customer/config/CustomerWebMvcConfig`, #27) 새 고객/라이더 전용 API를 추가할 때
     이 등록을 빠뜨리면 그 API는 인증 없이 열린 채로 배포된다 — 리뷰 시 반드시 확인할 것.
 - Redis는 현재 **세션 저장 / GEO 위치 검색(배차 후보용, `RiderGeoRepository`) / 휴대전화
-  인증번호(TTL)** 에 쓴다. 영속 원본 저장소로는 쓰지 않는다. **라이더 최신 위치 저장과 SSE
-  이벤트 팬아웃(Pub/Sub, #246)은 위치 추적 단순화(#297, 2026-08-02)로 제거했다** — 아래
-  SSE 항목 참고.
+  인증번호(TTL) / 라이더 최신 위치(`RiderLocationRepository`, **BUSY 라이더만**, TTL 10분) / SSE 이벤트
+  팬아웃(Pub/Sub)** 에 쓴다. 영속 원본 저장소로는 쓰지 않는다.
+  뒤의 둘은 #297(2026-08-02)로 제거했다가 **스케일 아웃 대비로 #317(2026-08-03)에서 되돌린
+  것이다** — 단, 서버측 위치 필터는 되살리지 않았다(아래 SSE 항목).
+  Pub/Sub은 **SSE 이벤트 팬아웃 용도로만** 쓴다. 작업 큐·도메인 이벤트 버스·인스턴스 간 RPC로
+  확장하지 않는다.
 - Redis 배포 방식은 **EC2 인스턴스에 직접 설치**(2026-07-29 변경, 디스커션 #176). 관리 부담을 줄이는
   ElastiCache(관리형)를 먼저 검토했으나 **비용 문제**로 EC2 직접 설치로 결정을 뒤집었다.
   MySQL 배치 방식(EC2 직접 설치 vs RDS)도 별도로 아직 미결(아래 「확인이 필요한 항목」).
 - 영속성·트랜잭션 정합성이 필요한 데이터는 MySQL이 정본(사용자·배송요청·배차·상태·포인트 원장·정산·위치 이력).
-- 실시간 라이더 위치 전달은 **SSE** 사용(Polling 아님). **위치 추적 단순화(#297) 이후에는
-  서버가 위치를 검증·저장·필터링하지 않고 받는 즉시 그대로 중계한다** — "변경됐을 때만"이
-  아니라 유효한 위치가 올 때마다 그 배송을 구독 중인 고객에게 전송한다.
-  - `location/sse/SseRegistry`(배송 ID → SSE 연결 로컬 Map)와 `location/sse/SseRelay`(위치
-    수신 시 그 레지스트리를 조회해 전송)로 나뉜다. **현재 인스턴스 로컬 전제다 — 다중
-    인스턴스 팬아웃(Redis Pub/Sub 등)은 도입하지 않았다.** MVP가 백엔드 1대로 운영되는 동안은
-    그 문제 자체가 없고, 실제로 인스턴스를 늘리는 시점에 대안(Redis Pub/Sub 재도입·폴링·배송
-    id 기준 sticky routing 등)을 다시 고른다(아래 「확인이 필요한 항목」 참고).
+- 실시간 라이더 위치 전달은 **SSE** 사용(Polling 아님). **서버는 위치를 검증·필터링하지 않고
+  받는 즉시 중계한다**(#297) — "변경됐을 때만"이 아니라 유효한 위치가 올 때마다 그 배송을
+  구독 중인 고객에게 전송한다. 최신 위치 저장은 중계와 별개로 이루어진다(위 Redis 항목).
+  - **위치 갱신 요청은 좌표만 담는다.** 배송 식별자는 `location/service/RiderLocationService`가
+    세션의 라이더로 DB에서 풀어낸다(#317). 상태 조건이 붙은 그 조회가 안전장치다 — 배송이
+    완료되면 결과가 비어 발행이 멈춘다. **라이더→배송 매핑을 캐시하지 않는다**(무효화를 놓치면
+    다음 배송 경로가 이전 고객에게 흘러간다). AVAILABLE 라이더는 발행할 채널이 없어 조회조차 하지 않는다.
+  - 전달 경로는 **Redis Pub/Sub 팬아웃**이다(#317). 라이더 위치 POST →
+    `location/sse/TrackingPublisher`가 배송별 채널(`location/sse/TrackingChannel`,
+    `tracking:order:{deliveryId}`)로 발행 → **모든 인스턴스**가 패턴 구독
+    (`common/config/RedisMessageListenerConfig`) → `location/sse/TrackingSubscriber`가
+    **자기 JVM의** `SseRegistry`를 조회해 `SseRelay`로 전송. `SseEmitter`는 그 JVM의 열린 응답에
+    묶여 있어 다른 인스턴스가 대신 보낼 방법이 없기 때문이다.
+  - **위치 갱신 경로에서 `SseRelay`를 직접 부르면 안 된다** — 다른 인스턴스에 연결된 고객이
+    이벤트를 못 받는다. 반드시 `TrackingPublisher`를 거친다. 이걸 어겨도 단일 인스턴스
+    테스트는 전부 통과하므로, `TrackingFanoutMultiInstanceE2ETest`(2인스턴스)가 유일한 방어선이다.
+  - 구독자는 **페이로드를 파싱하지 않고 발행 지점의 JSON 문자열을 그대로 흘린다.** 계약이 한
+    곳에만 존재하는 대신 **필드 추가만 허용하고 제거·의미 변경은 하지 않는다**(Flyway, Redis 값
+    형식에 이은 세 번째 배포 호환성 표면). 채널 접두어도 같은 표면이다.
+  - SSE 프레임에는 **이벤트 이름을 붙이지 않는다** — 브라우저 기본 `message` 이벤트로 도착해야
+    프론트 `useTrackingStream.onmessage`가 받는다. `measuredAt`은 반드시 문자열이어야 한다
+    (숫자 타임스탬프가 되면 `parseLocationPing`이 프레임을 통째로 버려 지도가 조용히 멈춘다).
 - 라이더 상태와 배송 상태를 분리한다.
 - 여러 인스턴스로 수평 확장 가능한 모놀리식 Spring Boot WAS(코드 수준에서만 책임 분리, MSA 아님).
 - 프론트 빌드 산출물은 S3에 배포하고 CloudFront로 제공. 정적 요청은 CloudFront·S3, API·SSE는 EC2 Spring Boot가 처리.
@@ -161,30 +178,55 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - 동일 요청 재전송에 대한 API 멱등성 정책(요청 식별값 기준)
 - 예상 요금과 최종 요금의 차이 허용 >> 허용하기로 했음
 - 포인트 차감·환불 시점, 포인트 동시성 처리 방식(선차감 vs 결제 승인 모킹 포함)
-- **위치 추적이 #297(2026-08-02)에서 단순화됨.** 기존 위치 필터(`LocationAcceptancePolicy`·
-  `LocationFilter`), Redis 최신 위치 저장(`RiderLocationStore`), MySQL 이력 저장, SSE Pub/Sub
-  팬아웃(`TrackingChannel`·`RedisTrackingEventPublisher`·`TrackingStreamPolicy`의 heartbeat·
-  연결 수 제한)을 전부 제거했다. 서버는 이제 "라이더 위치를 받아 그 배송을 구독 중인 고객에게
-  그대로 중계"만 한다(`location/sse/SseRegistry` + `SseRelay`). 아래는 그 결과 남은 미결 항목이다
-  — 아래 목록이 이 절 전체를 대체한다.
-- **SSE emitter 타임아웃이 임시값이다**(1초, `CustomerTrackingStreamController`/
-  `RiderLocationUpdateController`의 `TTL`). 테스트가 안정적으로 끝나는 선에서 고른 값이라, 고객이
-  몇 분씩 화면을 보고 있어야 하는 실제 운영에는 전혀 안 맞는다 — 실제 정책값을 정해야 한다.
-  예전 값(5분)이 참고는 되지만, 그때는 heartbeat가 있어 조용한 연결도 안 끊겼다는 전제가 다르다
+- **위치 추적이 #297(2026-08-02)에서 단순화됐고, 그중 두 가지를 #317(2026-08-03)에서 되돌렸다.**
+  되돌린 것: Redis 최신 위치 저장(`RiderLocationRepository`, Lua 조건부 갱신), SSE Pub/Sub
+  팬아웃(`TrackingChannel`·`TrackingPublisher`·`TrackingSubscriber`·`RedisMessageListenerConfig`).
+  **되돌리지 않은 것**: 서버측 위치 필터(`LocationAcceptancePolicy`·`LocationFilter`), MySQL 이력
+  저장, heartbeat, 연결 수 제한. 아래가 남은 미결 항목이다.
+- **SSE emitter 타임아웃 5분이 실제 정책값인지 미결**(`CustomerTrackingStreamController.TTL_MILLIS`,
+  `application.yml`의 `spring.mvc.async.request-timeout`과 같은 값). heartbeat가 없다는 전제가
+  예전(#266, heartbeat 15초)과 다르다
 - **heartbeat가 없다.** 그래서 CloudFront 등 프록시의 유휴 타임아웃에 조용한 스트림이 끊길 수
-  있다(예전에 heartbeat를 둔 이유이기도 하다) — TTL을 실제 운영값으로 늘리면 이 문제가 다시
-  떠오른다
+  있다(예전에 heartbeat를 둔 이유이기도 하다)
+- **끊긴 연결 탐지에는 쓰기가 최소 두 번 필요하다**(#317에서 실측). heartbeat가 없어 서버는
+  클라이언트가 닫은 것을 스스로 모르고, **끊긴 연결에 대한 첫 쓰기는 소켓 버퍼에 들어가 성공하는
+  경우가 많다** — 실패는 그 다음 쓰기부터 올라온다. 탭을 닫은 고객의 연결은 위치 전송 두 주기
+  (BUSY 5초 기준 약 10초)까지 레지스트리에 남고, 최종 상한은 emitter 타임아웃 5분이다.
+  **"위치를 한 번 보내면 정리된다"고 가정하는 테스트를 쓰지 말 것**
 - **연결 수 제한이 없다.** 예전엔 배송당 3개(Redis ZSET)로 막았는데, 지금은 같은 배송에 몇 명이든
-  무제한 구독 가능하다. 단일 인스턴스 전제라 카운팅 자체는 로컬 Map 크기로 간단히 가능하지만,
-  필요성이 재확인되기 전까지는 만들지 않기로 했다
-- **다중 인스턴스 팬아웃 방식이 미정이다.** 지금은 인스턴스 1대 전제로 로컬 레지스트리만 쓴다
-  — MVP가 실제로 1대로 운영되는 동안은 여러 인스턴스에 흩어진 연결을 모아 전달해야 하는 문제
-  자체가 없다. 스케일 아웃 시 대안(Redis Pub/Sub 재도입 · 폴링 · 배송 id 기준 sticky routing ·
-  인스턴스 확장 포기) 중 하나를 그때 실제 인스턴스 수를 보고 고른다
-- **라이더 위치 POST가 배송 ID를 요청 본문으로 직접 받는다**(#290). 서버가 DB로 "라이더의 진행
-  중 배송"을 조회하지 않기 때문이다. 그 라이더가 실제로 그 배송에 배정됐는지는 검증하지 않고
-  운행 상태(AVAILABLE/BUSY)만 확인한다(#291) — 아무 배송 ID나 넣으면 남의 고객 화면에 위치를
-  흘려보낼 수 있는 구멍이다
+  무제한 구독 가능하다. 필요성이 재확인되기 전까지는 만들지 않기로 했다
+- **팬아웃 디스패처 풀 크기 4가 적절한지 미검증**(`RedisMessageListenerConfig`). 같은 채널 메시지의
+  처리 순서가 뒤집힐 수 있고, 그 복구는 프론트가 `measuredAt`이 역행하는 이벤트를 버리는 것에
+  의존하는데 **현재 `useTrackingStream`에 그 가드가 없다.** 부하 테스트에서 확인할 항목
+- **위치 관련 Redis 저장소가 둘이고 대상이 운행 상태로 갈린다.** 배차 후보(`RiderGeoRepository`,
+  `riders:geo` GEO ZSET)는 **AVAILABLE** 라이더의 집합이고, 최신 위치(`RiderLocationRepository`,
+  `rider:location:{riderId}`)는 **BUSY** 만 저장한다(#317). 합칠 수 없는 이유는 ① 멤버십 자체가
+  배차 자격이라 두 집합이 다르고 ② GEO ZSET에는 `measuredAt`·정확도를 넣을 자리가 없고(Lua 조건부
+  갱신이 비교할 값) ③ ZSET은 키 단위 TTL만 되기 때문이다. 단 **`GEOSEARCH`(주변 라이더 검색)가
+  아직 없어** ZSET을 쓸 이유가 절반만 실현된 상태다 — 현재 geo 읽기는 `findPosition(자기 id)`
+  하나뿐이고 반경 계산은 Java에서 한다(#101에서 정리될 것). 이름이 둘 다 "location"으로 읽혀
+  헷갈리므로 `RiderGeoRepository` → `RiderDispatchCandidateRepository` 개명을 검토 중(미결).
+  **서버측 필터(#82)를 되살리면 최신 위치를 상태 무관으로 되돌려야 한다**(기준선이 필요하다).
+- **저장한 최신 위치를 읽는 코드가 없다**(#317). `RiderLocationRepository`에 `saveIfNewer`만 있고
+  `find`/`decode`는 만들지 않았다 — 호출자가 없어서다. 소비자(#311 폴링 arm 또는 SSE `init`
+  스냅샷)를 만드는 이슈에서 함께 추가한다. 그때까지 값 형식은 `encode` 단위 테스트로만 지켜진다
+- ~~라이더 위치 POST가 배송 ID를 요청 본문으로 직접 받는다(#290) — 아무 배송 ID나 넣으면 남의
+  고객 화면에 위치를 흘려보낼 수 있는 구멍(#291)~~ **해소(#317)**: 요청 본문은 좌표만 담고,
+  `location/service/RiderLocationService`가 세션의 라이더로 수행 중 배송을 DB에서 풀어 채널을
+  정한다. 라이더가 자기 배송 외의 채널로 발행할 방법이 없다. (그 필드가 `@NotNull`이라 좌표만
+  보내는 안드로이드 클라이언트의 위치 전송이 **전부 400이던 버그**도 같이 닫혔다.)
+- **추적 가능 상태 집합이 두 곳에 있다**(#317). 위치 갱신 핫패스가
+  `DeliveryOrderRepository.findInProgressIdByActiveRiderId`(생성 컬럼 `active_rider_id` +
+  `uk_delivery_active_rider` 유니크 인덱스 단일 행 조회)를 쓰면서, "어느 상태가 진행 중인가"가
+  **V10 마이그레이션의 CASE 식과 `OrderStatus.trackableStatuses()` 양쪽에 존재**한다.
+  `DeliveryOrderActiveRiderIntegrationTest`가 모든 상태를 실제로 만들어 동치를 고정하지만,
+  **상태를 추가할 때 Flyway 마이그레이션도 함께 바꿔야 한다는 규칙이 코드로 강제되지는 않는다.**
+  화면 진입 시 1회 부르는 `findInProgressByRiderId`(상태까지 필요)는 그대로 남아 있다 —
+  그쪽은 이력 전체를 훑는 형태라 5초 주기 경로에 쓰면 안 된다.
+- **라이더 위치 갱신 한 번이 MySQL 3회 + Redis 3회를 쓴다**(#317). 인터셉터의 `member`·
+  `rider_profile` PK 조회 2회 + 배송 조회 1회, GEO 반영 + 최신 위치 Lua + PUBLISH. BUSY 5초
+  주기라 동시 배송 수에 비례한다. 인터셉터 비용은 모든 라이더 API 공통 구조여서 손대지 않았고
+  **#311 폴링 arm 비교의 핵심 변수**다 — 부하 테스트에서 확인할 항목
 - **오류 응답에 Content-Type 을 명시해야 한다**(#77 에서 드러남, `GlobalExceptionHandler` 에 적용,
   단순화 이후에도 유효). 지정하지 않으면 스프링이 `Accept` 로 컨텐트 협상을 하고, 브라우저
   `EventSource` 는 `Accept: text/event-stream` 만 보내므로 401·409·429 가 전부 **406** 으로
@@ -192,28 +234,21 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - `server.shutdown` 을 설정한 적이 없는데 graceful 로 동작한다(#77 에서 테스트 로그로 확인:
   `Graceful shutdown aborted with one or more requests still active`). SSE 는 끝나지 않으므로
   **종료마다 대기 시간을 소진한 뒤 강제 중단**돼 배포가 그만큼 느려진다. `immediate` 로 명시할지 미결
-- **ElastiCache 클러스터 모드를 켜면 현재 SSE 팬아웃이 동작하지 않는다**(#78). cluster mode enabled
-  에서는 Redis 7 의 sharded pub/sub(`SSUBSCRIBE`)이 필요한데 `RedisMessageListenerContainer` 는
-  일반 pub/sub 만 다루고 `PSUBSCRIBE` 는 클러스터에서 문제가 된다. **클러스터 모드 비활성을 전제로
-  설계했다** — 배포 구성 확정 시 확인 필요
-- **Redis Pub/Sub 은 로직 DB 로 격리되지 않는다**(#78). 채널은 `SELECT` 를 무시하므로 테스트(DB 1)와
-  개발용 앱(DB 0)이 **같은 채널을 공유한다.** `DatabaseCleaner` 의 TRUNCATE 가 AUTO_INCREMENT 를
-  리셋해 테스트 주문이 매번 낮은 id 를 받으므로, 개발용 앱을 띄운 채 테스트를 돌리면 채널명이
-  겹칠 수 있다. 채널 접두어를 프로파일로 분리할지 미결
-- **emitter 레지스트리는 테스트 사이에 살아남는다**(#77). 인메모리 싱글턴이라
-  `IntegrationTestSupport`(MySQL·Redis 만 비운다)로 정리되지 않고, 앞 테스트의 연결이 남아 실제로
-  한 테스트를 실패시켰다. 세 번째 클리너를 둘지 미결
-- SSE 연결 중 세션 만료·로그아웃 처리(#77). 인터셉터는 연결 시점에 한 번만 도므로 세션이 만료된
-  뒤에도 **emitter 타임아웃(최대 5분)까지 위치가 흐른다.** heartbeat tick 에서 세션 존재를 확인하면
-  15초로 줄지만, 연결마다 세션 식별자를 JVM 에 들고 있어야 해 새 위험 표면이 생긴다 — 미결
-- 주문 완료·취소 시 **능동적** SSE 연결 종료가 없다(#80 범위). 채널 키가 주문이라 발행이 멈춰
-  스트림은 조용해지지만, 연결 자체는 타임아웃까지 열려 있고 완료 알림이 프론트로 가지 않는다
+- **ElastiCache 클러스터 모드를 켜면 SSE 팬아웃이 동작하지 않는다**(#78, #317에서 재도입되며 다시
+  유효해진 제약). cluster mode enabled 에서는 Redis 7 의 sharded pub/sub(`SSUBSCRIBE`)이 필요한데
+  `RedisMessageListenerContainer` 는 일반 pub/sub 만 다루고 `PSUBSCRIBE` 는 클러스터에서 문제가
+  된다. **클러스터 모드 비활성을 전제로 설계했다** — 배포 구성 확정 시 확인 필요
+- **Redis Pub/Sub 은 로직 DB 로 격리되지 않는다**(#78, #317에서 다시 유효). 채널은 `SELECT` 를
+  무시하므로 테스트(DB 1)와 개발용 앱(DB 0)이 **같은 채널을 공유한다.** `DatabaseCleaner` 의
+  TRUNCATE 가 AUTO_INCREMENT 를 리셋해 테스트 배송이 매번 낮은 id 를 받으므로, 개발용 앱을 띄운 채
+  테스트를 돌리면 채널명이 겹칠 수 있다. 채널 접두어를 프로파일로 분리할지 미결
 - 라이더 위치 전송 주기와 필터 임계값 >> **#81 에서 확정함**(사람 확인, 2026-07-29). 전송 주기
   AVAILABLE 30초 / BUSY 5초 / UNAVAILABLE 미전송, 최소 이동 거리 20m, 허용 최대 속도 50 m/s
   (180km/h), 정확도 상한 100m, 허용 과거 60초·미래 오차 5초, 정지 시 강제 전송 120초, Redis 최신
-  위치 TTL 10분. **서버(`location/service/LocationAcceptancePolicy`)와 프론트 1차 필터가 같은 값을
-  쓴다** — 클라이언트가 통과시킨 좌표는 서버도 통과해야 두 필터가 서로 싸우지 않는다. 부하 테스트
-  결과에 따라 조정할 수 있다(#82 비고).
+  위치 TTL 10분. **지금은 이 값들을 클라이언트(안드로이드 `RiderLocationService`)만 쓴다** —
+  서버측 필터(`LocationAcceptancePolicy`)는 #297에서 제거됐고 #317에서도 되살리지 않았다.
+  서버 필터를 다시 만들면 두 값이 같아야 한다(클라이언트가 통과시킨 좌표는 서버도 통과해야
+  둘이 서로 싸우지 않는다). Redis 최신 위치 TTL 10분은 #317에서 그대로 복원했다.
 - 위치 갱신 실패 응답의 경계 >> **#81 에서 확정함**(사람 확인). 좌표 범위 밖·필수 값 누락·정확도
   음수·미래 시각은 400 이지만, **정확도 상한 초과와 60초 초과 과거 fix 는 200 + `reason`** 으로
   수용·폐기한다(실내·지하 측위나 탭 복귀 직후에 정상적으로 발생해 클라이언트가 고칠 것이 없다).
@@ -223,21 +258,18 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   패키지 단순화(#297)로 원래 쓰던 `RiderLocationStore`가 삭제되면서 #83이 만든 GEO 저장소로
   교체했다(같은 의미의 멱등 삭제 연산이라 그대로 대체). remove 를 DB 트랜잭션 커밋 전에 호출하는
   트레이드오프는 부하 테스트 후 재검토(worklog 2026-07-31-54 참조).
-- 위치 갱신 응답의 `NON_MONOTONIC` 이 **두 원인을 겸한다**(#250, 사람 확인 2026-07-29). 클라이언트가
-  순서를 어겨 보낸 것과 **인스턴스 간 경쟁에서 진 것**(`saveIfNewer` 가 거절)이 같은 사유·같은 로그
-  라인으로 나간다. 계약을 늘리지 않으려고 통일한 것이고, 경쟁 빈도를 알아야 할 때(부하 테스트,
-  인스턴스 수 조정) 값을 나눌지 판단한다
-- **Redis 값 형식 변경도 배포 호환성 검토 대상이다**(#250 에서 처음 드러남). 최신 위치 값 형식을
-  바꾸면서 이전 형식 값이 새 파서로 읽히지 않게 됐다 — 조건부 갱신이 덮으므로 첫 위치 요청에서
-  해소되고 TTL 이 10분이라 감내했지만, **롤링 배포 중 구·신 버전이 공존하면 서로의 값을 못 읽는
-  구간이 생긴다.** Flyway 마이그레이션 호환성(「확정된 결정」)과 같은 종류의 문제인데 Redis 값에서는
-  규칙이 없다. 규칙으로 못 박을지 미결
-  `Graceful shutdown aborted with one or more requests still active`, 단순화 이후에도 SSE
-  엔드포인트 자체는 남아 있어 유효). SSE 는 끝나지 않으므로 **종료마다 대기 시간을 소진한 뒤
-  강제 중단**돼 배포가 그만큼 느려진다. `immediate` 로 명시할지 미결
-- SSE 연결 중 세션 만료·로그아웃 처리는 여전히 미결이다. heartbeat 자체가 없어져서, 세션이
-  만료돼도 emitter 타임아웃(지금은 1초라 사실상 무의미하지만 실제 정책값으로 올리면 그 시간까지)
-  위치가 계속 흐를 수 있다
+- **조건부 갱신에 진 것(`saveIfNewer` 가 false)을 클라이언트에게 알리지 않는다**(#317). 예전에는
+  응답에 `NON_MONOTONIC` 사유가 있었지만 #290 이후 위치 갱신 응답이 `ApiResponse<Void>` 라
+  반환값을 읽는 곳이 없다. 경쟁 빈도를 알아야 할 때(부하 테스트, 인스턴스 수 조정) 로그나 지표를
+  추가할지 판단한다
+- **Redis 값 형식 변경도 배포 호환성 검토 대상이다**(#250 에서 처음 드러남). 형식을 바꾸면 이전
+  형식 값이 새 파서로 읽히지 않는다 — 조건부 갱신이 손상된 값을 덮으므로 첫 위치 요청에서 해소되고
+  TTL 이 10분이라 감내했지만, **롤링 배포 중 구·신 버전이 공존하면 서로의 값을 못 읽는 구간이
+  생긴다.** Flyway 마이그레이션 호환성(「확정된 결정」)과 같은 종류의 문제인데 Redis 값에서는
+  규칙이 없다. 규칙으로 못 박을지 미결. **#317에서 SSE 팬아웃 페이로드가 세 번째 표면으로
+  추가됐다**(구독자가 파싱하지 않고 흘리므로 필드 추가만 허용)
+- SSE 연결 중 세션 만료·로그아웃 처리는 여전히 미결이다. 인터셉터는 연결 시점에 한 번만 돌고
+  heartbeat 가 없어, 세션이 만료돼도 **emitter 타임아웃(5분)까지 위치가 계속 흐를 수 있다**
 - 주문 완료·취소 시 **능동적** SSE 연결 종료가 없다. 라이더가 그 배송에 더는 위치를 안 보내면
   중계 자체는 조용해지지만, 연결은 타임아웃까지 열려 있고 완료 알림이 프론트로 가지 않는다
 - `rider_location_history` 테이블(V15)은 스키마에 남아 있지만 지금은 아무 코드도 쓰지 않는다 —
@@ -379,9 +411,10 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   PR #284를 `feature/83-ride-loc-geo-candidate` 위로 리베이스했다(2026-08-02). 이 PR을 다시
   `dev` 기준으로 열려면 #83·#290·#291이 먼저 `dev`에 merge돼야 한다(현재 스택: dev ← #290/#291
   ← #83 ← #54).
-- **다중 인스턴스 대비 Redis Pub/Sub 재도입은 아직 이슈가 없다.** 실제 배포는 단일 인스턴스이지만
-  스케일 아웃에 대비해 두기로 했다(2026-08-02, 사람 확인). 예전 설계(#78, 채널 `tracking:order:{id}`
-  + 패턴 구독)가 참고 대상이나 #297로 제거된 상태라 처음부터 다시 설계해야 한다
+- ~~다중 인스턴스 대비 Redis Pub/Sub 재도입은 아직 이슈가 없다~~ **해소(#317, 2026-08-03)**:
+  예전 설계(#78, 채널 `tracking:order:{id}` + 패턴 구독)를 `e04b35a^`에서 그대로 꺼내 되돌렸다.
+  실제 배포는 여전히 단일 인스턴스이지만 스케일 아웃 준비는 끝났다 — 2인스턴스 E2E 테스트가
+  이를 검증한다. 서버측 위치 필터는 되돌리지 않았다(위 SSE 미결 항목 참고).
 - 라이더 콜 상세(`GET /api/rider/requests/{deliveryId}`, #57)가 물품 무게·수량을 제공하지 못함 —
   `delivery_order`에 관련 컬럼이 없음(`itemType` 열거형만 존재). 화면에서 실제로 필요해지면 스키마
   변경(Flyway 마이그레이션)과 주문 생성(REQ-ORD-002) 쪽 값 저장까지 함께 논의해야 함

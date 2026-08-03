@@ -154,19 +154,25 @@ public class TrackingFixture {
      * 목표 상태까지 전이 메서드를 순서대로 밟는다. {@code WAITING} 은 생성 직후 상태라 아무것도
      * 하지 않는다. fall-through 를 쓰지 않고 각 case 를 명시한 이유는 어느 상태가 어느 전이를
      * 요구하는지 읽는 사람이 바로 보게 하려는 것이다.
+     *
+     * <p><b>라이더 운행 상태도 함께 맞춘다</b>(#317). {@code DeliveryOrder.assign} 은 주문만 바꾸고
+     * 라이더 프로필은 건드리지 않으므로(실제 배차는 두 전이를 한 트랜잭션에서 함께 수행한다,
+     * ADR-006), 픽스처가 그 짝을 직접 채워야 한다. 이게 없으면 배정된 배송이 있는데 라이더는
+     * AVAILABLE 인 상태가 만들어져 <b>위치 갱신이 추적 채널로 발행되지 않는다</b> — 서버가
+     * 운행 상태로 발행 여부를 가르기 때문이다.
      */
     private static void advanceTo(DeliveryOrder order, RiderProfile rider, OrderStatus status) {
         switch (status) {
             case WAITING -> {
             }
             case CANCELED -> order.cancel("테스트 취소");
-            case ASSIGNED -> order.assign(rider);
+            case ASSIGNED -> assignBoth(order, rider);
             case MOVING_TO_PICKUP -> {
-                order.assign(rider);
+                assignBoth(order, rider);
                 order.startMovingToPickup();
             }
             case PICKED_UP -> {
-                order.assign(rider);
+                assignBoth(order, rider);
                 order.startMovingToPickup();
                 order.pickUp();
             }
@@ -177,8 +183,16 @@ public class TrackingFixture {
             case COMPLETED -> {
                 advanceTo(order, rider, OrderStatus.DELIVERING);
                 order.complete();
+                // 배송 완료: 라이더 BUSY → AVAILABLE (CLAUDE.md 「원자적으로 처리해야 하는 전이」)
+                rider.release();
             }
         }
+    }
+
+    /** 배차 확정: 배송 WAITING→ASSIGNED 와 라이더 AVAILABLE→BUSY 는 항상 함께 일어난다. */
+    private static void assignBoth(DeliveryOrder order, RiderProfile rider) {
+        order.assign(rider);
+        rider.assign();
     }
 
     private static Member member(int sequence, MemberRole role) {
