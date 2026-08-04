@@ -8,6 +8,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
@@ -62,6 +64,19 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
             """)
     Optional<TrackableDelivery> findTrackableByIdAndCustomerId(@Param("deliveryId") Long deliveryId,
                                                               @Param("customerId") Long customerId);
+
+    /**
+     * 고객 본인의 이용기록 목록(#43). 정렬은 호출자가 {@link Pageable} 에 담아 넘긴다 —
+     * 최신순(requestedAt DESC) 고정이지만, 정렬 기준을 파생 메서드 이름에 박지 않고 Pageable 로
+     * 넘기는 편이 이 메서드를 상태 필터 유무로 나눈 이유(아래)와 대칭을 이룬다.
+     */
+    Page<DeliveryOrder> findByCustomer_Id(Long customerId, Pageable pageable);
+
+    /** status 필터가 있을 때만 쓴다. 파생 메서드를 둘로 나눈 이유는 status=null 을 "전체 상태"로
+     * 해석하는 JPQL 조건(예: {@code and (:status is null or o.status = :status)})을 피하기 위해서다
+     * — 옵티마이저가 매 호출 파라미터에 따라 인덱스를 다르게 타는 조건부 조건보다, 필터 유무로 쿼리
+     * 자체를 나누는 쪽이 실행 계획이 안정적이다. */
+    Page<DeliveryOrder> findByCustomer_IdAndStatus(Long customerId, OrderStatus status, Pageable pageable);
 
     /**
      * 배송요청 상세 조회(#46)용. {@link #findTrackableByIdAndCustomerId} 와 같은 이유로 고객 조건을

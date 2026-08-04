@@ -5,20 +5,24 @@ import com.turkey.quick.customer.auth.AuthenticatedCustomer;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.*;
 import com.turkey.quick.order.service.DeliveryDetailQueryService;
+import com.turkey.quick.order.service.DeliveryListQueryService;
 import com.turkey.quick.order.service.DeliveryService;
 import com.turkey.quick.order.service.DeliveryTrackingQueryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 
 @RequiredArgsConstructor
 @RestController
+@Validated
 public class CustomerDeliveryController implements CustomerDeliveryApi {
 
     private final DeliveryService deliveryService;
     private final DeliveryTrackingQueryService deliveryTrackingQueryService;
+    private final DeliveryListQueryService deliveryListQueryService;
     private final DeliveryDetailQueryService deliveryDetailQueryService;
 
     @Override
@@ -39,8 +43,9 @@ public class CustomerDeliveryController implements CustomerDeliveryApi {
     }
 
     @Override
-    public ApiResponse<DeliveryListResponse> getDeliveries(OrderStatus status, int page, int size) {
-        return null;
+    public ApiResponse<DeliveryListResponse> getDeliveries(OrderStatus status, int page, int size,
+                                                            AuthenticatedCustomer customer) {
+        return ApiResponse.ok(deliveryListQueryService.getDeliveries(customer.memberId(), status, page, size));
     }
 
     @Override
