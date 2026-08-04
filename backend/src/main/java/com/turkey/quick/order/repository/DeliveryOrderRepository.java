@@ -79,6 +79,13 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
     Page<DeliveryOrder> findByCustomer_IdAndStatus(Long customerId, OrderStatus status, Pageable pageable);
 
     /**
+     * 배송요청 상세 조회(#46)용. {@link #findTrackableByIdAndCustomerId} 와 같은 이유로 고객 조건을
+     * 쿼리에 둔다(없음/타인 것을 같은 404 로 응답). 상세는 상태를 가리지 않고(취소·완료 포함) 전체
+     * 필드가 필요해 투영이 아니라 엔터티를 그대로 반환한다.
+     */
+    Optional<DeliveryOrder> findByIdAndCustomer_Id(Long id, Long customerId);
+
+    /**
      * 라이더가 지금 수행 중인 배송을 상태까지 함께 조회한다. 화면 진입 시 한 번 부르는 경로용이다
      * ({@code RiderOperatingStatusQueryService}).
      *
