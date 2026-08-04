@@ -20,6 +20,7 @@ import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -144,17 +145,28 @@ public interface CustomerDeliveryApi {
             @Valid @RequestBody DeliveryCreateRequest request);
 
     @Operation(summary = "배송요청 목록",
-            description = "로그인한 고객의 이용기록을 최신순으로 조회한다. status 를 주면 해당 상태만 거른다.")
+            description = "로그인한 고객의 이용기록을 요청 시각 최신순으로 조회한다. "
+                    + "status 를 주면 해당 상태만 거른다. MVP 는 기간 필터를 제공하지 않는다.")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200", description = "조회 성공(결과 없으면 빈 목록)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400", description = "잘못된 페이지 정보(page<0 또는 size<1)")
+    })
     @GetMapping
     ApiResponse<DeliveryListResponse> getDeliveries(
             @Parameter(description = "배송 상태 필터(미지정 시 전체)")
             @RequestParam(required = false) OrderStatus status,
 
             @Parameter(description = "페이지(0부터)")
-            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
 
             @Parameter(description = "페이지 크기")
-            @RequestParam(defaultValue = "20") int size);
+            @RequestParam(defaultValue = "20") @Min(1) int size,
+
+            @Parameter(hidden = true)
+            @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
+            AuthenticatedCustomer customer);
 
     @Operation(summary = "배송요청 상세", description = "주문 시점 스냅샷(주소·연락처·운임)과 상태 타임라인을 조회한다.")
     @GetMapping("/{deliveryId}")
