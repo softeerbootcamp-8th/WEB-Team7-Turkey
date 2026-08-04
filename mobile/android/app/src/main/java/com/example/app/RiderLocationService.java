@@ -30,7 +30,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-/** WebView와 독립적으로 GPS를 수집하고 백엔드에 직접 전송하는 Android Foreground Service. */
+/**
+ * WebView와 독립적으로 GPS를 수집하고 백엔드에 직접 전송하는 Android Foreground Service.
+ *
+ * <p><b>지금은 BUSY 상태만 다룬다</b>(디스커션 #338). 서버가 더 이상 AVAILABLE 라이더의 위치를
+ * 필요로 하지 않는 방향으로 정리되고 있어(배차 후보 검색을 라이더 GEO가 아닌 주문 GEO 기준으로
+ * 바꾸는 논의), AVAILABLE 전송 분기를 없앴다. AVAILABLE 상태에서 위치를 보낼 새 진입점(예: 콜
+ * 목록 화면이 좌표를 직접 실어 보내는 방식)이 필요해지면 별도로 설계한다 — 이 서비스에 다시
+ * 상태 분기를 넣지 않는다.
+ */
 public class RiderLocationService extends Service implements LocationListener {
 
     static final String ACTION_START = "com.example.app.location.START";
@@ -42,8 +50,7 @@ public class RiderLocationService extends Service implements LocationListener {
     private static final String CHANNEL_ID = "rider_location_tracking";
     private static final int NOTIFICATION_ID = 1001;
     private static final String PREFERENCES = "rider_location_service";
-    private static final long AVAILABLE_INTERVAL_MS = 30_000L;
-    private static final long BUSY_INTERVAL_MS = 5_000L;
+    private static final long LOCATION_INTERVAL_MS = 5_000L;
     private static final long FORCE_SEND_AFTER_MS = 120_000L;
     private static final long MAX_FIX_AGE_MS = 60_000L;
     private static final float MAX_ACCURACY_METERS = 100F;
@@ -56,7 +63,6 @@ public class RiderLocationService extends Service implements LocationListener {
     private SharedPreferences preferences;
     private volatile String operatingStatus;
     private volatile String apiBaseUrl;
-    private volatile long sendIntervalMs = AVAILABLE_INTERVAL_MS;
     private volatile SentLocation lastSent;
 
     @Override
@@ -93,7 +99,6 @@ public class RiderLocationService extends Service implements LocationListener {
             return START_NOT_STICKY;
         }
 
-        sendIntervalMs = "BUSY".equals(operatingStatus) ? BUSY_INTERVAL_MS : AVAILABLE_INTERVAL_MS;
         Log.i(TAG, "Location service started endpoint=" + apiBaseUrl
                 + "/api/rider/location status=" + operatingStatus);
         startForeground(NOTIFICATION_ID, buildNotification());
@@ -137,11 +142,11 @@ public class RiderLocationService extends Service implements LocationListener {
         try {
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                 locationManager.requestLocationUpdates(
-                        LocationManager.GPS_PROVIDER, sendIntervalMs, 0F, this, Looper.getMainLooper());
+                        LocationManager.GPS_PROVIDER, LOCATION_INTERVAL_MS, 0F, this, Looper.getMainLooper());
             }
             if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
                 locationManager.requestLocationUpdates(
-                        LocationManager.NETWORK_PROVIDER, sendIntervalMs, 0F, this, Looper.getMainLooper());
+                        LocationManager.NETWORK_PROVIDER, LOCATION_INTERVAL_MS, 0F, this, Looper.getMainLooper());
             }
         } catch (SecurityException error) {
             Log.w(TAG, "Location permission was revoked", error);
@@ -172,7 +177,7 @@ public class RiderLocationService extends Service implements LocationListener {
                 && distance / (elapsedMs / 1_000D) > MAX_SPEED_METERS_PER_SECOND) {
             return false;
         }
-        if (elapsedMs < sendIntervalMs) {
+        if (elapsedMs < LOCATION_INTERVAL_MS) {
             return false;
         }
         return distance >= MIN_MOVE_DISTANCE_METERS || elapsedMs >= FORCE_SEND_AFTER_MS;
@@ -238,11 +243,10 @@ public class RiderLocationService extends Service implements LocationListener {
                 activityIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-        String intervalText = "BUSY".equals(operatingStatus) ? "5초" : "30초";
         return new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_menu_mylocation)
                 .setContentTitle("라이더 위치 전송 중")
-                .setContentText(intervalText + " 간격으로 배송 위치를 공유하고 있습니다.")
+                .setContentText("5초 간격으로 배송 위치를 공유하고 있습니다.")
                 .setContentIntent(pendingIntent)
                 .setOngoing(true)
                 .setCategory(NotificationCompat.CATEGORY_SERVICE)
@@ -260,8 +264,12 @@ public class RiderLocationService extends Service implements LocationListener {
         }
     }
 
+    /**
+     * BUSY만 유효하다. AVAILABLE 진입점은 아직 없다(클래스 상단 주석) — 다른 작업에서 새로
+     * 설계하기 전까지 이 서비스는 AVAILABLE 로 넘어오는 시작 요청을 거부하고 멈춘다.
+     */
     private boolean isConfigurationValid() {
-        return ("AVAILABLE".equals(operatingStatus) || "BUSY".equals(operatingStatus))
+        return "BUSY".equals(operatingStatus)
                 && apiBaseUrl != null
                 && (apiBaseUrl.startsWith("http://") || apiBaseUrl.startsWith("https://"));
     }

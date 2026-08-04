@@ -49,11 +49,17 @@ public class RiderLocationPlugin extends Plugin {
         call.resolve();
     }
 
+    /**
+     * BUSY만 시작을 허용한다. AVAILABLE 상태의 위치 전송 진입점은 아직 없다(#338 방향 —
+     * 서버가 더 이상 AVAILABLE 라이더 위치를 필요로 하지 않는 쪽으로 정리 중이라 별도 설계가
+     * 필요하다). 여기서 조용히 통과시키지 않고 거부해, 그 설계가 나올 때까지 이 메서드가
+     * "AVAILABLE도 지원한다"는 착각을 주지 않게 한다.
+     */
     private void startService(PluginCall call) {
         String operatingStatus = call.getString("operatingStatus");
         String apiBaseUrl = call.getString("apiBaseUrl");
 
-        if (!("AVAILABLE".equals(operatingStatus) || "BUSY".equals(operatingStatus))) {
+        if (!"BUSY".equals(operatingStatus)) {
             call.reject("지원하지 않는 운행 상태입니다.");
             return;
         }
