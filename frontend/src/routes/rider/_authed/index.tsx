@@ -39,11 +39,15 @@ function RiderHome() {
       { data: { action } },
       {
         onSuccess: async (response) => {
-          queryClient.setQueryData(getGetRiderOperatingStatusQueryKey(), response)
           queryClient.removeQueries({ queryKey: getGetRiderSessionQueryKey() })
-          await router.invalidate()
           if (action === 'GO_ONLINE') {
+            // 콜 목록으로 이동한 뒤 캐시를 갱신한다. 이동 전에 setQueryData 하면
+            // 홈이 AVAILABLE 상태로 잠깐 리렌더돼 "운행 중" 화면이 깜빡인다.
             await router.navigate({ to: '/rider/requests' })
+            queryClient.setQueryData(getGetRiderOperatingStatusQueryKey(), response)
+          } else {
+            queryClient.setQueryData(getGetRiderOperatingStatusQueryKey(), response)
+            await router.invalidate()
           }
         },
         onError: (error) => {
