@@ -1056,33 +1056,6 @@ export interface PointTransactionResponse {
 }
 
 /**
- * 인증 방식
- */
-export type RiderDeliveryCompleteRequestProofType = typeof RiderDeliveryCompleteRequestProofType[keyof typeof RiderDeliveryCompleteRequestProofType];
-
-
-// eslint-disable-next-line @typescript-eslint/no-redeclare
-export const RiderDeliveryCompleteRequestProofType = {
-  PHOTO: 'PHOTO',
-  RECIPIENT_CONFIRMATION: 'RECIPIENT_CONFIRMATION',
-  AUTH_CODE: 'AUTH_CODE',
-} as const;
-
-/**
- * 배송 완료 요청(인증 참조값)
- */
-export interface RiderDeliveryCompleteRequest {
-  /** 인증 방식 */
-  proofType: RiderDeliveryCompleteRequestProofType;
-  /**
-   * 인증 참조값(사진 URL/스토리지 키, 수령인 확인 참조, 인증코드)
-   * @minLength 0
-   * @maxLength 500
-   */
-  proofValue: string;
-}
-
-/**
  * 라이더 운행 상태(완료 시 AVAILABLE)
  */
 export type RiderDeliveryCompleteResponseOperatingStatus = typeof RiderDeliveryCompleteResponseOperatingStatus[keyof typeof RiderDeliveryCompleteResponseOperatingStatus];
@@ -1647,6 +1620,25 @@ export const GetCustomerPointTransactionsType = {
 
 export type CheckLoginIdAvailabilityParams = {
 loginId: string;
+};
+
+export type CompleteRiderDeliveryParams = {
+proofType: CompleteRiderDeliveryProofType;
+proofValue?: string;
+};
+
+export type CompleteRiderDeliveryProofType = typeof CompleteRiderDeliveryProofType[keyof typeof CompleteRiderDeliveryProofType];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const CompleteRiderDeliveryProofType = {
+  PHOTO: 'PHOTO',
+  RECIPIENT_CONFIRMATION: 'RECIPIENT_CONFIRMATION',
+  AUTH_CODE: 'AUTH_CODE',
+} as const;
+
+export type CompleteRiderDeliveryBody = {
+  file?: Blob;
 };
 
 export type GetRiderSettlementsParams = {
