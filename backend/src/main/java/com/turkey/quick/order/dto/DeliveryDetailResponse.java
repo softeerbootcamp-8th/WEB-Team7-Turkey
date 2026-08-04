@@ -1,10 +1,14 @@
 package com.turkey.quick.order.dto;
 
+import com.turkey.quick.member.domain.Member;
+import com.turkey.quick.order.domain.DeliveryOrder;
+import com.turkey.quick.order.domain.DeliveryProof;
 import com.turkey.quick.order.domain.ItemType;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.domain.ProofType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -63,6 +67,69 @@ public record DeliveryDetailResponse(
         LocalDateTime canceledAt,
 
         @Schema(description = "취소 사유", example = "고객 단순 변심")
-        String cancelReason
+        String cancelReason,
+
+        @Schema(description = "배정된 라이더 이름. 배차 전이면 null.", example = "박라이더")
+        String riderName,
+
+        @Schema(description = "배정된 라이더 연락처. 배차 전이면 null.", example = "010-9876-5432")
+        String riderPhoneNumber
 ) {
+    /**
+     * @param fare  완료 주문은 FINAL, 그 외는 ESTIMATE 스냅샷으로 호출자가 미리 골라 넘긴다
+     *              (스냅샷 조회는 트랜잭션 경계가 있는 서비스 계층 책임).
+     * @param proof 완료 인증 기록. 완료 전이면 null.
+     */
+    public static DeliveryDetailResponse from(DeliveryOrder order, FareBreakdownResponse fare,
+                                              DeliveryProof proof) {
+        Member rider = order.getAssignedRider() == null ? null : order.getAssignedRider().getMember();
+
+        return new DeliveryDetailResponse(
+                order.getId(),
+                order.getStatus(),
+                order.getItemType(),
+                order.getStraightDistanceMeters(),
+                new AddressResponse(order.getPickup().getRoadAddress(), order.getPickup().getDetailAddress(),
+                        order.getPickup().getPostalCode(), order.getPickup().getLatitude(),
+                        order.getPickup().getLongitude()),
+                new AddressResponse(order.getDestination().getRoadAddress(),
+                        order.getDestination().getDetailAddress(), order.getDestination().getPostalCode(),
+                        order.getDestination().getLatitude(), order.getDestination().getLongitude()),
+                new ContactResponse(order.getSender().getName(), order.getSender().getPhoneNumber()),
+                new ContactResponse(order.getRecipient().getName(), order.getRecipient().getPhoneNumber()),
+                fare,
+                steps(order),
+                proof == null ? null : proof.getProofType(),
+                proof == null ? null : proof.getProofValue(),
+                order.getRequestedAt(),
+                order.getCompletedAt(),
+                order.getCanceledAt(),
+                order.getCancelReason(),
+                rider == null ? null : rider.getName(),
+                rider == null ? null : rider.getPhoneNumber());
+    }
+
+    /**
+     * 타임라인을 delivery_order 의 단계별 시각 컬럼에서 파생한다(order_status_history 는 아직
+     * 아무 코드도 쓰지 않는다 — DeliveryTrackingQueryService.steps 와 같은 이유).
+     * 추적 스냅샷과 달리 CANCELED 도 포함한다 — 상세는 취소된 주문도 보여줘야 하기 때문이다.
+     */
+    private static List<DeliveryStatusStepResponse> steps(DeliveryOrder order) {
+        List<DeliveryStatusStepResponse> result = new ArrayList<>();
+        addStep(result, OrderStatus.WAITING, order.getRequestedAt());
+        addStep(result, OrderStatus.ASSIGNED, order.getAssignedAt());
+        addStep(result, OrderStatus.MOVING_TO_PICKUP, order.getMovingToPickupAt());
+        addStep(result, OrderStatus.PICKED_UP, order.getPickedUpAt());
+        addStep(result, OrderStatus.DELIVERING, order.getDeliveringAt());
+        addStep(result, OrderStatus.COMPLETED, order.getCompletedAt());
+        addStep(result, OrderStatus.CANCELED, order.getCanceledAt());
+        return List.copyOf(result);
+    }
+
+    private static void addStep(List<DeliveryStatusStepResponse> steps, OrderStatus status,
+                                LocalDateTime occurredAt) {
+        if (occurredAt != null) {
+            steps.add(new DeliveryStatusStepResponse(status, occurredAt));
+        }
+    }
 }

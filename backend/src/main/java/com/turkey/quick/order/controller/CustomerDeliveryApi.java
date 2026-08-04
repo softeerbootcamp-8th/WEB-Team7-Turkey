@@ -156,11 +156,23 @@ public interface CustomerDeliveryApi {
             @Parameter(description = "페이지 크기")
             @RequestParam(defaultValue = "20") int size);
 
-    @Operation(summary = "배송요청 상세", description = "주문 시점 스냅샷(주소·연락처·운임)과 상태 타임라인을 조회한다.")
+    @Operation(summary = "배송요청 상세",
+            description = "주문 시점 스냅샷(주소·연락처·운임)과 상태 타임라인을 조회한다. "
+                    + "추적 스냅샷과 달리 상태를 가리지 않는다 — 배차 전(WAITING)·완료·취소 주문도 조회된다.")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200", description = "조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404", description = "배송요청이 없거나 본인 것이 아님")
+    })
     @GetMapping("/{deliveryId}")
     ApiResponse<DeliveryDetailResponse> getDelivery(
             @Parameter(description = "배송요청 식별자", example = "1234")
-            @PathVariable Long deliveryId);
+            @PathVariable Long deliveryId,
+
+            @Parameter(hidden = true)
+            @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
+            AuthenticatedCustomer customer);
 
     /**
      * 실패 응답이 SSE 스트림({@code GET .../tracking/stream})과 정확히 같은 판정을 쓴다 — 즉
