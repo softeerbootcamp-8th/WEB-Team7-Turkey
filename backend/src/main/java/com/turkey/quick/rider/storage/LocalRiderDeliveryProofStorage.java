@@ -47,6 +47,11 @@ public class LocalRiderDeliveryProofStorage implements RiderDeliveryProofStorage
         }
     }
 
+    @Override
+    public String resolvePath(String key) {
+        return resolveSafely(key).toString();
+    }
+
     private Path resolveSafely(String key) {
         Path resolved = rootDirectory.resolve(key).normalize();
         if (!resolved.startsWith(rootDirectory)) {

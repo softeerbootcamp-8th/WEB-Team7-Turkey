@@ -70,6 +70,7 @@ public class DeliveryTrackingAccessService {
      */
     private static String notTrackableMessage(OrderStatus status) {
         return switch (status) {
+//            FIXME: 웨이팅도 이 화면 보고 싶어요
             case WAITING -> "라이더가 배정되지 않아 위치를 추적할 수 없습니다.";
             case COMPLETED -> "완료된 배송은 위치를 추적할 수 없습니다.";
             case CANCELED -> "취소된 배송은 위치를 추적할 수 없습니다.";

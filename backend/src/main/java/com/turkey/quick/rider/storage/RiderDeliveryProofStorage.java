@@ -8,4 +8,7 @@ public interface RiderDeliveryProofStorage {
     void store(String key, MultipartFile file);
 
     RiderDeliveryProofFile read(String key);
+
+    /** key 를 실제 저장 위치로 해석한다(로컬은 절대경로, S3는 객체 URL). 파일을 읽지는 않는다. */
+    String resolvePath(String key);
 }

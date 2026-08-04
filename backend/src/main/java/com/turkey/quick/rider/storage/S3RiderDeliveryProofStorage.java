@@ -47,4 +47,9 @@ public class S3RiderDeliveryProofStorage implements RiderDeliveryProofStorage {
                 key.substring(key.lastIndexOf('/') + 1), metadata.getContentType(),
                 metadata.getContentLength(), object.getObjectContent());
     }
+
+    @Override
+    public String resolvePath(String key) {
+        return amazonS3.getUrl(bucket, key).toString();
+    }
 }

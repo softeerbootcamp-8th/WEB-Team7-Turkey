@@ -6,11 +6,13 @@ import com.turkey.quick.order.domain.DeliveryProof;
 import com.turkey.quick.order.domain.FareType;
 import com.turkey.quick.order.domain.OrderFareSnapshot;
 import com.turkey.quick.order.domain.OrderStatus;
+import com.turkey.quick.order.domain.ProofType;
 import com.turkey.quick.order.dto.DeliveryDetailResponse;
 import com.turkey.quick.order.dto.FareBreakdownResponse;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.order.repository.DeliveryProofRepository;
 import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
+import com.turkey.quick.rider.storage.RiderDeliveryProofStorage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -33,6 +35,7 @@ public class DeliveryDetailQueryService {
     private final DeliveryOrderRepository deliveryOrderRepository;
     private final OrderFareSnapshotRepository orderFareSnapshotRepository;
     private final DeliveryProofRepository deliveryProofRepository;
+    private final RiderDeliveryProofStorage riderDeliveryProofStorage;
 
     /**
      * @param deliveryId 조회할 배송요청
@@ -46,9 +49,25 @@ public class DeliveryDetailQueryService {
 
         FareBreakdownResponse fare = fare(order);
         DeliveryProof proof = deliveryProofRepository.findByOrder_Id(order.getId()).orElse(null);
+        String proofValue = resolveProofValue(proof);
 
         // 지연 로딩인 assignedRider.member 접근이 여기서 끝나야 한다(OSIV off, 트랜잭션 경계는 이 메서드).
-        return DeliveryDetailResponse.from(order, fare, proof);
+        return DeliveryDetailResponse.from(order, fare, proof, proofValue);
+    }
+
+    /**
+     * proofType=PHOTO 면 delivery_proof.proof_value 에 저장된 건 업로드 키일 뿐이라, 응답에는
+     * {@link RiderDeliveryProofStorage}가 해석한 실제 저장 경로(로컬 절대경로 / S3 객체 URL)를
+     * 담는다. 그 외 타입은 등록값 자체가 이미 최종 표시값이라 그대로 쓴다.
+     */
+    private String resolveProofValue(DeliveryProof proof) {
+        if (proof == null) {
+            return null;
+        }
+        if (proof.getProofType() == ProofType.PHOTO) {
+            return riderDeliveryProofStorage.resolvePath(proof.getProofValue());
+        }
+        return proof.getProofValue();
     }
 
     /**
