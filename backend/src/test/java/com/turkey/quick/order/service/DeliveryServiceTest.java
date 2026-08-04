@@ -16,6 +16,7 @@ import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.AddressRequest;
 import com.turkey.quick.order.dto.ContactRequest;
 import com.turkey.quick.order.dto.DeliveryCreateRequest;
+import com.turkey.quick.order.dto.DeliveryCreatedEvent;
 import com.turkey.quick.order.dto.DeliveryCreateResponse;
 import com.turkey.quick.order.dto.FareQuoteRequest;
 import com.turkey.quick.order.dto.FareQuoteResponse;
@@ -27,9 +28,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 
 import java.math.BigDecimal;
@@ -66,6 +69,9 @@ class DeliveryServiceTest {
 
     @Mock
     private CustomerPaymentService customerPaymentService;
+
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     //  픽스 데이터를 상수로 분리
     private static final AddressRequest YANGJAE_STATION = new AddressRequest(
@@ -199,6 +205,16 @@ class DeliveryServiceTest {
             // 차감 금액은 요청값이 아니라 서버 계산값이다. 요청 멱등키를 원장 키로 그대로 넘긴다.
             verify(customerPaymentService).payForOrder(
                     eq(CUSTOMER_ID), any(DeliveryOrder.class), eq(fare), eq(REQUEST_KEY));
+
+            // 커밋 후 GEO 등록(location.service.DeliveryLocationEventListener)을 위한 이벤트가
+            // 저장된 주문의 픽업 좌표 그대로 발행된다.
+            ArgumentCaptor<DeliveryCreatedEvent> eventCaptor =
+                    ArgumentCaptor.forClass(DeliveryCreatedEvent.class);
+            verify(eventPublisher).publishEvent(eventCaptor.capture());
+            assertThat(eventCaptor.getValue().pickupLatitude())
+                    .isEqualByComparingTo(YANGJAE_STATION.latitude());
+            assertThat(eventCaptor.getValue().pickupLongitude())
+                    .isEqualByComparingTo(YANGJAE_STATION.longitude());
         }
 
         @Test
@@ -216,6 +232,7 @@ class DeliveryServiceTest {
             // 사용자가 동의하지 않은 금액이 빠져나가지 않는다 — 저장 경로 자체를 타지 않는다
             verify(deliveryOrderRepository, never()).saveAndFlush(any());
             verifyNoInteractions(customerPaymentService);
+            verifyNoInteractions(eventPublisher);
         }
 
         @Test
@@ -245,6 +262,7 @@ class DeliveryServiceTest {
             verify(deliveryOrderRepository, never()).saveAndFlush(any());
             verifyNoInteractions(customerPaymentService);
             verifyNoInteractions(farePolicyRepository);
+            verifyNoInteractions(eventPublisher);
         }
     }
 

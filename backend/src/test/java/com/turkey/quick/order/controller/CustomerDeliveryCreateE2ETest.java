@@ -7,6 +7,7 @@ import com.turkey.quick.common.response.ApiResponse;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
 import com.turkey.quick.member.repository.MemberRepository;
+import com.turkey.quick.location.repository.OrderGeoRepository;
 import com.turkey.quick.order.domain.FarePolicy;
 import com.turkey.quick.order.domain.ItemType;
 import com.turkey.quick.order.repository.FarePolicyRepository;
@@ -18,6 +19,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import org.assertj.core.api.InstanceOfAssertFactories;
+import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -101,6 +103,9 @@ class CustomerDeliveryCreateE2ETest extends IntegrationTestSupport {
 
     @Autowired
     private PlatformTransactionManager transactionManager;
+
+    @Autowired
+    private OrderGeoRepository orderGeoRepository;
 
     @TestConfiguration
     static class FakeInfraConfig {
@@ -222,11 +227,19 @@ class CustomerDeliveryCreateE2ETest extends IntegrationTestSupport {
                 withCookie(cookie, createBody(requestKey, fare)), ApiResponse.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        Map<?, ?> data = (Map<?, ?>) response.getBody().data();
         assertThat(response.getBody().data())
                 .asInstanceOf(InstanceOfAssertFactories.MAP)
                 .containsEntry("status", "WAITING")
                 .containsEntry("requestKey", requestKey);
         assertThat(balanceOf("e2e_order01")).isEqualTo(50_000L - fare);
+
+        // 커밋 후 DeliveryLocationEventListener 가 실제로 픽업 좌표를 GEO 에 등록했는지 —
+        // 단위 테스트는 트랜잭션 경계를 넘는 이 동작을 증명할 수 없어 여기서만 확인한다.
+        Long deliveryId = ((Number) data.get("deliveryId")).longValue();
+        var pickupPoint = orderGeoRepository.findPosition(deliveryId).orElseThrow();
+        assertThat(pickupPoint.getY()).isCloseTo((Double) PICKUP.get("latitude"), Offset.offset(0.0001));
+        assertThat(pickupPoint.getX()).isCloseTo((Double) PICKUP.get("longitude"), Offset.offset(0.0001));
     }
 
     @Test
