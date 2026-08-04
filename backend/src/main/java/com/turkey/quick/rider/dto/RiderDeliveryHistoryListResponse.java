@@ -4,10 +4,11 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 
 /**
- * 라이더 운행 기록 목록(페이지) + 주간 수입 요약.
+ * 라이더 운행 기록 목록(페이지).
  *
- * 화면 상단의 주간 총수입을 별도 API 로 나누지 않고 같은 응답에 넣는다 — 항상 함께 그려지고,
- * 두 번 호출하면 페이지 이동 중 두 값의 기준 시점이 어긋난다.
+ * <p>정산 합계·수입 요약은 담지 않는다 — 금액 정보는 포인트 화면(/api/rider/points/*)으로
+ * 분리했다(배송 기록·포인트 화면 분리). 이 응답은 순수 배송 기록만 다룬다.
+ * Spring 의 Page 를 그대로 노출하지 않는 이유는 {@code DeliveryListResponse} 와 같다.
  */
 @Schema(description = "라이더 운행 기록 목록(페이지)")
 public record RiderDeliveryHistoryListResponse(
@@ -22,9 +23,6 @@ public record RiderDeliveryHistoryListResponse(
         int size,
 
         @Schema(description = "전체 건수", example = "128")
-        long totalElements,
-
-        @Schema(description = "이번 주 정산 합계(원)", example = "184000")
-        long weeklySettlementTotal
+        long totalElements
 ) {
 }
