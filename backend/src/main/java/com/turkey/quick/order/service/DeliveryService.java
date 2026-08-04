@@ -14,6 +14,7 @@ import com.turkey.quick.order.domain.ItemTypeSurcharge;
 import com.turkey.quick.order.domain.OrderFareSnapshot;
 import com.turkey.quick.order.dto.AddressRequest;
 import com.turkey.quick.order.dto.DeliveryCreateRequest;
+import com.turkey.quick.order.dto.DeliveryCreatedEvent;
 import com.turkey.quick.order.dto.DeliveryCreateResponse;
 import com.turkey.quick.order.dto.FareBreakdownResponse;
 import com.turkey.quick.order.dto.FareQuoteRequest;
@@ -25,6 +26,7 @@ import com.turkey.quick.payment.service.CustomerPaymentService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -59,6 +61,8 @@ public class DeliveryService {
      * 엔터티({@code PointTransaction.deliveryOrder} 등)까지이고 서비스는 참조하지 않는다.
      */
     private final CustomerPaymentService customerPaymentService;
+
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * 요금 견적. 활성 정책(fare_policy)과 좌표만으로 계산하며 주문·스냅샷은 만들지 않는다.
@@ -201,6 +205,11 @@ public class DeliveryService {
         // ⑤ 포인트 차감 + ORDER_USE 원장. 실패하면 위 주문·스냅샷까지 함께 롤백된다.
         long balanceAfter = customerPaymentService.payForOrder(
                 customerId, saved, fare.totalFare(), request.requestKey());
+
+        // 커밋 후 픽업 좌표를 GEO 후보로 등록한다(location.service.DeliveryLocationEventListener).
+        // AFTER_COMMIT 이라 이후 단계(스냅샷·포인트 차감)가 실패해 롤백되면 이 이벤트도 발행되지 않는다.
+        eventPublisher.publishEvent(new DeliveryCreatedEvent(
+                saved.getId(), saved.getPickup().getLatitude(), saved.getPickup().getLongitude()));
 
         log.info("[배송요청-생성] deliveryId={}, customerId={}, totalFare={}, balanceAfter={}",
                 saved.getId(), customerId, fare.totalFare(), balanceAfter);
