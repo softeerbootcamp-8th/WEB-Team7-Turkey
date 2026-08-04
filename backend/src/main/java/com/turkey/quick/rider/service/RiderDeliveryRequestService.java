@@ -1,7 +1,6 @@
 package com.turkey.quick.rider.service;
 
 import com.turkey.quick.common.exception.BusinessException;
-import com.turkey.quick.location.repository.RiderGeoRepository;
 import com.turkey.quick.order.domain.Address;
 import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.FareType;
@@ -31,7 +30,6 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.geo.Point;
 import org.springframework.http.HttpStatus;
@@ -42,7 +40,6 @@ import org.springframework.transaction.annotation.Transactional;
  * 라이더 콜(배차 대기 배송요청) 목록 조회(#55). 수락·상세·넘기기(#56/#57)는 이 서비스가 아니라
  * 각 이슈에서 추가한다.
  */
-@Slf4j
 @RequiredArgsConstructor
 @Service
 public class RiderDeliveryRequestService {
@@ -51,7 +48,6 @@ public class RiderDeliveryRequestService {
 
     private final DeliveryOrderRepository deliveryOrderRepository;
     private final OrderFareSnapshotRepository orderFareSnapshotRepository;
-    private final RiderGeoRepository riderGeoRepository;
     private final RiderProfileRepository riderProfileRepository;
     private final DeliveryService deliveryService;
 
@@ -68,8 +64,11 @@ public class RiderDeliveryRequestService {
      *       {@link OrderFareSnapshot})을 한 번에 조회해 orderId로 매핑해 둔다 — 배송요청 개수만큼
      *       따로 조회하지 않기 위해서다(N+1 방지). 스냅샷이 없는 배송요청이 있으면 데이터 정합성
      *       오류로 보고 예외를 던진다(정상 생성된 주문은 스냅샷이 항상 함께 있어야 한다).</li>
-     *   <li>라이더의 최신 위치를 Redis({@code riders:geo})에서 조회한다. 위치는 없을 수도 있다
-     *       (라이더가 아직 위치를 전송한 적이 없거나, 위치 전송 기능 자체가 아직 없는 경우).</li>
+     *   <li>라이더 좌표는 <b>현재 알 수 없다</b>(항상 {@code Optional.empty()}). 예전에는 Redis
+     *       ({@code riders:geo})에서 라이더 위치를 읽었지만, 배차 위치 검색을 라이더가 아니라 주문
+     *       픽업지 인덱싱으로 뒤집으면서(#101 미구현) 라이더-측 GEO 사용처를 제거했다(#342, 디스커션
+     *       #338). 좌표를 검색 요청 파라미터로 받는 계약 변경은 별도 이슈(주문 GEOSEARCH 개편)에서
+     *       다룬다. 그때까지는 위치 없음으로 아래처럼 degrade 한다.</li>
      *   <li>배송요청마다 응답 한 줄(summary, {@link RiderDeliveryRequestSummaryResponse})로
      *       변환한다. 라이더 위치를 알면 라이더→픽업지 거리를 계산해 채우고, 모르면 거리 필드는
      *       {@code null}로 남긴다.</li>
@@ -101,7 +100,9 @@ public class RiderDeliveryRequestService {
         }
 
         Map<Long, OrderFareSnapshot> estimateByOrderId = loadEstimateSnapshots(waitingOrders);
-        Optional<Point> riderPosition = riderGeoRepository.findPosition(rider.memberId());
+        // 라이더-측 GEO 사용처 제거(#342, 디스커션 #338) — 좌표 소스가 요청 파라미터로 이동하기
+        // 전까지 위치 없음으로 degrade 한다: 거리 null, 반경 필터 스킵, DISTANCE 정렬은 REQUESTED_AT 로.
+        Optional<Point> riderPosition = Optional.empty();
 
         List<RiderDeliveryRequestSummaryResponse> summaries = waitingOrders.stream()
                 .map(order -> toSummary(order, estimateSnapshotOf(order, estimateByOrderId), riderPosition))
@@ -216,15 +217,10 @@ public class RiderDeliveryRequestService {
                     "라이더가 이미 다른 배송을 수행 중이라 배차를 확정할 수 없습니다.");
         }
 
-        // 배차 확정 = 즉시 BUSY이므로 다음 위치 전송(#83)을 기다리지 않고 바로 후보에서 뺀다 —
-        // 그 사이 창에 다른 고객의 배차 요청이 이 라이더를 후보로 잡는 걸 막기 위해서다. Redis
-        // 실패는 DB 트랜잭션(이미 커밋 확정된 배차)을 되돌릴 이유가 아니므로 로깅만 한다.
-        try {
-            riderGeoRepository.remove(rider.memberId());
-        } catch (RuntimeException e) {
-            log.warn("event=GEO_CANDIDATE_SYNC_FAILED riderId={} reason=ACCEPT_DELIVERY", rider.memberId(), e);
-        }
-
+        // 예전에는 배차 확정 직후 라이더를 GEO 배차 후보({@code riders:geo})에서 뺐지만, 라이더-측
+        // GEO 사용처를 전부 제거하면서(#342, 디스커션 #338) 그 정리도 사라졌다 — 라이더를 GEO 에
+        // 넣는 곳 자체가 없으므로 뺄 것도 없다. 배차 후보 자격은 라이더 operating_status(BUSY 로
+        // 방금 전이됨)로만 판정된다.
         DeliveryOrder assigned = deliveryOrderRepository.findById(deliveryId)
                 .orElseThrow(() -> new IllegalStateException(
                         "방금 배차 확정한 주문을 다시 조회할 수 없습니다. orderId=" + deliveryId));

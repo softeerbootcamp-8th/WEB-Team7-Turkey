@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anySet;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
@@ -13,7 +12,6 @@ import static org.mockito.Mockito.never;
 
 import com.turkey.quick.common.exception.BusinessException;
 import com.turkey.quick.location.dto.LocationPayload;
-import com.turkey.quick.location.repository.RiderGeoRepository;
 import com.turkey.quick.location.repository.RiderLocationRepository;
 import com.turkey.quick.location.sse.TrackingPublisher;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
@@ -26,13 +24,17 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 
 /**
- * 운행 상태가 하는 일을 가른다: AVAILABLE 은 GEO 배차 후보만, BUSY 는 최신 위치 저장 + 추적 발행.
+ * 위치 스트리밍·저장은 <b>BUSY 전용</b>이다(디스커션 #338, #342). BUSY 만 최신 위치를 저장하고
+ * 수행 중 배송 채널로 발행하며, 그 밖의 상태(AVAILABLE·UNAVAILABLE)는 409 로 거부한다 — 라이더-측
+ * GEO 사용처를 제거하면서 AVAILABLE 이 위치를 저장·발행할 이유가 사라졌다.
  *
  * <p><b>배송 식별자를 요청에서 받지 않는다</b>는 것이 이 서비스의 핵심이라, "DB 로 풀어낸 배송으로만
  * 발행한다"를 여러 각도로 고정한다.
@@ -54,9 +56,6 @@ class RiderLocationServiceTest {
     private DeliveryOrderRepository deliveryOrderRepository;
 
     @Mock
-    private RiderGeoRepository riderGeoRepository;
-
-    @Mock
     private RiderLocationRepository riderLocationRepository;
 
     @Mock
@@ -69,42 +68,6 @@ class RiderLocationServiceTest {
     private void givenInProgressDelivery() {
         given(deliveryOrderRepository.findInProgressIdByActiveRiderId(RIDER_ID))
                 .willReturn(Optional.of(DELIVERY_ID));
-    }
-
-    @Nested
-    @DisplayName("AVAILABLE")
-    class Available {
-
-        @Test
-        @DisplayName("GEO 배차 후보로 등록·갱신한다")
-        void registersGeoCandidate() {
-            service.update(rider(OperatingStatus.AVAILABLE), LOCATION);
-
-            then(riderGeoRepository).should()
-                    .registerOrUpdate(RIDER_ID, LOCATION.latitude(), LOCATION.longitude());
-            then(riderGeoRepository).should(never()).remove(RIDER_ID);
-        }
-
-        @Test
-        @DisplayName("최신 위치를 저장하지 않는다")
-        void doesNotSaveLatestLocation() {
-            // else 분기에 얹으면 허용 상태가 하나 늘었을 때 조용히 저장되기 시작하므로 명시적으로
-            // BUSY 만 저장한다. 서버측 필터(#82)를 되살리면 기준선이 필요해져 이 단언이 바뀐다.
-            service.update(rider(OperatingStatus.AVAILABLE), LOCATION);
-
-            then(riderLocationRepository).should(never()).saveIfNewer(eq(RIDER_ID), any());
-        }
-
-        @Test
-        @DisplayName("배송을 조회하지도, 발행하지도 않는다")
-        void neitherLooksUpDeliveryNorPublishes() {
-            // 배송을 맡지 않은 라이더를 추적하는 고객은 존재할 수 없다. 조회 자체를 하지 않는 것이
-            // 위치 갱신 핫패스에서 불필요한 MySQL 왕복을 없앤다.
-            service.update(rider(OperatingStatus.AVAILABLE), LOCATION);
-
-            then(deliveryOrderRepository).should(never()).findInProgressIdByActiveRiderId(anyLong());
-            then(trackingPublisher).should(never()).publish(anyLong(), any());
-        }
     }
 
     @Nested
@@ -140,18 +103,6 @@ class RiderLocationServiceTest {
         }
 
         @Test
-        @DisplayName("GEO 배차 후보에서 뺀다")
-        void removesGeoCandidate() {
-            givenInProgressDelivery();
-
-            service.update(rider(OperatingStatus.BUSY), LOCATION);
-
-            then(riderGeoRepository).should().remove(RIDER_ID);
-            then(riderGeoRepository).should(never())
-                    .registerOrUpdate(anyLong(), any(), any());
-        }
-
-        @Test
         @DisplayName("최신 위치를 저장한다")
         void savesLatestLocation() {
             givenInProgressDelivery();
@@ -181,9 +132,10 @@ class RiderLocationServiceTest {
     class FailureIsolation {
 
         @Test
-        @DisplayName("Redis 반영이 실패해도 발행은 계속된다")
-        void publishesEvenWhenRedisSyncFails() {
-            willThrow(new RuntimeException("redis down")).given(riderGeoRepository).remove(RIDER_ID);
+        @DisplayName("최신 위치 저장(Redis)이 실패해도 발행은 계속된다")
+        void publishesEvenWhenRedisSaveFails() {
+            willThrow(new RuntimeException("redis down"))
+                    .given(riderLocationRepository).saveIfNewer(RIDER_ID, LOCATION);
             givenInProgressDelivery();
 
             service.update(rider(OperatingStatus.BUSY), LOCATION);
@@ -194,8 +146,8 @@ class RiderLocationServiceTest {
         @Test
         @DisplayName("배송 조회(MySQL)가 실패해도 위치 갱신은 성공한다")
         void survivesDatabaseFailure() {
-            // 이 경로에 MySQL 의존이 새로 생겼다. DB 장애가 배차 후보 갱신(#83)과 최신 위치 저장까지
-            // 같이 죽이면 안 된다 — 전달은 at-most-once 이고 다음 전송(5초)이 복구한다.
+            // 이 경로에 MySQL 의존이 있다. DB 장애가 최신 위치 저장까지 같이 죽이면 안 된다 —
+            // 전달은 at-most-once 이고 다음 전송(5초)이 복구한다.
             willThrow(new RuntimeException("mysql down")).given(deliveryOrderRepository)
                     .findInProgressIdByActiveRiderId(RIDER_ID);
 
@@ -207,16 +159,17 @@ class RiderLocationServiceTest {
         }
     }
 
-    @Test
-    @DisplayName("UNAVAILABLE 이면 409 로 거부하고 아무것도 건드리지 않는다")
-    void rejectsUnavailableRider() {
-        assertThatThrownBy(() -> service.update(rider(OperatingStatus.UNAVAILABLE), LOCATION))
+    @ParameterizedTest
+    @EnumSource(value = OperatingStatus.class, names = {"AVAILABLE", "UNAVAILABLE"})
+    @DisplayName("BUSY 가 아니면 409 로 거부하고 아무것도 건드리지 않는다")
+    void rejectsNonBusyRider(OperatingStatus status) {
+        assertThatThrownBy(() -> service.update(rider(status), LOCATION))
                 .isInstanceOf(BusinessException.class)
-                .hasMessage("운행 중이 아닙니다.")
+                .hasMessage("배송 수행 중(BUSY)이 아닙니다.")
                 .extracting(e -> ((BusinessException) e).getStatus())
                 .isEqualTo(HttpStatus.CONFLICT);
 
-        then(riderGeoRepository).shouldHaveNoInteractions();
+        then(deliveryOrderRepository).shouldHaveNoInteractions();
         then(riderLocationRepository).shouldHaveNoInteractions();
         then(trackingPublisher).shouldHaveNoInteractions();
     }

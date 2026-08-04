@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.turkey.quick.common.exception.BusinessException;
-import com.turkey.quick.location.repository.RiderGeoRepository;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
 import com.turkey.quick.member.repository.MemberRepository;
@@ -13,7 +12,6 @@ import com.turkey.quick.rider.domain.RiderProfile;
 import com.turkey.quick.rider.dto.RiderOperatingAction;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
-import java.math.BigDecimal;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,8 +23,9 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * 운행 상태 변경(#54) 통합 테스트. 상태 전이가 실제 MySQL 에 영속되는지(재조회 유지), BUSY 거부 시
- * 롤백되는지, 운행 종료가 실제 Redis 의 최신 위치를 지우는지를 검증한다.
+ * 운행 상태 변경(#54) 통합 테스트. 상태 전이가 실제 MySQL 에 영속되는지(재조회 유지)와 BUSY 거부 시
+ * 롤백되는지를 검증한다. 운행 종료 시 GEO 배차 후보 정리는 라이더-측 GEO 사용처 제거(#342)로 사라져
+ * 더는 검증 대상이 아니다.
  */
 @SpringBootTest(properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")
@@ -42,9 +41,6 @@ class RiderOperatingStatusChangeServiceIntegrationTest extends IntegrationTestSu
 
     @Autowired
     private RiderProfileRepository riderProfileRepository;
-
-    @Autowired
-    private RiderGeoRepository riderGeoRepository;
 
     @Autowired
     private PlatformTransactionManager transactionManager;
@@ -80,16 +76,13 @@ class RiderOperatingStatusChangeServiceIntegrationTest extends IntegrationTestSu
     }
 
     @Test
-    @DisplayName("운행 종료 시 UNAVAILABLE 로 영속되고 Redis 의 최신 위치가 삭제된다")
-    void goOfflinePersistsAndDeletesLocation() {
+    @DisplayName("운행 종료 시 UNAVAILABLE 로 영속된다")
+    void goOfflinePersists() {
         Long riderId = saveRider("int_go_offline", "01000000102", OperatingStatus.AVAILABLE);
-        riderGeoRepository.registerOrUpdate(riderId, new BigDecimal("37.5000000"), new BigDecimal("127.0000000"));
-        assertThat(riderGeoRepository.findPosition(riderId)).isPresent();
 
         service.changeOperatingStatus(riderId, RiderOperatingAction.GO_OFFLINE);
 
         assertThat(reloadStatus(riderId)).isEqualTo(OperatingStatus.UNAVAILABLE);
-        assertThat(riderGeoRepository.findPosition(riderId)).isEmpty(); // 배차 후보에서 즉시 제외
     }
 
     @Test
