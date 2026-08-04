@@ -28,6 +28,7 @@ public class CustomerTrackingStreamController implements CustomerTrackingStreamA
         SseEmitter emitter = new SseEmitter(TTL_MILLIS);
 
         registry.add(deliveryId, emitter);
+        //객체에 콜백함수를 등록해주는거고 실제실행은 비동기처리 메커니즘이 함.
         emitter.onCompletion(() -> registry.remove(deliveryId, emitter));
         emitter.onTimeout(() -> registry.remove(deliveryId, emitter));
         emitter.onError(throwable -> registry.remove(deliveryId, emitter));
@@ -36,6 +37,7 @@ public class CustomerTrackingStreamController implements CustomerTrackingStreamA
         // 스프링이 응답을 커밋한 적이 없다고 보고 그제서야 503을 처음이자 마지막 응답으로
         // 내보낸다 — 그래서 등록 직후 한 번은 반드시 써서 응답을 실제로 열어야 한다.
         try {
+            // 응답하나를 고객에게 줌으로서 HTTP 응답이 커밋됐음을 확정 짓는것임.
             emitter.send(SseEmitter.event().comment("connected"));
         } catch (IOException e) {
             log.debug("event=SSE_INITIAL_SEND_FAILED deliveryId={}", deliveryId, e);
