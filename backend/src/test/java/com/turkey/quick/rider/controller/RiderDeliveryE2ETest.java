@@ -33,10 +33,13 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = "spring.autoconfigure.exclude=")
@@ -196,9 +199,18 @@ class RiderDeliveryE2ETest extends IntegrationTestSupport {
     void shouldRejectCompletionWithoutProof() {
         Fixture fixture = saveAssignedOrder("e2e_rider_62_b", "01062100002");
         String cookie = loginAndGetSessionCookie(fixture.loginId(), "p@ssw0rd");
+        // DELIVERING까지 전이시켜야 한다 — 아니면 상태 검증(409)이 인증정보 검증(400)보다 먼저 걸린다.
+        transition(cookie, fixture.orderId(), "START_MOVING_TO_PICKUP");
+        transition(cookie, fixture.orderId(), "PICK_UP");
+        transition(cookie, fixture.orderId(), "START_DELIVERING");
+
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("proofType", "PHOTO");
+        // file 도 proofValue 도 안 보낸다 — RiderDeliveryService.resolveProofValue 가
+        // 둘 다 없으면 400 으로 거부한다.
 
         var response = rest.exchange(completeEndpoint(fixture.orderId()), HttpMethod.POST,
-                new HttpEntity<>(Map.of(), cookieHeaders(cookie)), ApiResponse.class);
+                multipartRequest(body, cookie), ApiResponse.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
@@ -264,10 +276,23 @@ class RiderDeliveryE2ETest extends IntegrationTestSupport {
         return new HttpEntity<>(Map.of("action", action), cookieHeaders(cookie));
     }
 
-    private HttpEntity<Map<String, String>> completeRequest(String cookie) {
-        return new HttpEntity<>(Map.of(
-                "proofType", "PHOTO",
-                "proofValue", "proof/e2e-62.jpg"), cookieHeaders(cookie));
+    private HttpEntity<MultiValueMap<String, Object>> completeRequest(String cookie) {
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("proofType", "PHOTO");
+        body.add("proofValue", "proof/e2e-62.jpg");
+        return multipartRequest(body, cookie);
+    }
+
+    /**
+     * 완료 API 가 multipart/form-data 를 받는다(#61 후속 — 서버가 인증 사진 파일을 직접 받음).
+     * {@code TestRestTemplate} 은 본문이 {@link MultiValueMap} 이면 {@code FormHttpMessageConverter}
+     * 가 자동으로 multipart 로 직렬화하므로, Content-Type 을 명시적으로 고정해 그 경로를 탄다.
+     */
+    private HttpEntity<MultiValueMap<String, Object>> multipartRequest(
+            MultiValueMap<String, Object> body, String cookie) {
+        HttpHeaders headers = cookieHeaders(cookie);
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        return new HttpEntity<>(body, headers);
     }
 
     private HttpHeaders cookieHeaders(String cookie) {

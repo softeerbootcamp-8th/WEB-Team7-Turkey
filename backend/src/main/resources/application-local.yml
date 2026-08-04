@@ -29,3 +29,5 @@ app:
 logging:
   level:
     com.turkey.quick: DEBUG
+
+
