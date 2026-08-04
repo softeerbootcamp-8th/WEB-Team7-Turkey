@@ -4,6 +4,7 @@ import com.turkey.quick.common.response.ApiResponse;
 import com.turkey.quick.customer.auth.AuthenticatedCustomer;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.*;
+import com.turkey.quick.order.service.DeliveryDetailQueryService;
 import com.turkey.quick.order.service.DeliveryService;
 import com.turkey.quick.order.service.DeliveryTrackingQueryService;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +19,7 @@ public class CustomerDeliveryController implements CustomerDeliveryApi {
 
     private final DeliveryService deliveryService;
     private final DeliveryTrackingQueryService deliveryTrackingQueryService;
+    private final DeliveryDetailQueryService deliveryDetailQueryService;
 
     @Override
     public ApiResponse<FareQuoteResponse> quoteFare(FareQuoteRequest request) {
@@ -42,8 +44,8 @@ public class CustomerDeliveryController implements CustomerDeliveryApi {
     }
 
     @Override
-    public ApiResponse<DeliveryDetailResponse> getDelivery(Long deliveryId) {
-        return null;
+    public ApiResponse<DeliveryDetailResponse> getDelivery(Long deliveryId, AuthenticatedCustomer customer) {
+        return ApiResponse.ok(deliveryDetailQueryService.getDetail(deliveryId, customer.memberId()));
     }
 
     @Override
