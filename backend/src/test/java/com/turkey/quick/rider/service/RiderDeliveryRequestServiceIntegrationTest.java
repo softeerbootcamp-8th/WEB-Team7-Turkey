@@ -18,6 +18,8 @@ import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.order.repository.FarePolicyRepository;
 import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
+import com.turkey.quick.payment.domain.PointWallet;
+import com.turkey.quick.payment.repository.PointWalletRepository;
 import com.turkey.quick.rider.auth.AuthenticatedRider;
 import com.turkey.quick.rider.domain.OperatingStatus;
 import com.turkey.quick.rider.domain.RiderProfile;
@@ -28,6 +30,7 @@ import com.turkey.quick.rider.repository.RiderProfileRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -40,6 +43,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -75,6 +79,12 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
 
     @Autowired
     private PlatformTransactionManager transactionManager;
+
+    @Autowired
+    private PointWalletRepository pointWalletRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     private Member rider;
     private FarePolicy farePolicy;
@@ -126,6 +136,46 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         orderFareSnapshotRepository.save(
                 OrderFareSnapshot.create(saved, farePolicy, FareType.ESTIMATE, "v1", 1000, 3000L, 130L, 0L));
         return saved;
+    }
+
+    /** OrderFareSnapshot.create(..., 3000L, 130L, 0L) 의 합 — 아래 픽스처와 테스트 기대값이 함께 참조한다. */
+    private static final long WALLET_FIXTURE_FARE = 3_130L;
+
+    /**
+     * #42 만료 정리 검증용 — 환급이 지갑을 필요로 하므로, 지갑까지 갖춘 주문을 만든다.
+     *
+     * <p>이 헬퍼는 {@code DeliveryService.createDelivery} 를 거치지 않고 주문을 직접 만들기 때문에
+     * 실제 차감이 일어나지 않는다. 그래서 지갑을 {@code balance} 에 미리 {@link #WALLET_FIXTURE_FARE}
+     * 만큼 차감된 상태({@code balance - WALLET_FIXTURE_FARE})로 만들어 둔다 — "이미 이 주문 요금을
+     * 지불한 상태"를 흉내내는 것이다. 환급 후 잔액이 정확히 {@code balance} 로 돌아오는지가 검증 대상이다.
+     */
+    private DeliveryOrder saveWaitingOrderWithWallet(BigDecimal pickupLat, BigDecimal pickupLon, long balance) {
+        return new TransactionTemplate(transactionManager).execute(status -> {
+            String uniqueSuffix = String.valueOf(System.nanoTime() % 100_000_000L);
+            Member customer = memberRepository.save(
+                    Member.create("integration_wallet_customer_" + uniqueSuffix, "hash", "고객",
+                            "010" + uniqueSuffix, MemberRole.CUSTOMER));
+            PointWallet wallet = PointWallet.create(customer);
+            wallet.credit(balance);
+            wallet.debit(WALLET_FIXTURE_FARE);
+            pointWalletRepository.save(wallet);
+
+            DeliveryOrder order = DeliveryOrder.request(customer, "req-" + System.nanoTime(),
+                    ItemType.SMALL_PARCEL, 1000,
+                    Address.of("픽업지 도로명", "상세", "12345", pickupLat, pickupLon),
+                    Address.of("도착지 도로명", "상세", "54321",
+                            new BigDecimal("37.6000000"), new BigDecimal("127.1000000")),
+                    Contact.of("보내는사람", "01011112222"), Contact.of("받는사람", "01033334444"));
+            DeliveryOrder saved = deliveryOrderRepository.save(order);
+            orderFareSnapshotRepository.save(
+                    OrderFareSnapshot.create(saved, farePolicy, FareType.ESTIMATE, "v1", 1000, 3000L, 130L, 0L));
+            return saved;
+        });
+    }
+
+    private void backdateRequestedAt(Long orderId, LocalDateTime requestedAt) {
+        jdbcTemplate.update("UPDATE delivery_order SET requested_at = ? WHERE order_id = ?",
+                requestedAt, orderId);
     }
 
     @Test
@@ -346,5 +396,27 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         assertThat(assignedCount).isEqualTo(1);
         assertThat(riderProfileRepository.findById(rider.getId()).orElseThrow().getOperatingStatus())
                 .isEqualTo(OperatingStatus.BUSY);
+    }
+
+    @Test
+    @DisplayName("[#42] 배차 대기 타임아웃을 넘긴 주문은 수락 시도만으로 취소·환급되고 409를 받는다")
+    void shouldCancelAndRefundExpiredOrderOnAcceptAttempt() {
+        DeliveryOrder order = saveWaitingOrderWithWallet(
+                new BigDecimal("37.5010000"), new BigDecimal("127.0010000"), 50_000L);
+        backdateRequestedAt(order.getId(), LocalDateTime.now(ZoneOffset.UTC).minusMinutes(10));
+
+        assertThatThrownBy(() -> riderDeliveryRequestService.acceptDeliveryRequest(
+                authenticatedRider(OperatingStatus.AVAILABLE), order.getId()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("취소")
+                .satisfies(e -> assertThat(((BusinessException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT));
+
+        DeliveryOrder persisted = deliveryOrderRepository.findById(order.getId()).orElseThrow();
+        assertThat(persisted.getStatus()).isEqualTo(OrderStatus.CANCELED);
+        // 스캐너가 아직 안 돌았어도, 수락 시도 자체가 만료 정리를 트리거해 전액 환급까지 끝나 있어야 한다
+        assertThat(pointWalletRepository.findByMemberId(order.getCustomer().getId()).orElseThrow().getBalance())
+                .isEqualTo(50_000L);
+        RiderProfile persistedProfile = riderProfileRepository.findById(rider.getId()).orElseThrow();
+        assertThat(persistedProfile.getOperatingStatus()).isEqualTo(OperatingStatus.AVAILABLE);
     }
 }
