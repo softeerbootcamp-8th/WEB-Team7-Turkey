@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { useGetDeliveries } from '@/api/generated/customer-delivery/customer-delivery'
 import type { DeliverySummaryResponse } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
-import { getCustomerDeliveryStatusLabel, isActiveDeliveryStatus } from '@/shared/delivery/status'
+import { getCustomerDeliveryStatusLabel, isTrackableDeliveryStatus } from '@/shared/delivery/status'
 import {
   formatDeliveryFare,
   formatDeliveryRequestedAt,
@@ -154,7 +154,7 @@ function DeliveryCard({ delivery, emphasize }: { delivery: DeliverySummaryRespon
   const detailLink = hasId
     ? { to: '/customer/deliveries/$deliveryId' as const, params: { deliveryId: String(delivery.deliveryId) } }
     : null
-  const trackingLink = hasId && isActiveDeliveryStatus(delivery.status)
+  const trackingLink = hasId && isTrackableDeliveryStatus(delivery.status)
     ? { to: '/customer/deliveries/$deliveryId/tracking' as const, params: { deliveryId: String(delivery.deliveryId) } }
     : null
 

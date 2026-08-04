@@ -9,21 +9,13 @@ import type {
   DeliveryStatusStepResponseStatus,
   DeliveryTrackingResponseStatus,
 } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
-import { getCustomerDeliveryStatusLabel } from '@/shared/delivery/status'
+import { getCustomerDeliveryStatusLabel, isTrackableDeliveryStatus } from '@/shared/delivery/status'
 import { useTrackingStream, type TrackingConnectionStatus } from '@/shared/hooks/useTrackingStream'
 import { TrackingMap } from './-components/TrackingMap'
 
 export const Route = createFileRoute('/customer/_authed/deliveries/$deliveryId/tracking')({
   component: DeliveryTracking,
 })
-
-/** 배차 이후 ~ 완료 이전 — 이 구간에서만 SSE 구독이 허용된다(#291, DeliveryTrackingAccessService). */
-const TRACKABLE_STATUSES: ReadonlySet<DeliveryTrackingResponseStatus> = new Set([
-  'ASSIGNED',
-  'MOVING_TO_PICKUP',
-  'PICKED_UP',
-  'DELIVERING',
-])
 
 const STEP_ORDER: DeliveryStatusStepResponseStatus[] = [
   'ASSIGNED',
@@ -78,7 +70,7 @@ function DeliveryTracking() {
   // 언랩하고, 우리 도메인 봉투(success/data/message)는 훅을 쓰는 쪽이 직접 벗겨야 한다
   // (shared/auth/session.ts와 같은 관례).
   const status = trackingQuery.data?.data?.status
-  const isTrackable = status != null && TRACKABLE_STATUSES.has(status)
+  const isTrackable = isTrackableDeliveryStatus(status)
   const { status: streamStatus, location } = useTrackingStream(deliveryId, isTrackable)
 
   if (trackingQuery.isLoading) {

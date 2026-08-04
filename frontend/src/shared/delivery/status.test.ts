@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { getCustomerDeliveryStatusLabel, isActiveDeliveryStatus } from './status'
+import {
+  getCustomerDeliveryStatusLabel,
+  isActiveDeliveryStatus,
+  isTrackableDeliveryStatus,
+} from './status'
 
 describe('customer delivery status', () => {
   it.each([
@@ -25,5 +29,12 @@ describe('customer delivery status', () => {
     expect(isActiveDeliveryStatus('COMPLETED')).toBe(false)
     expect(isActiveDeliveryStatus('CANCELED')).toBe(false)
     expect(isActiveDeliveryStatus('UNKNOWN')).toBe(false)
+  })
+
+  it('배차 이후 상태만 실시간 추적할 수 있다', () => {
+    expect(isTrackableDeliveryStatus('WAITING')).toBe(false)
+    expect(isTrackableDeliveryStatus('ASSIGNED')).toBe(true)
+    expect(isTrackableDeliveryStatus('DELIVERING')).toBe(true)
+    expect(isTrackableDeliveryStatus('COMPLETED')).toBe(false)
   })
 })

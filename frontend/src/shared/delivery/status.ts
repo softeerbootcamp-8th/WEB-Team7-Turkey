@@ -18,6 +18,14 @@ export const ACTIVE_DELIVERY_STATUSES: ReadonlySet<string> = new Set([
   'DELIVERING',
 ])
 
+/** 백엔드 추적 스냅샷·SSE가 허용하는 배차 이후 ~ 완료 전 상태. */
+export const TRACKABLE_DELIVERY_STATUSES: ReadonlySet<string> = new Set([
+  'ASSIGNED',
+  'MOVING_TO_PICKUP',
+  'PICKED_UP',
+  'DELIVERING',
+])
+
 export function getCustomerDeliveryStatusLabel(status: string | null | undefined): string {
   if (status && status in CUSTOMER_DELIVERY_STATUS_LABELS) {
     return CUSTOMER_DELIVERY_STATUS_LABELS[status as DeliveryStatus]
@@ -27,4 +35,8 @@ export function getCustomerDeliveryStatusLabel(status: string | null | undefined
 
 export function isActiveDeliveryStatus(status: string | null | undefined): boolean {
   return status != null && ACTIVE_DELIVERY_STATUSES.has(status)
+}
+
+export function isTrackableDeliveryStatus(status: string | null | undefined): boolean {
+  return status != null && TRACKABLE_DELIVERY_STATUSES.has(status)
 }
