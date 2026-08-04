@@ -46,6 +46,7 @@ public class RiderDeliveryService {
     private final RiderSettlementRepository riderSettlementRepository;
     private final PointWalletRepository pointWalletRepository;
     private final PointTransactionRepository pointTransactionRepository;
+    private final RiderDeliveryProofUploadService riderDeliveryProofUploadService;
 
     /** 새로고침·재로그인 뒤 현재 배송 단계 화면을 복구한다(#86). */
     @Transactional(readOnly = true)
@@ -152,12 +153,14 @@ public class RiderDeliveryService {
      * "완료 인증정보 존재 여부 확인"이라고 적어 인증이 먼저 존재한다는 전제였다), 실제로는
      * 두 이슈가 이 메서드 하나로 병합 구현됐다. #61이 요구하는 검증 — 배정 라이더 확인
      * ({@link #validateCompletionTarget}), 상태(DELIVERING) 확인(같은 메서드), 인증 형식 검증
-     * ({@link com.turkey.quick.rider.dto.RiderDeliveryCompleteRequest}의 Bean Validation),
-     * 중복 등록 차단(아래 {@code existsByOrder_Id} 검사) — 을 이 완료 트랜잭션이 전부 수행한다.
+     * ({@link #resolveProofValue}), 중복 등록 차단(아래 {@code existsByOrder_Id} 검사) — 을 이
+     * 완료 트랜잭션이 전부 수행한다.
      *
      * <p>별도 등록 API로 다시 분리하지 않기로 한 이유(사람 확인, 2026-08-04): 이미 병합된 이
      * 완료 트랜잭션의 계약(요청 DTO·검증 순서)을 바꿔야 해서, 리스크 대비 실익이 낮다고 판단했다.
-     * 근거는 {@code docs/worklog/2026-08-04-61-delivery-completion-proof.md} 참조.
+     * 사진 업로드(file)도 같은 이유로 별도 엔드포인트로 빼지 않고 이 메서드 안에서 처리한다
+     * ({@link RiderDeliveryProofUploadService}). 근거는
+     * {@code docs/worklog/2026-08-04-61-delivery-completion-proof.md} 참조.
      */
     @Transactional
     public RiderDeliveryCompleteResponse complete(AuthenticatedRider rider, Long deliveryId,
@@ -195,8 +198,8 @@ public class RiderDeliveryService {
                 estimate.getCalculationDistanceMeters(), estimate.getBaseFare(),
                 estimate.getDistanceFare(), estimate.getItemSurcharge()));
 
-        DeliveryProof proof = DeliveryProof.create(
-                order, riderProfile, request.proofType(), request.proofValue());
+        String proofValue = resolveProofValue(deliveryId, request);
+        DeliveryProof proof = DeliveryProof.create(order, riderProfile, request.proofType(), proofValue);
         deliveryProofRepository.save(proof);
         order.complete();
         riderProfile.release();
@@ -217,6 +220,22 @@ public class RiderDeliveryService {
         return new RiderDeliveryCompleteResponse(
                 deliveryId, OrderStatus.COMPLETED, OperatingStatus.AVAILABLE,
                 settlementAmount, order.getCompletedAt());
+    }
+
+    /**
+     * proofType=PHOTO 면 file 을 S3 에 올려 그 키를 인증값으로 쓰고, 그 외에는 클라이언트가 보낸
+     * proofValue 를 그대로 쓴다. 둘 다 없으면 인증 정보가 없는 것이므로 거부한다(#61 예외 처리
+     * "인증정보 누락").
+     */
+    private String resolveProofValue(Long deliveryId, RiderDeliveryCompleteRequest request) {
+        if (request.file() != null && !request.file().isEmpty()) {
+            return riderDeliveryProofUploadService.upload(deliveryId, request.file());
+        }
+        if (request.proofValue() != null && !request.proofValue().isBlank()) {
+            return request.proofValue();
+        }
+        throw new BusinessException(HttpStatus.BAD_REQUEST,
+                "완료 인증 정보(사진 파일 또는 참조값)가 필요합니다.");
     }
 
     private void validateCompletionTarget(DeliveryOrder order, Long riderId) {
