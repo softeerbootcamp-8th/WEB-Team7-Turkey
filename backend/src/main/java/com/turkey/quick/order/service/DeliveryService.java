@@ -60,6 +60,9 @@ public class DeliveryService {
      */
     private final CustomerPaymentService customerPaymentService;
 
+    /** 지연 만료(#42) 호출용. 별도 빈이라야 {@code expireIfStale} 의 {@code REQUIRES_NEW} 프록시를 탄다. */
+    private final DeliveryTimeoutService deliveryTimeoutService;
+
     /**
      * 요금 견적. 활성 정책(fare_policy)과 좌표만으로 계산하며 주문·스냅샷은 만들지 않는다.
      * ItemTypeSurcharge 는 지연 로딩이라 정책 조회와 같은 트랜잭션 안에서 접근해야 한다.
@@ -153,6 +156,11 @@ public class DeliveryService {
      */
     @Transactional
     public DeliveryCreateResponse createDelivery(DeliveryCreateRequest request, Long customerId) {
+        // ⓪ 지연 만료(#42): 기존 진행 중 주문이 타임아웃을 이미 넘긴 WAITING 이면, 능동 스캐너를
+        //    기다리지 않고 여기서 먼저 취소·환급한다. 별도 트랜잭션(REQUIRES_NEW)이라 이 취소는
+        //    아래에서 새 주문 생성이 실패해도 되돌아가지 않는다 — 이미 옳은 정리이기 때문이다.
+        deliveryTimeoutService.expireIfStale(customerId);
+
         // ① 멱등: 같은 요청키의 주문이 이미 있으면 그 결과를 그대로 돌려준다(순차 재전송).
         //    포인트도 다시 차감하지 않는다 — 아래 저장 경로를 아예 타지 않기 때문이다.
         Optional<DeliveryOrder> alreadyCreated =
