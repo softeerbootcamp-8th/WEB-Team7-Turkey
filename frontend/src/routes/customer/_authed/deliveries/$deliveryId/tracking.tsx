@@ -9,20 +9,13 @@ import type {
   DeliveryStatusStepResponseStatus,
   DeliveryTrackingResponseStatus,
 } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
+import { getCustomerDeliveryStatusLabel, isTrackableDeliveryStatus } from '@/shared/delivery/status'
 import { useTrackingStream, type TrackingConnectionStatus } from '@/shared/hooks/useTrackingStream'
 import { TrackingMap } from './-components/TrackingMap'
 
 export const Route = createFileRoute('/customer/_authed/deliveries/$deliveryId/tracking')({
   component: DeliveryTracking,
 })
-
-/** 배차 이후 ~ 완료 이전 — 이 구간에서만 SSE 구독이 허용된다(#291, DeliveryTrackingAccessService). */
-const TRACKABLE_STATUSES: ReadonlySet<DeliveryTrackingResponseStatus> = new Set([
-  'ASSIGNED',
-  'MOVING_TO_PICKUP',
-  'PICKED_UP',
-  'DELIVERING',
-])
 
 const STEP_ORDER: DeliveryStatusStepResponseStatus[] = [
   'ASSIGNED',
@@ -31,16 +24,6 @@ const STEP_ORDER: DeliveryStatusStepResponseStatus[] = [
   'DELIVERING',
   'COMPLETED',
 ]
-
-const STEP_LABELS: Record<DeliveryStatusStepResponseStatus, string> = {
-  WAITING: '접수',
-  ASSIGNED: '배차완료',
-  MOVING_TO_PICKUP: '픽업이동',
-  PICKED_UP: '픽업완료',
-  DELIVERING: '배송중',
-  COMPLETED: '배송완료',
-  CANCELED: '취소',
-}
 
 const HEADLINE_BY_STATUS: Record<DeliveryTrackingResponseStatus, string> = {
   WAITING: '라이더를 찾고 있어요',
@@ -87,7 +70,7 @@ function DeliveryTracking() {
   // 언랩하고, 우리 도메인 봉투(success/data/message)는 훅을 쓰는 쪽이 직접 벗겨야 한다
   // (shared/auth/session.ts와 같은 관례).
   const status = trackingQuery.data?.data?.status
-  const isTrackable = status != null && TRACKABLE_STATUSES.has(status)
+  const isTrackable = isTrackableDeliveryStatus(status)
   const { status: streamStatus, location } = useTrackingStream(deliveryId, isTrackable)
 
   if (trackingQuery.isLoading) {
@@ -197,7 +180,9 @@ function DeliveryTracking() {
                     >
                       {reached && <div className="w-2 h-2 bg-white rounded-full"></div>}
                     </div>
-                    <span className="text-[11px] font-medium text-gray-500 mt-2">{STEP_LABELS[step]}</span>
+                    <span className="max-w-16 text-center text-[11px] font-medium text-gray-500 mt-2">
+                      {getCustomerDeliveryStatusLabel(step)}
+                    </span>
                   </div>
                 )
               })}
