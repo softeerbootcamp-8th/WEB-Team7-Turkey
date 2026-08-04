@@ -1,7 +1,6 @@
 package com.turkey.quick.rider.service;
 
 import com.turkey.quick.common.exception.BusinessException;
-import com.turkey.quick.location.repository.RiderGeoRepository;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.rider.domain.OperatingStatus;
@@ -26,12 +25,11 @@ import org.springframework.transaction.annotation.Transactional;
  * {@code goOnline/goOffline} 은 현재 상태가 정확히 출발 상태가 아니면 {@code IllegalStateException}
  * 을 던지므로(그건 핸들러에서 400 이 된다), 같은 상태 재요청을 도메인까지 보내지 않고 여기서 흡수한다.
  *
- * <p>운행 종료 시 GEO 배차 후보에서 즉시 뺀다({@link RiderGeoRepository#remove}, #83). 상태 전이
- * (AVAILABLE→UNAVAILABLE)만으로도 배차 후보 조회에서 빠지지만, 좌표가 남아 위치 기반 검색에
- * 잡히는 틈(#81)을 그 remove 가 닫는다. 커밋 전에 지우므로, 커밋이 실패하면 상태는 AVAILABLE 로
- * 롤백되고 위치만 없는 상태가 되는데 — 그 라이더는 다음 위치 전송 전까지 위치 기반 검색에 잡히지
- * 않으니 "종료 의도"와 어긋나지 않는다. Redis 실패는 다른 GEO 반영 지점(#83)과 같은 이유로
- * 로깅만 하고 상태 전이 자체는 그대로 커밋한다.
+ * <p>운행 종료(GO_OFFLINE)는 상태 전이(AVAILABLE→UNAVAILABLE)만 한다. 예전에는 여기서 GEO 배차
+ * 후보({@code riders:geo})에서도 즉시 뺐지만(#83), 배차 위치 검색을 라이더가 아니라 주문 픽업지
+ * 인덱싱으로 뒤집으면서(#101 미구현) 라이더-측 GEO 사용처를 전부 제거했다(#342). 이제 라이더를
+ * GEO 에 넣는 곳 자체가 없으므로 운행 종료 시 지울 좌표도 없다 — 배차 후보 자격은 주문 상태와
+ * 라이더 {@code operating_status} 로만 판정된다.
  */
 @Slf4j
 @Service
@@ -39,7 +37,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class RiderOperatingStatusChangeService {
 
     private final RiderProfileRepository riderProfileRepository;
-    private final RiderGeoRepository riderGeoRepository;
     private final DeliveryOrderRepository deliveryOrderRepository;
 
     @Transactional
@@ -73,15 +70,8 @@ public class RiderOperatingStatusChangeService {
         }
 
         switch (action) {
-            case GO_ONLINE -> profile.goOnline();   // UNAVAILABLE → AVAILABLE
-            case GO_OFFLINE -> {
-                profile.goOffline(); // AVAILABLE → UNAVAILABLE
-                try {
-                    riderGeoRepository.remove(riderId); // 배차 후보에서 즉시 제외(#81 틈 닫기)
-                } catch (RuntimeException e) {
-                    log.warn("event=GEO_CANDIDATE_SYNC_FAILED riderId={} reason=GO_OFFLINE", riderId, e);
-                }
-            }
+            case GO_ONLINE -> profile.goOnline();    // UNAVAILABLE → AVAILABLE
+            case GO_OFFLINE -> profile.goOffline();   // AVAILABLE → UNAVAILABLE
         }
         return toResponse(profile);
     }
