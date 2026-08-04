@@ -141,20 +141,29 @@ function RiderHome() {
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={() => void router.navigate({ to: '/rider/history' })}
-            className="flex h-[52px] w-full items-center justify-center space-x-2 rounded-xl border border-surface-container bg-surface-container-lowest font-label-lg text-label-lg text-on-surface transition-colors hover:bg-surface-bright active:scale-[0.98]"
-          >
-            <span className="material-symbols-outlined text-secondary" aria-hidden="true">history</span>
-            <span>배송 이력 조회하기</span>
-          </button>
+          <div className="grid w-full grid-cols-2 gap-gutter">
+            <button
+              type="button"
+              onClick={() => void router.navigate({ to: '/rider/history' })}
+              className="flex h-[52px] items-center justify-center space-x-2 rounded-xl border border-surface-container bg-surface-container-lowest font-label-lg text-on-surface transition-colors hover:bg-surface-bright active:scale-[0.98]"
+            >
+              <span className="material-symbols-outlined text-secondary" aria-hidden="true">history</span>
+              <span>배송 기록</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => void router.navigate({ to: '/rider/points' })}
+              className="flex h-[52px] items-center justify-center space-x-2 rounded-xl border border-surface-container bg-surface-container-lowest font-label-lg text-on-surface transition-colors hover:bg-surface-bright active:scale-[0.98]"
+            >
+              <span className="material-symbols-outlined text-secondary" aria-hidden="true">account_balance_wallet</span>
+              <span>포인트</span>
+            </button>
+          </div>
         </div>
       </main>
     </div>
   )
 }
-
 function RiderHomeFeedback({
   icon,
   message,
