@@ -32,7 +32,10 @@ public interface RiderDeliveryApi extends RiderDeliveryTransitionApi {
 
     @Operation(operationId = "completeRiderDelivery", summary = "배송 완료",
             description = "DELIVERING→COMPLETED + 라이더 BUSY→AVAILABLE + 정산 생성을 한 트랜잭션으로 처리하고 "
-                    + "배송 완료 인증을 남긴다. 사진은 업로드 후 참조값(URL/키)만 넘긴다.")
+                    + "배송 완료 인증을 남긴다. 사진은 업로드 후 참조값(URL/키)만 넘긴다. "
+                    + "완료 인증 등록(RIDE-QUICK-008, #61)을 별도 API로 분리하지 않고 이 완료 트랜잭션 안에 "
+                    + "통합했다 — 배정 라이더·상태 검증, 인증 형식 검증, 중복 등록 차단을 이 한 요청이 전부 "
+                    + "수행한다(사람 확인, #61 검토, docs/worklog/2026-08-04-61-delivery-completion-proof.md).")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "200", description = "완료 및 정산 생성"),

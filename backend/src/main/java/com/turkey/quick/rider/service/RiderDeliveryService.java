@@ -146,6 +146,18 @@ public class RiderDeliveryService {
     /**
      * 완료 인증 등록, DELIVERING→COMPLETED, 라이더 해제, FINAL 운임·정산·포인트 적립을
      * 하나의 트랜잭션으로 처리한다(#62). 어느 한 단계라도 실패하면 전부 롤백된다.
+     *
+     * <p><b>이 메서드가 #61(RIDE-QUICK-008, 완료 인증 등록)의 요구사항도 함께 만족한다.</b>
+     * #61은 원래 "인증 등록"과 "완료 전이"를 별도 API로 나누도록 설계됐고(#62 이슈 본문도
+     * "완료 인증정보 존재 여부 확인"이라고 적어 인증이 먼저 존재한다는 전제였다), 실제로는
+     * 두 이슈가 이 메서드 하나로 병합 구현됐다. #61이 요구하는 검증 — 배정 라이더 확인
+     * ({@link #validateCompletionTarget}), 상태(DELIVERING) 확인(같은 메서드), 인증 형식 검증
+     * ({@link com.turkey.quick.rider.dto.RiderDeliveryCompleteRequest}의 Bean Validation),
+     * 중복 등록 차단(아래 {@code existsByOrder_Id} 검사) — 을 이 완료 트랜잭션이 전부 수행한다.
+     *
+     * <p>별도 등록 API로 다시 분리하지 않기로 한 이유(사람 확인, 2026-08-04): 이미 병합된 이
+     * 완료 트랜잭션의 계약(요청 DTO·검증 순서)을 바꿔야 해서, 리스크 대비 실익이 낮다고 판단했다.
+     * 근거는 {@code docs/worklog/2026-08-04-61-delivery-completion-proof.md} 참조.
      */
     @Transactional
     public RiderDeliveryCompleteResponse complete(AuthenticatedRider rider, Long deliveryId,
