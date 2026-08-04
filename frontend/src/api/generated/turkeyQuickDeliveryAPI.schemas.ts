@@ -1720,4 +1720,3 @@ export const GetDeliveryRequestsSort = {
   FARE: 'FARE',
   REQUESTED_AT: 'REQUESTED_AT',
 } as const;
-

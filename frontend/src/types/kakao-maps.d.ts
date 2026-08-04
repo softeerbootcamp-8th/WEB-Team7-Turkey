@@ -35,11 +35,44 @@ declare global {
         setMap(map: Map | null): void
       }
 
+      namespace services {
+        const Status: { OK: string }
+
+        type AddressSearchResult = {
+          x: string
+          y: string
+        }
+
+        class Geocoder {
+          addressSearch(
+            address: string,
+            callback: (results: AddressSearchResult[], status: string) => void,
+          ): void
+        }
+      }
+
       function load(callback: () => void): void
     }
   }
 
   interface Window {
     kakao: typeof kakao
+    daum: typeof daum
+  }
+
+  namespace daum {
+    type PostcodeData = {
+      address: string
+      roadAddress: string
+      zonecode: string
+    }
+
+    class Postcode {
+      constructor(options: {
+        oncomplete: (data: PostcodeData) => void
+        onclose?: () => void
+      })
+      open(): void
+    }
   }
 }

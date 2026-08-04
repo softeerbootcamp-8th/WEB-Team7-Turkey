@@ -478,3 +478,5 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - 배차 확정(`POST /api/rider/requests/{deliveryId}/accept`, #56) 실패 사유(취소/이미 배차/라이더
   다른 배송 수행 중)를 `ApiResponse`에 에러코드 필드 없이 `message` 문자열로만 구분함(ADR-006).
   프론트가 사유별로 다른 UX를 보여줘야 하면 에러코드 체계 신설을 별도 이슈로 논의해야 함
+- 배송요청 생성 화면의 기사님 전달사항(#205)을 저장할 백엔드 계약과 `delivery_order` 컬럼이 없다.
+  저장이 필요하면 최대 길이·라이더 노출 시점과 함께 DTO·Flyway 범위를 별도 이슈로 정해야 함
