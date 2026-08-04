@@ -550,6 +550,10 @@ export interface DeliveryDetailResponse {
   recipient?: ContactResponse;
   /** 요청 시각(UTC) */
   requestedAt?: string;
+  /** 배정된 라이더 이름. 배차 전이면 null. */
+  riderName?: string;
+  /** 배정된 라이더 연락처. 배차 전이면 null. */
+  riderPhoneNumber?: string;
   sender?: ContactResponse;
   /** 배송 상태 */
   status?: DeliveryDetailResponseStatus;
@@ -1567,10 +1571,12 @@ export type GetDeliveriesParams = {
 status?: GetDeliveriesStatus;
 /**
  * 페이지(0부터)
+ * @minimum 0
  */
 page?: number;
 /**
  * 페이지 크기
+ * @minimum 1
  */
 size?: number;
 };
