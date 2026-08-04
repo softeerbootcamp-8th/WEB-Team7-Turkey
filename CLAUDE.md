@@ -249,10 +249,6 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   유효해진 제약). cluster mode enabled 에서는 Redis 7 의 sharded pub/sub(`SSUBSCRIBE`)이 필요한데
   `RedisMessageListenerContainer` 는 일반 pub/sub 만 다루고 `PSUBSCRIBE` 는 클러스터에서 문제가
   된다. **클러스터 모드 비활성을 전제로 설계했다** — 배포 구성 확정 시 확인 필요
-- **Redis Pub/Sub 은 로직 DB 로 격리되지 않는다**(#78, #317에서 다시 유효). 채널은 `SELECT` 를
-  무시하므로 테스트(DB 1)와 개발용 앱(DB 0)이 **같은 채널을 공유한다.** `DatabaseCleaner` 의
-  TRUNCATE 가 AUTO_INCREMENT 를 리셋해 테스트 배송이 매번 낮은 id 를 받으므로, 개발용 앱을 띄운 채
-  테스트를 돌리면 채널명이 겹칠 수 있다. 채널 접두어를 프로파일로 분리할지 미결
 - 라이더 위치 전송 주기와 필터 임계값 >> **#81 에서 확정함**(사람 확인, 2026-07-29). 전송 주기
   AVAILABLE 30초 / BUSY 5초 / UNAVAILABLE 미전송, 최소 이동 거리 20m, 허용 최대 속도 50 m/s
   (180km/h), 정확도 상한 100m, 허용 과거 60초·미래 오차 5초, 정지 시 강제 전송 120초, Redis 최신
