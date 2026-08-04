@@ -59,7 +59,8 @@ dependencies {
     // 배송 완료 인증 사진을 S3 로 올린다(#61 후속). AmazonS3.putObject() 용도.
     // 버전 고정: 이 SDK의 BOM(dependency-management)을 따로 안 불러왔으므로 버전 없이는
     // Gradle이 해석하지 못한다.
-    implementation 'com.amazonaws:aws-java-sdk-s3:1.12.767'
+    // Source: https://mvnrepository.com/artifact/com.amazonaws/aws-java-sdk-s3
+    implementation 'com.amazonaws:aws-java-sdk-s3:1.12.797'
 
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
