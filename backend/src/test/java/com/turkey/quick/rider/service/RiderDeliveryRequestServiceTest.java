@@ -3,14 +3,10 @@ package com.turkey.quick.rider.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.then;
-import static org.mockito.BDDMockito.willThrow;
 
 import com.turkey.quick.common.exception.BusinessException;
-import com.turkey.quick.location.repository.RiderGeoRepository;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
 import com.turkey.quick.order.domain.Address;
@@ -43,7 +39,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.data.geo.Point;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -61,9 +56,6 @@ class RiderDeliveryRequestServiceTest {
     private OrderFareSnapshotRepository orderFareSnapshotRepository;
 
     @Mock
-    private RiderGeoRepository riderGeoRepository;
-
-    @Mock
     private RiderProfileRepository riderProfileRepository;
 
     @Mock
@@ -74,8 +66,6 @@ class RiderDeliveryRequestServiceTest {
     private DeliveryTimeoutService deliveryTimeoutService;
 
     private static final Long RIDER_ID = 1L;
-    private static final BigDecimal RIDER_LAT = new BigDecimal("37.5000000");
-    private static final BigDecimal RIDER_LON = new BigDecimal("127.0000000");
 
     private AuthenticatedRider rider(OperatingStatus status) {
         return new AuthenticatedRider(RIDER_ID, "rider01", "홍길동", status);
@@ -142,70 +132,20 @@ class RiderDeliveryRequestServiceTest {
             given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(near));
             given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(List.of(near.getId()), FareType.ESTIMATE))
                     .willReturn(List.of());
-            given(riderGeoRepository.findPosition(RIDER_ID)).willReturn(Optional.empty());
 
             assertThatThrownBy(() -> service.getDeliveryRequests(rider(OperatingStatus.AVAILABLE), 3000, "DISTANCE"))
                     .isInstanceOf(IllegalStateException.class);
         }
     }
 
+    /**
+     * 라이더 좌표 소스(Redis GEO)를 제거해(#342, 디스커션 #338) 콜 목록은 이제 <b>항상</b> 위치
+     * 없음으로 degrade 한다: 반경 필터 없이 전체 반환, 거리 필드 null, DISTANCE 요청은 REQUESTED_AT
+     * 로 대체. 좌표를 요청 파라미터로 받는 계약 변경은 별도 이슈에서 다룬다.
+     */
     @Nested
-    @DisplayName("라이더 위치를 아는 경우")
-    class WithRiderPositionTest {
-
-        @Test
-        @DisplayName("반경 밖 주문은 제외하고, 반경 안 주문은 거리와 함께 반환한다")
-        void shouldFilterByRadiusAndFillDistance() {
-            DeliveryOrder near = order(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"), LocalDateTime.now());
-            DeliveryOrder far = order(new BigDecimal("37.9000000"), new BigDecimal("127.9000000"), LocalDateTime.now());
-
-            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(near, far));
-            given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(
-                    List.of(near.getId(), far.getId()), FareType.ESTIMATE))
-                    .willReturn(List.of(estimateSnapshot(near, 5000L), estimateSnapshot(far, 5000L)));
-            given(riderGeoRepository.findPosition(RIDER_ID))
-                    .willReturn(Optional.of(new Point(RIDER_LON.doubleValue(), RIDER_LAT.doubleValue())));
-
-            given(deliveryService.distance(argThat(bd -> bd != null && bd.compareTo(RIDER_LAT) == 0),
-                    argThat(bd -> bd != null && bd.compareTo(RIDER_LON) == 0),
-                    eq(near.getPickup().getLatitude()), eq(near.getPickup().getLongitude())))
-                    .willReturn(new BigDecimal("0.50000000"));
-            given(deliveryService.distance(argThat(bd -> bd != null && bd.compareTo(RIDER_LAT) == 0),
-                    argThat(bd -> bd != null && bd.compareTo(RIDER_LON) == 0),
-                    eq(far.getPickup().getLatitude()), eq(far.getPickup().getLongitude())))
-                    .willReturn(new BigDecimal("60.00000000"));
-
-            List<RiderDeliveryRequestSummaryResponse> result =
-                    service.getDeliveryRequests(rider(OperatingStatus.AVAILABLE), 3000, "DISTANCE");
-
-            assertThat(result).hasSize(1);
-            assertThat(result.get(0).deliveryId()).isEqualTo(near.getId());
-            assertThat(result.get(0).distanceToPickupMeters()).isEqualTo(500);
-        }
-
-        @Test
-        @DisplayName("sort=FARE 이면 예상 정산액이 높은 순으로 정렬한다")
-        void shouldSortByFareDescending() {
-            DeliveryOrder cheap = order(new BigDecimal("37.5001000"), new BigDecimal("127.0001000"), LocalDateTime.now());
-            DeliveryOrder expensive = order(new BigDecimal("37.5002000"), new BigDecimal("127.0002000"), LocalDateTime.now());
-
-            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(cheap, expensive));
-            given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(
-                    List.of(cheap.getId(), expensive.getId()), FareType.ESTIMATE))
-                    .willReturn(List.of(estimateSnapshot(cheap, 4000L), estimateSnapshot(expensive, 9000L)));
-            given(riderGeoRepository.findPosition(RIDER_ID)).willReturn(Optional.empty());
-
-            List<RiderDeliveryRequestSummaryResponse> result =
-                    service.getDeliveryRequests(rider(OperatingStatus.AVAILABLE), 3000, "FARE");
-
-            assertThat(result).extracting(RiderDeliveryRequestSummaryResponse::expectedSettlementAmount)
-                    .containsExactly(9000L, 4000L);
-        }
-    }
-
-    @Nested
-    @DisplayName("라이더 위치를 모르는 경우(graceful degrade, #55 계약 확정)")
-    class WithoutRiderPositionTest {
+    @DisplayName("라이더 좌표 없음으로 항상 degrade (#342)")
+    class DegradedWithoutRiderPositionTest {
 
         @Test
         @DisplayName("반경으로 거르지 않고 전체를 반환하며, 거리 필드는 null이다")
@@ -217,7 +157,6 @@ class RiderDeliveryRequestServiceTest {
             given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(
                     List.of(o1.getId(), o2.getId()), FareType.ESTIMATE))
                     .willReturn(List.of(estimateSnapshot(o1, 4000L), estimateSnapshot(o2, 4000L)));
-            given(riderGeoRepository.findPosition(RIDER_ID)).willReturn(Optional.empty());
 
             List<RiderDeliveryRequestSummaryResponse> result =
                     service.getDeliveryRequests(rider(OperatingStatus.AVAILABLE), 3000, "DISTANCE");
@@ -238,13 +177,30 @@ class RiderDeliveryRequestServiceTest {
             given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(
                     List.of(newerOrder.getId(), olderOrder.getId()), FareType.ESTIMATE))
                     .willReturn(List.of(estimateSnapshot(newerOrder, 4000L), estimateSnapshot(olderOrder, 4000L)));
-            given(riderGeoRepository.findPosition(RIDER_ID)).willReturn(Optional.empty());
 
             List<RiderDeliveryRequestSummaryResponse> result =
                     service.getDeliveryRequests(rider(OperatingStatus.AVAILABLE), 3000, "DISTANCE");
 
             assertThat(result).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
                     .containsExactly(olderOrder.getId(), newerOrder.getId());
+        }
+
+        @Test
+        @DisplayName("sort=FARE 이면 위치와 무관하게 예상 정산액이 높은 순으로 정렬한다")
+        void shouldSortByFareDescending() {
+            DeliveryOrder cheap = order(new BigDecimal("37.5001000"), new BigDecimal("127.0001000"), LocalDateTime.now());
+            DeliveryOrder expensive = order(new BigDecimal("37.5002000"), new BigDecimal("127.0002000"), LocalDateTime.now());
+
+            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(cheap, expensive));
+            given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(
+                    List.of(cheap.getId(), expensive.getId()), FareType.ESTIMATE))
+                    .willReturn(List.of(estimateSnapshot(cheap, 4000L), estimateSnapshot(expensive, 9000L)));
+
+            List<RiderDeliveryRequestSummaryResponse> result =
+                    service.getDeliveryRequests(rider(OperatingStatus.AVAILABLE), 3000, "FARE");
+
+            assertThat(result).extracting(RiderDeliveryRequestSummaryResponse::expectedSettlementAmount)
+                    .containsExactly(9000L, 4000L);
         }
     }
 
@@ -413,25 +369,6 @@ class RiderDeliveryRequestServiceTest {
             assertThat(result.status()).isEqualTo(OrderStatus.ASSIGNED);
             assertThat(result.operatingStatus()).isEqualTo(OperatingStatus.BUSY);
             assertThat(result.assignedAt()).isNotNull();
-            then(riderGeoRepository).should().remove(RIDER_ID);
-        }
-
-        @Test
-        @DisplayName("배차 확정 후 GEO 후보 제거가 실패해도 배차 확정 응답은 그대로 성공한다(#83)")
-        void shouldSucceedEvenWhenGeoRemoveFails() {
-            DeliveryOrder assigned = order(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"), LocalDateTime.now());
-            ReflectionTestUtils.setField(assigned, "status", OrderStatus.ASSIGNED);
-            ReflectionTestUtils.setField(assigned, "assignedAt", LocalDateTime.now());
-            given(deliveryOrderRepository.assignIfWaiting(eq(assigned.getId()), eq(RIDER_ID), any(LocalDateTime.class)))
-                    .willReturn(1);
-            given(riderProfileRepository.markBusyIfAvailable(RIDER_ID)).willReturn(1);
-            given(deliveryOrderRepository.findById(assigned.getId())).willReturn(Optional.of(assigned));
-            willThrow(new RuntimeException("redis down")).given(riderGeoRepository).remove(RIDER_ID);
-
-            RiderDeliveryRequestAcceptResponse result =
-                    service.acceptDeliveryRequest(rider(OperatingStatus.AVAILABLE), assigned.getId());
-
-            assertThat(result.status()).isEqualTo(OrderStatus.ASSIGNED);
         }
     }
 }

@@ -37,13 +37,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -51,15 +49,15 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * 실제 MySQL(JPA 매핑·조회)과 실제 Redis(GEO) 에 붙여서 검증한다.
- * RIDE-LOC-001(라이더 위치 쓰기)이 아직 진행 중이라, 이 테스트는 그 결과물을 기다리지 않고
- * {@code riders:geo} 에 직접 GEOADD 하여 "쓰기는 이미 되어 있다"고 가정한 상태를 재현한다.
+ * 실제 MySQL(JPA 매핑·조회)에 붙여서 콜 목록·상세·수락을 검증한다.
+ *
+ * <p>라이더-측 GEO 사용처를 제거하면서(#342, 디스커션 #338) 콜 목록은 라이더 좌표를 읽지 않는다 —
+ * 거리·반경 필터는 항상 위치 없음으로 degrade 한다. 좌표를 요청 파라미터로 받는 계약 변경은 별도
+ * 이슈에서 다룬다.
  */
 @SpringBootTest(properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")
 class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport {
-
-    private static final String RIDER_GEO_KEY = "riders:geo";
 
     @Autowired
     private RiderDeliveryRequestService riderDeliveryRequestService;
@@ -80,9 +78,6 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
     private RiderProfileRepository riderProfileRepository;
 
     @Autowired
-    private StringRedisTemplate redisTemplate;
-
-    @Autowired
     private PlatformTransactionManager transactionManager;
 
     @Autowired
@@ -96,7 +91,6 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
 
     @BeforeEach
     void setUp() {
-        redisTemplate.delete(RIDER_GEO_KEY);
         // #56부터는 rider_profile 행이 실제로 있어야 accept() 의 조건부 UPDATE(operating_status='AVAILABLE')가
         // 의미를 갖는다. saveRiderProfile(available=true) 로 Member+RiderProfile 을 함께 만든다.
         RiderProfile riderProfile = saveRiderProfile("integration_rider01", "01099998888", true);
@@ -105,11 +99,6 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         rider = memberRepository.findById(riderProfile.getMemberId()).orElseThrow();
         farePolicy = farePolicyRepository.save(FarePolicy.create(
                 "v1", 3000L, 100, 130L, 30000, LocalDateTime.now().minusDays(1)));
-    }
-
-    @AfterEach
-    void tearDown() {
-        redisTemplate.delete(RIDER_GEO_KEY);
     }
 
     private AuthenticatedRider authenticatedRider(OperatingStatus status) {
@@ -208,28 +197,10 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
     }
 
     @Test
-    @DisplayName("Redis GEO 에 라이더 위치가 있으면 실제 거리로 반경을 거르고 채운다")
-    void shouldFilterAndFillDistanceUsingRealRedisGeo() {
-        redisTemplate.opsForGeo().add(RIDER_GEO_KEY, new org.springframework.data.geo.Point(127.0000000, 37.5000000),
-                rider.getId().toString());
-
-        DeliveryOrder near = saveWaitingOrder(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"));
-        DeliveryOrder far = saveWaitingOrder(new BigDecimal("37.9000000"), new BigDecimal("127.9000000"));
-
-        List<RiderDeliveryRequestSummaryResponse> result = riderDeliveryRequestService.getDeliveryRequests(
-                authenticatedRider(OperatingStatus.AVAILABLE), 3000, "DISTANCE");
-
-        assertThat(result).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
-                .contains(near.getId())
-                .doesNotContain(far.getId());
-        RiderDeliveryRequestSummaryResponse nearSummary = result.stream()
-                .filter(r -> r.deliveryId().equals(near.getId())).findFirst().orElseThrow();
-        assertThat(nearSummary.distanceToPickupMeters()).isNotNull().isLessThan(3000);
-    }
-
-    @Test
-    @DisplayName("Redis GEO 에 라이더 위치가 없으면 반경으로 거르지 않고 거리 필드는 null이다")
-    void shouldDegradeGracefullyWhenNoRedisPosition() {
+    @DisplayName("라이더 좌표를 읽지 않으므로 반경으로 거르지 않고 거리 필드는 null이다(#342 degrade)")
+    void shouldDegradeGracefullyWithoutRiderPosition() {
+        // 좁은 반경(100m)을 줘도 먼 주문이 그대로 반환된다 — 라이더 좌표 소스가 없어 반경 필터가
+        // 적용되지 않기 때문이다.
         DeliveryOrder order = saveWaitingOrder(new BigDecimal("37.9000000"), new BigDecimal("127.9000000"));
 
         List<RiderDeliveryRequestSummaryResponse> result = riderDeliveryRequestService.getDeliveryRequests(

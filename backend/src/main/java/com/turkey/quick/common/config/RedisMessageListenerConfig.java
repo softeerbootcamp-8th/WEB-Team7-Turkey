@@ -12,7 +12,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 /**
  * Redis Pub/Sub 구독 배선(#317). <b>이 저장소의 유일한 Redis {@code @Configuration} 이다</b> —
- * 나머지 Redis 사용처({@code RedisSessionStore}, {@code RiderGeoRepository},
+ * 나머지 Redis 사용처({@code RedisSessionStore}, {@code OrderGeoRepository},
  * {@code RedisVerificationCodeStore}, {@code RiderLocationRepository})는 스프링 부트 자동설정이
  * 준 {@code StringRedisTemplate} 을 그냥 주입받아 쓴다.
  *

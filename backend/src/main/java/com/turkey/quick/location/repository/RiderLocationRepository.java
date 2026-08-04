@@ -26,7 +26,7 @@ import org.springframework.stereotype.Repository;
  * 호출자가 없어 비워 뒀었다). 형식 계약은 {@link #encode} 단위 테스트와 실제 Redis 통합 테스트가
  * 지킨다.
  *
- * <p>{@code RiderGeoRepository} 와 같은 패키지·같은 관례다(인터페이스 없이 구현체 하나,
+ * <p>{@code OrderGeoRepository} 와 같은 패키지·같은 관례다(인터페이스 없이 구현체 하나,
  * 자동설정 {@code StringRedisTemplate} 주입). 인메모리 대체를 두지 않은 이유: 이 클래스에서 검증할
  * 가치가 있는 것은 Lua 의 원자성인데 그건 인메모리 구현으로 재현할 수 없다.
  */

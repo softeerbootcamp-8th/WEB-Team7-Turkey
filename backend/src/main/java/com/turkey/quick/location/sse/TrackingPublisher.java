@@ -20,8 +20,7 @@ import org.springframework.stereotype.Component;
  *
  * <p><b>채널 키를 정하는 책임은 여기 없다.</b> 호출자({@code RiderLocationService})가
  * {@code findInProgressByRiderId} 로 라이더의 수행 중 배송을 풀어 넘긴다 — 그래서 라이더가 자기
- * 배송 외의 채널로 발행할 방법이 없다. 옛 구현({@code RedisTrackingEventPublisher})은 그 조회를
- * 이 클래스 안에서 했고, 그 사이 기간(#290)에는 클라이언트가 보낸 배송 id 를 그대로 믿었다.
+ * 배송 외의 채널로 발행할 방법이 없다.
  *
  * <p><b>{@code PUBLISH} 의 수신자 수는 쓰지 않는다.</b> 모든 인스턴스가 패턴
  * ({@code tracking:order:*})으로 구독하므로 자기 자신이 포함돼 항상 1 이상이고, 즉 "앱이 떠 있는가"
