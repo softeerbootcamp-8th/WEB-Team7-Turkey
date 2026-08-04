@@ -51,7 +51,7 @@ WAITING → ASSIGNED → MOVING_TO_PICKUP → PICKED_UP → DELIVERING → COMPL
 |---|---|---|---|
 | POST | `/api/orders/quote` | 요금 견적 `{itemSize, pickup, dropoff, options}` → `{baseFee, totalFee, etaText}` | [구현] new.tsx "요금 API 소비 후 활성화" TODO |
 | POST | `/api/orders` | 배송요청 생성+결제 | [구현] new.tsx "결제하기". **고객 진행중 1건 제한** 검증 |
-| GET | `/api/orders?accountType=` | 이용기록 목록 | [구현] deliveries/index (탭: 전체/개인/가족) |
+| GET | `/api/customer/deliveries?page=&size=&status=` | 로그인한 고객의 배송 목록(최신순) | [구현] deliveries/index. 진행 중/지난 배송 구분, 상세·추적 진입 |
 | GET | `/api/orders/{id}` | 상세 조회 | [구현] deliveries/$id |
 | GET | `/api/customer/deliveries/{deliveryId}/tracking` | 추적 뷰 스냅샷: 상태·단계 타임라인·라이더 이름·연락처·요금. **#79 구현 완료(2026-07-31)** | [구현] $deliveryId/tracking. 초안 경로 `/api/orders/{id}` 는 폐기 |
 | PATCH | `/api/orders/{id}/cancel` | 주문 취소 → CANCELED. **WAITING(배차 전)만 허용** | [구현] tracking "주문취소" |

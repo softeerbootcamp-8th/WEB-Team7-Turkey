@@ -9,6 +9,7 @@ import type {
   DeliveryStatusStepResponseStatus,
   DeliveryTrackingResponseStatus,
 } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
+import { getCustomerDeliveryStatusLabel } from '@/shared/delivery/status'
 import { useTrackingStream, type TrackingConnectionStatus } from '@/shared/hooks/useTrackingStream'
 import { TrackingMap } from './-components/TrackingMap'
 
@@ -31,16 +32,6 @@ const STEP_ORDER: DeliveryStatusStepResponseStatus[] = [
   'DELIVERING',
   'COMPLETED',
 ]
-
-const STEP_LABELS: Record<DeliveryStatusStepResponseStatus, string> = {
-  WAITING: '접수',
-  ASSIGNED: '배차완료',
-  MOVING_TO_PICKUP: '픽업이동',
-  PICKED_UP: '픽업완료',
-  DELIVERING: '배송중',
-  COMPLETED: '배송완료',
-  CANCELED: '취소',
-}
 
 const HEADLINE_BY_STATUS: Record<DeliveryTrackingResponseStatus, string> = {
   WAITING: '라이더를 찾고 있어요',
@@ -197,7 +188,9 @@ function DeliveryTracking() {
                     >
                       {reached && <div className="w-2 h-2 bg-white rounded-full"></div>}
                     </div>
-                    <span className="text-[11px] font-medium text-gray-500 mt-2">{STEP_LABELS[step]}</span>
+                    <span className="max-w-16 text-center text-[11px] font-medium text-gray-500 mt-2">
+                      {getCustomerDeliveryStatusLabel(step)}
+                    </span>
                   </div>
                 )
               })}
