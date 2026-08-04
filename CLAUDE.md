@@ -108,7 +108,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 | 상태 | 화면 | 전이 트리거 | 위치 전송 |
 |---|---|---|---|
 | `UNAVAILABLE` | `rider/index`(홈) | "콜 받기" → `AVAILABLE` | 없음 |
-| `AVAILABLE` | `rider/requests`(콜 목록) | "운행 종료" → `UNAVAILABLE` / 콜 수락 → `BUSY` | 저빈도(idle) |
+| `AVAILABLE` | `rider/requests`(콜 목록) | "운행 종료" → `UNAVAILABLE` / 콜 수락 → `BUSY` | 없음(#342) |
 | `BUSY` | `rider/delivery`(진행 배송) | 배송 완료 → `AVAILABLE` | 고빈도(busy) |
 
 - `rider/delivery`(진행 중 배송)는 id 없는 고정 경로다. 동시 진행 배송이 최대 1건이므로 동적 세그먼트가 불필요하고, 새로고침·재로그인 후에도 "진행 중 배송 조회 → 해당 화면 복귀"로 복구 가능해야 한다.
@@ -125,11 +125,14 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
     보호할 API마다 해당 인터셉터의 `addPathPatterns`에 경로를 직접 등록해야 인증이 걸린다.
     (고객 예시: `customer/config/CustomerWebMvcConfig`, #27) 새 고객/라이더 전용 API를 추가할 때
     이 등록을 빠뜨리면 그 API는 인증 없이 열린 채로 배포된다 — 리뷰 시 반드시 확인할 것.
-- Redis는 현재 **세션 저장 / GEO 위치 검색(배차 후보용, `RiderGeoRepository`) / 휴대전화
-  인증번호(TTL) / 라이더 최신 위치(`RiderLocationRepository`, **BUSY 라이더만**, TTL 10분) / SSE 이벤트
-  팬아웃(Pub/Sub)** 에 쓴다. 영속 원본 저장소로는 쓰지 않는다.
+- Redis는 현재 **세션 저장 / 휴대전화 인증번호(TTL) / 라이더 최신 위치(`RiderLocationRepository`,
+  **BUSY 라이더만**, TTL 10분) / SSE 이벤트 팬아웃(Pub/Sub)** 에 쓴다. 영속 원본 저장소로는 쓰지 않는다.
   뒤의 둘은 #297(2026-08-02)로 제거했다가 **스케일 아웃 대비로 #317(2026-08-03)에서 되돌린
   것이다** — 단, 서버측 위치 필터는 되살리지 않았다(아래 SSE 항목).
+  **GEO 배차 후보 저장(`riders:geo`, `RiderGeoRepository`)은 #342(2026-08-04, 디스커션 #338)에서
+  라이더-측 사용처를 전부 제거했다** — 배차 위치 검색을 라이더가 아니라 주문 픽업지 인덱싱으로
+  뒤집기로 확정(#101 미구현)했다. 클래스는 호출자 0으로 남아 #339(개명)·형제 이슈 ③(주문 GEO)에서
+  재사용된다.
   Pub/Sub은 **SSE 이벤트 팬아웃 용도로만** 쓴다. 작업 큐·도메인 이벤트 버스·인스턴스 간 RPC로
   확장하지 않는다.
 - Redis 배포 방식은 **EC2 인스턴스에 직접 설치**(2026-07-29 변경, 디스커션 #176). 관리 부담을 줄이는
@@ -198,15 +201,15 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - **팬아웃 디스패처 풀 크기 4가 적절한지 미검증**(`RedisMessageListenerConfig`). 같은 채널 메시지의
   처리 순서가 뒤집힐 수 있고, 그 복구는 프론트가 `measuredAt`이 역행하는 이벤트를 버리는 것에
   의존하는데 **현재 `useTrackingStream`에 그 가드가 없다.** 부하 테스트에서 확인할 항목
-- **위치 관련 Redis 저장소가 둘이고 대상이 운행 상태로 갈린다.** 배차 후보(`RiderGeoRepository`,
+- ~~**위치 관련 Redis 저장소가 둘이고 대상이 운행 상태로 갈린다.** 배차 후보(`RiderGeoRepository`,
   `riders:geo` GEO ZSET)는 **AVAILABLE** 라이더의 집합이고, 최신 위치(`RiderLocationRepository`,
-  `rider:location:{riderId}`)는 **BUSY** 만 저장한다(#317). 합칠 수 없는 이유는 ① 멤버십 자체가
-  배차 자격이라 두 집합이 다르고 ② GEO ZSET에는 `measuredAt`·정확도를 넣을 자리가 없고(Lua 조건부
-  갱신이 비교할 값) ③ ZSET은 키 단위 TTL만 되기 때문이다. 단 **`GEOSEARCH`(주변 라이더 검색)가
-  아직 없어** ZSET을 쓸 이유가 절반만 실현된 상태다 — 현재 geo 읽기는 `findPosition(자기 id)`
-  하나뿐이고 반경 계산은 Java에서 한다(#101에서 정리될 것). 이름이 둘 다 "location"으로 읽혀
-  헷갈리므로 `RiderGeoRepository` → `RiderDispatchCandidateRepository` 개명을 검토 중(미결).
-  **서버측 필터(#82)를 되살리면 최신 위치를 상태 무관으로 되돌려야 한다**(기준선이 필요하다).
+  `rider:location:{riderId}`)는 **BUSY** 만 저장한다(#317).~~ **변경(#342, 2026-08-04, 디스커션
+  #338)**: `riders:geo`에 라이더를 쓰거나 읽는 **라이더-측 사용처를 전부 제거**했다. 배차 위치
+  검색을 라이더가 아니라 주문 픽업지 인덱싱으로 뒤집기로 확정(#101 미구현)한 결과다. 이제 위치
+  Redis 저장소는 `rider:location:{riderId}`(BUSY 최신 위치, TTL 10분) **하나뿐**이다.
+  `RiderGeoRepository` 클래스는 **호출자 0**으로 남겨, 이름 변경(#339)·주문 GEO 재사용(형제 이슈 ③)에서
+  재활용한다 — 그 전까지 데드 코드처럼 보이지만 의도된 상태다. **서버측 필터(#82)를 되살려도 GEO를
+  라이더로 되돌리지는 않는다**(주문 GEO 방향이 확정).
 - ~~저장한 최신 위치를 읽는 코드가 없다(#317). `RiderLocationRepository`에 `saveIfNewer`만 있고
   `find`/`decode`는 만들지 않았다 — 호출자가 없어서다.~~ **해소(#311, 2026-08-03)**: 고객 위치
   폴링 API(`GET /api/customer/deliveries/{deliveryId}/location`, `CustomerLocationQueryService`)가
