@@ -12,17 +12,6 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 /**
  * Redis Pub/Sub 구독 배선(#317). <b>이 저장소의 유일한 Redis {@code @Configuration} 이다</b> —
- * 나머지 Redis 사용처({@code RedisSessionStore}, {@code RiderGeoRepository},
- * {@code RedisVerificationCodeStore}, {@code RiderLocationRepository})는 스프링 부트 자동설정이
- * 준 {@code StringRedisTemplate} 을 그냥 주입받아 쓴다.
- *
- * <p>Pub/Sub 은 <b>SSE 이벤트 팬아웃 용도로만</b> 쓴다. 작업 큐·도메인 이벤트 버스·인스턴스 간
- * RPC 로 확장하지 않는다 — 그건 별도 논의가 필요하다.
- *
- * <p><b>알려진 제약</b>: ElastiCache 클러스터 모드를 켜면 이 배선은 동작하지 않는다. cluster mode
- * enabled 에서는 Redis 7 의 sharded pub/sub({@code SSUBSCRIBE})이 필요한데
- * {@code RedisMessageListenerContainer} 는 일반 pub/sub 만 다루고 {@code PSUBSCRIBE} 는 클러스터에서
- * 문제가 된다. <b>클러스터 모드 비활성을 전제로 설계했다.</b>
  */
 @Slf4j
 @Configuration
