@@ -216,18 +216,27 @@ public interface CustomerDeliveryApi {
             @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
             AuthenticatedCustomer customer);
 
-    @Operation(summary = "배송요청 취소",
-            description = "배차 전(WAITING)에만 허용한다. ASSIGNED 이상은 MVP 범위 밖이라 거부된다.")
+    @Operation(operationId = "cancelCustomerDelivery",
+            summary = "배송요청 취소",
+            description = "배차 전(WAITING)에만 허용한다. ASSIGNED 이상·완료는 MVP 범위 밖이라 거부된다. "
+                    + "이미 취소된 주문에 다시 요청하면 그 결과를 그대로 돌려주고 중복 환급하지 않는다(멱등). "
+                    + "취소와 포인트 환급(CUS-PAY-003)은 하나의 트랜잭션으로 처리된다.")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "200", description = "취소 성공"),
+                    responseCode = "200", description = "취소 성공(이미 취소된 경우 포함, 멱등)"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "409", description = "이미 배차되었거나 취소할 수 없는 상태")
+                    responseCode = "404", description = "배송요청이 없거나 본인 것이 아님"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "409", description = "이미 배차되었거나 완료되어 취소할 수 없는 상태")
     })
     @PatchMapping("/{deliveryId}/cancel")
     ApiResponse<DeliveryCancelResponse> cancelDelivery(
             @Parameter(description = "배송요청 식별자", example = "1024")
             @PathVariable Long deliveryId,
 
-            @Valid @RequestBody DeliveryCancelRequest request);
+            @Valid @RequestBody DeliveryCancelRequest request,
+
+            @Parameter(hidden = true)
+            @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
+            AuthenticatedCustomer customer);
 }

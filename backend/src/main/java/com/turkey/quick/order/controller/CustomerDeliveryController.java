@@ -60,7 +60,8 @@ public class CustomerDeliveryController implements CustomerDeliveryApi {
     }
 
     @Override
-    public ApiResponse<DeliveryCancelResponse> cancelDelivery(Long deliveryId, DeliveryCancelRequest request) {
-        return null;
+    public ApiResponse<DeliveryCancelResponse> cancelDelivery(Long deliveryId, DeliveryCancelRequest request,
+                                                              AuthenticatedCustomer customer) {
+        return ApiResponse.ok(deliveryService.cancelDelivery(deliveryId, customer.memberId(), request.reason()));
     }
 }
