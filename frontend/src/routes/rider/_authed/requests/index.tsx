@@ -3,7 +3,10 @@ import { useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { isAxiosError } from 'axios'
 import { useGetDeliveryRequests } from '@/api/generated/rider-request/rider-request'
-import { useChangeRiderOperatingStatus } from '@/api/generated/rider-operating-status/rider-operating-status'
+import {
+  getGetRiderOperatingStatusQueryKey,
+  useChangeRiderOperatingStatus,
+} from '@/api/generated/rider-operating-status/rider-operating-status'
 import { getGetRiderSessionQueryKey } from '@/api/generated/rider-session/rider-session'
 import type { ItemFilter } from './-requestList'
 import {
@@ -51,7 +54,8 @@ function RiderRequests() {
     operatingStatusMutation.mutate(
       { data: { action: 'GO_OFFLINE' } },
       {
-        onSuccess: async () => {
+        onSuccess: async (response) => {
+          queryClient.setQueryData(getGetRiderOperatingStatusQueryKey(), response)
           queryClient.removeQueries({ queryKey: getGetRiderSessionQueryKey() })
           await router.navigate({ to: '/rider' })
         },
