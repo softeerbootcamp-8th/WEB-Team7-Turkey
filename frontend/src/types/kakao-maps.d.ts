@@ -14,13 +14,38 @@ declare global {
       class Map {
         constructor(container: HTMLElement, options: { center: LatLng; level: number })
         setCenter(position: LatLng): void
+        setLevel(level: number): void
+        setBounds(
+          bounds: LatLngBounds,
+          paddingTop?: number,
+          paddingRight?: number,
+          paddingBottom?: number,
+          paddingLeft?: number,
+        ): void
         panTo(position: LatLng): void
       }
 
+      class LatLngBounds {
+        constructor()
+        extend(latlng: LatLng): void
+      }
+
       class Marker {
-        constructor(options: { position: LatLng; map?: Map })
+        constructor(options: { position: LatLng; map?: Map; image?: MarkerImage })
         setPosition(position: LatLng): void
         setMap(map: Map | null): void
+      }
+
+      class Size {
+        constructor(width: number, height: number)
+      }
+
+      class Point {
+        constructor(x: number, y: number)
+      }
+
+      class MarkerImage {
+        constructor(src: string, size: Size, options?: { offset?: Point })
       }
 
       class Polyline {
