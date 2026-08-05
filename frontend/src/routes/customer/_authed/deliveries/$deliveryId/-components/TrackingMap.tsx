@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import riderMarkerSrc from '@/assets/rider-marker-yamaha-r3.svg'
+import riderMarkerSrc from '@/assets/yamaha.png'
 import { loadKakaoMaps } from '@/lib/kakaoMaps'
 import type { LocationPing } from '@/shared/hooks/useTrackingStream'
 
@@ -11,21 +11,25 @@ interface TrackingMapProps {
 const DEFAULT_CENTER = { latitude: 37.5665, longitude: 126.978 }
 
 /**
- * 라이더 마커를 카카오 기본 핀 대신 오토바이 이미지로 그린다.
+ * 라이더 마커를 카카오 기본 핀 대신 오토바이 사진으로 그린다.
  *
- * 이미지 원본은 128×116 이고 아래 꼭짓점(64, 102)이 좌표에 닿는 지점이다. 화면에는
- * 64×58 로 축소해 그리므로 offset 도 같은 비율로 줄여야 한다 — 64×(64/128)=32,
- * 58×(102/116)≈51. offset 을 빼먹으면 이미지 중앙이 좌표에 놓여 마커가 실제 위치보다
- * 위쪽을 가리킨다.
+ * 원본은 633×487 이고, 핀처럼 뾰족한 꼭짓점이 없는 일반 사진이라 **바퀴가 지면에 닿는
+ * 아래-가운데**를 좌표에 맞춘다. 불투명 픽셀 경계를 실측한 값이 기준이다 — 가로 중심은
+ * 폭의 0.498, 아래 끝은 높이의 0.996 지점이다(오토바이가 프레임을 거의 꽉 채운다).
  *
- * 실제 사진으로 바꾸려면 같은 경로의 파일만 교체하고 아래 크기·offset 을 그 이미지 기준으로
- * 다시 계산하면 된다(코드 수정은 이 상수들뿐).
+ * 화면에는 원본 비율(1.300)을 유지해 64×49 로 축소해 그리므로 offset 도 같은 비율로
+ * 줄인다 — 64×0.498≈32, 49×0.996≈49. offset 을 빼먹으면 이미지 중앙이 좌표에 놓여
+ * 마커가 실제 위치보다 위쪽을 가리킨다.
+ *
+ * 다른 이미지로 바꾸려면 **배경이 투명해야 한다**(불투명 배경이면 지도 위에 사각형으로
+ * 보인다). 그다음 위와 같이 불투명 영역의 가로 중심·아래 끝 비율을 재서 아래 상수만
+ * 다시 계산하면 된다.
  */
 const RIDER_MARKER = {
   width: 64,
-  height: 58,
+  height: 49,
   offsetX: 32,
-  offsetY: 51,
+  offsetY: 49,
 } as const
 
 /**
