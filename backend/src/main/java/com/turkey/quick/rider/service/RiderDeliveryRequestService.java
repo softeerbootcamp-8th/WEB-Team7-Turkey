@@ -11,6 +11,7 @@ import com.turkey.quick.order.dto.FareBreakdownResponse;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
 import com.turkey.quick.order.service.DeliveryService;
+import com.turkey.quick.order.service.DeliveryTimeoutService;
 import com.turkey.quick.rider.auth.AuthenticatedRider;
 import com.turkey.quick.rider.domain.DeliveryRequestSort;
 import com.turkey.quick.rider.domain.OperatingStatus;
@@ -50,6 +51,9 @@ public class RiderDeliveryRequestService {
     private final OrderFareSnapshotRepository orderFareSnapshotRepository;
     private final RiderProfileRepository riderProfileRepository;
     private final DeliveryService deliveryService;
+
+    /** #42: 만료된 주문을 수락 시도 시점에 정리하기 위해 주입한다. */
+    private final DeliveryTimeoutService deliveryTimeoutService;
 
     /**
      * AVAILABLE 라이더가 수락할 수 있는 배차 대기(WAITING) 배송요청 목록을 조회한다.
@@ -169,6 +173,10 @@ public class RiderDeliveryRequestService {
      * <ol>
      *   <li>라이더가 AVAILABLE 상태인지 검사한다(위반 시 403) — 세션 정보 기준 1차 검사일 뿐,
      *       최종 판정은 아래 조건부 UPDATE가 한다(세션과 DB 사이에 시차가 있을 수 있어서다).</li>
+     *   <li><b>만료 정리(#42)</b>: 이 주문이 배차 대기 타임아웃을 이미 넘겼는데 능동 스캐너가 아직
+     *       훑지 않았다면, 여기서 먼저 취소·환급을 마친다({@link DeliveryTimeoutService#cancelIfExpired}).
+     *       그러면 아래 조건부 UPDATE가 자연히 0행이 되어 "이미 취소됨" 사유로 409가 나간다 — 스캐너의
+     *       최대 폴링 간격만큼 라이더가 만료된 주문을 여전히 수락할 수 있는 창을 없앤다.</li>
      *   <li><b>주문 조건부 UPDATE</b>: {@code UPDATE delivery_order SET status=ASSIGNED, ... WHERE
      *       order_id=:deliveryId AND status='WAITING'}. 영향 행이 0이면 이 요청이 배차 경쟁에서
      *       졌거나(다른 라이더가 먼저 확정) 주문이 취소됐거나 존재하지 않는다는 뜻이다 — 주문을
@@ -194,6 +202,7 @@ public class RiderDeliveryRequestService {
     @Transactional
     public RiderDeliveryRequestAcceptResponse acceptDeliveryRequest(AuthenticatedRider rider, Long deliveryId) {
         requireAvailable(rider);
+        deliveryTimeoutService.cancelIfExpired(deliveryId);
 
         LocalDateTime assignedAt = LocalDateTime.now(ZoneOffset.UTC);
         int orderUpdated;
