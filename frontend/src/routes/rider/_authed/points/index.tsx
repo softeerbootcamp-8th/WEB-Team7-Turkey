@@ -1,96 +1,396 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, Info } from 'lucide-react'
+import { useState } from 'react'
+import { createFileRoute, useRouter } from '@tanstack/react-router'
+import {
+  formatPointMonth,
+  formatPoints,
+  formatPointTransactionDate,
+  getPointErrorMessage,
+  getPointTransactionLabel,
+  getSignedPointAmount,
+  pointFilterOptions,
+  shiftPointMonth,
+  type PointFilter,
+  type PointInfoTab,
+} from './-riderPoints'
+import { useRiderPoints } from './-useRiderPoints'
 
 export const Route = createFileRoute('/rider/_authed/points/')({
   component: RiderPoints,
 })
 
-/**
- * 라이더 정산/출금 내역(포인트 내역) 화면.
- * Figma(Turkey7_피그마) 라이더 페이지의 "정산 화면" 스크린샷을 기반으로 재구성.
- */
+const infoTabs: { value: PointInfoTab; label: string }[] = [
+  { value: 'charge-account', label: '충전계좌' },
+  { value: 'withdrawal-account', label: '출금계좌' },
+  { value: 'guide', label: '가이드' },
+]
+
 function RiderPoints() {
+  const router = useRouter()
+  const [selectedMonth, setSelectedMonth] = useState(() => new Date())
+  const [filter, setFilter] = useState<PointFilter>('ALL')
+  const [activeTab, setActiveTab] = useState<PointInfoTab>('charge-account')
+  const [withdrawalOpen, setWithdrawalOpen] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+  const points = useRiderPoints(selectedMonth, filter)
+  const isLoading = points.balanceQuery.isPending || points.transactionsQuery.isPending
+  const error = points.balanceQuery.error ?? points.transactionsQuery.error
+  const monthlyTotal = points.transactions.reduce((sum, item) => sum + getSignedPointAmount(item), 0)
+
   return (
-    <div className="flex min-h-screen flex-col bg-surface text-on-surface">
-      {/* Header */}
-      <header className="sticky top-0 z-10 flex h-14 items-center gap-3 bg-surface px-container-margin">
-        <button aria-label="뒤로" className="-ml-2 flex h-10 w-10 items-center justify-center rounded-full hover:bg-surface-container">
-          <ArrowLeft size={24} />
+    <main aria-label="라이더 포인트 내역" className="min-h-screen bg-background pb-20 text-on-background">
+      <header className="sticky top-0 z-20 flex h-14 items-center bg-surface px-container-margin">
+        <button
+          type="button"
+          aria-label="라이더 홈으로 돌아가기"
+          onClick={() => void router.navigate({ to: '/rider' })}
+          className="-ml-2 flex h-10 w-10 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container"
+        >
+          <span className="material-symbols-outlined" aria-hidden="true">
+            arrow_back
+          </span>
         </button>
-        <h1 className="text-headline-sm font-bold">포인트 내역</h1>
+        <h1 className="flex-1 text-center font-headline-md text-on-surface">포인트 내역</h1>
+        <div className="w-8" aria-hidden="true" />
       </header>
 
-      <main className="flex-1">
-        {/* 출금 가능 포인트 */}
-        <section className="flex items-center justify-between px-container-margin py-lg">
-          <div className="flex flex-col gap-sm">
-            <span className="text-body-md text-on-surface-variant">출금 가능 포인트</span>
-            <div className="flex items-center gap-2">
-              <span className="text-headline-lg font-bold">0</span>
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-container text-[11px] font-bold text-on-primary-container">P</span>
+      <div className="mx-auto w-full max-w-lg">
+        <section className="bg-surface-container-lowest px-container-margin py-lg">
+          <div className="flex items-end justify-between gap-md">
+            <div>
+              <p className="font-body-md text-secondary">출금 가능 포인트</p>
+              <p className="mt-1 flex items-center gap-2 font-headline-lg text-on-surface">
+                {points.balance.toLocaleString('ko-KR')}
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-container font-label-sm text-on-primary-container">
+                  P
+                </span>
+              </p>
             </div>
+            <button
+              type="button"
+              disabled={points.balance <= 0 || points.balanceQuery.isPending}
+              onClick={() => {
+                setNotice(null)
+                setWithdrawalOpen(true)
+              }}
+              className="min-h-11 rounded-xl bg-tertiary px-5 font-label-lg text-on-tertiary transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              출금 신청
+            </button>
           </div>
-          {/* TODO: 출금 신청 API 연결 */}
-          <button className="rounded-lg bg-tertiary px-4 py-2 text-label-lg font-semibold text-on-tertiary">
-            출금 신청
-          </button>
-        </section>
 
-        {/* 요약 카드 */}
-        <section className="px-container-margin">
-          <dl className="flex flex-col gap-3 rounded-xl bg-tertiary-container/40 p-md">
-            <div className="flex items-center justify-between">
-              <dt className="text-body-md text-on-surface">보유 포인트</dt>
-              <dd className="text-body-md font-medium text-on-surface">0P</dd>
-            </div>
-            <div className="flex items-center justify-between">
-              <dt className="text-body-md text-on-surface-variant">현재 예상 고용보험료</dt>
-              <dd className="text-body-md font-medium text-on-surface-variant">-0P</dd>
-            </div>
-            <div className="flex items-center justify-between">
-              <dt className="text-body-md text-on-surface-variant">현재 예상 산재보험료</dt>
-              <dd className="text-body-md font-medium text-on-surface-variant">-0P</dd>
-            </div>
+          <dl className="mt-lg flex flex-col gap-3 rounded-xl bg-tertiary-container/50 p-md">
+            <PointSummary label="보유 포인트" value={formatPoints(points.balance)} strong />
+            <PointSummary label="현재 예상 고용보험료" value="-0P" />
+            <PointSummary label="현재 예상 산재보험료" value="-0P" />
           </dl>
+          <p className="mt-2 font-label-sm text-secondary">보험료는 연동 API 준비 전까지 0P로 표시됩니다.</p>
+          {notice && (
+            <p
+              role="status"
+              className="mt-md rounded-xl bg-tertiary-container px-4 py-3 font-body-md text-on-tertiary-container"
+            >
+              {notice}
+            </p>
+          )}
         </section>
 
-        {/* 탭 */}
-        <nav className="mt-lg flex items-center border-b border-surface-container px-container-margin">
-          <button className="flex-1 py-3 text-center text-label-lg font-semibold text-on-surface">충전계좌</button>
-          <span className="h-3 w-px bg-surface-container-high" />
-          <button className="flex-1 py-3 text-center text-label-lg text-on-surface-variant">출금계좌</button>
-          <span className="h-3 w-px bg-surface-container-high" />
-          <button className="flex-1 py-3 text-center text-label-lg text-on-surface-variant">가이드</button>
-        </nav>
-
-        {/* 기간 선택 */}
-        <div className="flex items-center justify-center gap-4 py-md">
-          <button aria-label="이전 달" className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container">
-            <ChevronLeft size={20} />
-          </button>
-          <span className="text-headline-sm font-bold">June 01</span>
-          <button aria-label="다음 달" className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container">
-            <ChevronRight size={20} />
-          </button>
-        </div>
-
-        {/* 집계 + 필터 */}
-        <div className="flex items-center justify-between px-container-margin pb-md">
-          <span className="text-body-md text-on-surface-variant">총 0건 · 0P</span>
-          <button className="flex items-center gap-1 text-body-md text-on-surface-variant">
-            전체
-            <ChevronDown size={16} />
-          </button>
-        </div>
-
-        {/* 내역 목록 (빈 상태) */}
-        <section className="flex flex-1 flex-col items-center justify-center gap-3 bg-surface-container-low py-20">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-dim text-surface-container-lowest">
-            <Info size={24} />
+        <section
+          aria-label="포인트 계좌 안내"
+          className="border-t-8 border-surface-container-low bg-surface-container-lowest"
+        >
+          <div role="tablist" className="grid grid-cols-3 border-b border-surface-container px-container-margin">
+            {infoTabs.map((tab) => (
+              <button
+                key={tab.value}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab.value}
+                onClick={() => setActiveTab(tab.value)}
+                className={`relative min-h-12 font-label-lg ${activeTab === tab.value ? 'text-on-surface' : 'text-secondary'}`}
+              >
+                {tab.label}
+                {activeTab === tab.value && (
+                  <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-primary" />
+                )}
+              </button>
+            ))}
           </div>
-          <p className="text-body-md text-on-surface-variant">해당 내역이 없습니다.</p>
+          <InfoTabContent tab={activeTab} />
         </section>
-      </main>
+
+        <section
+          aria-label="포인트 거래 내역"
+          className="border-t-8 border-surface-container-low bg-surface-container-lowest"
+        >
+          <div className="flex items-center justify-center gap-lg px-container-margin py-md">
+            <MonthButton
+              label="이전 달"
+              icon="chevron_left"
+              onClick={() => setSelectedMonth((current) => shiftPointMonth(current, -1))}
+            />
+            <time
+              className="min-w-28 text-center font-headline-sm text-on-surface"
+              dateTime={selectedMonth.toISOString()}
+            >
+              {formatPointMonth(selectedMonth)}
+            </time>
+            <MonthButton
+              label="다음 달"
+              icon="chevron_right"
+              onClick={() => setSelectedMonth((current) => shiftPointMonth(current, 1))}
+            />
+          </div>
+          <div className="flex items-center justify-between border-b border-surface-container px-container-margin pb-md">
+            <p className="font-body-md text-secondary">
+              총 {points.transactions.length}건 · {monthlyTotal > 0 ? '+' : ''}
+              {formatPoints(monthlyTotal)}
+            </p>
+            <label className="relative">
+              <span className="sr-only">거래 유형</span>
+              <select
+                value={filter}
+                onChange={(event) => setFilter(event.target.value as PointFilter)}
+                className="min-h-10 appearance-none rounded-lg border border-surface-container bg-surface-container-lowest py-2 pl-3 pr-9 font-body-md text-on-surface focus:outline-none focus:ring-2 focus:ring-primary-container"
+              >
+                {pointFilterOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <span
+                className="material-symbols-outlined pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-lg text-secondary"
+                aria-hidden="true"
+              >
+                expand_more
+              </span>
+            </label>
+          </div>
+
+          {isLoading ? (
+            <PointFeedback icon="progress_activity" message="포인트 내역을 불러오고 있어요." spin />
+          ) : error ? (
+            <PointFeedback
+              icon="cloud_off"
+              message={getPointErrorMessage(error)}
+              onRetry={() => {
+                void points.balanceQuery.refetch()
+                void points.transactionsQuery.refetch()
+              }}
+            />
+          ) : points.transactions.length === 0 ? (
+            <PointFeedback icon="info" message="해당 내역이 없습니다." />
+          ) : (
+            <ul
+              className={`divide-y divide-surface-container px-container-margin ${points.transactionsQuery.isFetching ? 'opacity-60' : ''}`}
+            >
+              {points.transactions.map((item, index) => {
+                const signedAmount = getSignedPointAmount(item)
+                return (
+                  <li
+                    key={item.transactionId ?? `${item.createdAt}-${index}`}
+                    className="flex items-center justify-between gap-md py-md"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-label-lg text-on-surface">{getPointTransactionLabel(item.transactionType)}</p>
+                      <time className="mt-1 block font-body-md text-secondary">
+                        {formatPointTransactionDate(item.createdAt)}
+                      </time>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className={`font-label-lg ${signedAmount > 0 ? 'text-tertiary' : 'text-on-surface'}`}>
+                        {signedAmount > 0 ? '+' : ''}
+                        {formatPoints(signedAmount)}
+                      </p>
+                      <p className="mt-1 font-label-sm text-secondary">잔액 {formatPoints(item.balanceAfter)}</p>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </section>
+      </div>
+
+      {withdrawalOpen && (
+        <WithdrawalDialog
+          balance={points.balance}
+          pending={points.withdrawalMutation.isPending}
+          error={points.withdrawalMutation.error ? getPointErrorMessage(points.withdrawalMutation.error) : null}
+          onClose={() => setWithdrawalOpen(false)}
+          onSubmit={async (amount) => {
+            try {
+              await points.requestWithdrawal(amount)
+              setWithdrawalOpen(false)
+              setNotice(`${formatPoints(amount)} 출금을 신청했습니다.`)
+            } catch {
+              // Mutation state renders the server error inside the dialog.
+            }
+          }}
+        />
+      )}
+    </main>
+  )
+}
+
+function PointSummary({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <dt className={strong ? 'font-body-md text-on-surface' : 'font-body-md text-secondary'}>{label}</dt>
+      <dd className={strong ? 'font-label-lg text-on-surface' : 'font-body-md text-secondary'}>{value}</dd>
+    </div>
+  )
+}
+
+function InfoTabContent({ tab }: { tab: PointInfoTab }) {
+  const content = {
+    'charge-account': ['충전계좌', '라이더 포인트 충전계좌는 준비 중입니다.'],
+    'withdrawal-account': ['출금계좌', '등록된 출금계좌 정보는 앱에서 제공될 예정입니다.'],
+    guide: ['포인트 이용 가이드', '배송 완료 후 정산 포인트가 적립되며, 출금 신청 시 보유 포인트에서 차감됩니다.'],
+  }[tab]
+  return (
+    <div role="tabpanel" className="px-container-margin py-md">
+      <p className="font-label-lg text-on-surface">{content[0]}</p>
+      <p className="mt-1 font-body-md text-secondary">{content[1]}</p>
+    </div>
+  )
+}
+
+function MonthButton({ label, icon, onClick }: { label: string; icon: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      className="flex h-9 w-9 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container"
+    >
+      <span className="material-symbols-outlined" aria-hidden="true">
+        {icon}
+      </span>
+    </button>
+  )
+}
+
+function PointFeedback({
+  icon,
+  message,
+  spin = false,
+  onRetry,
+}: {
+  icon: string
+  message: string
+  spin?: boolean
+  onRetry?: () => void
+}) {
+  return (
+    <div className="flex min-h-64 flex-col items-center justify-center gap-3 bg-surface-container-low p-6 text-center">
+      <span
+        className={`material-symbols-outlined text-4xl text-secondary ${spin ? 'animate-spin' : ''}`}
+        aria-hidden="true"
+      >
+        {icon}
+      </span>
+      <p role={onRetry ? 'alert' : 'status'} className="font-body-md text-secondary">
+        {message}
+      </p>
+      {onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="rounded-xl bg-primary-container px-5 py-2.5 font-label-lg text-on-primary-container"
+        >
+          다시 시도
+        </button>
+      )}
+    </div>
+  )
+}
+
+function WithdrawalDialog({
+  balance,
+  pending,
+  error,
+  onClose,
+  onSubmit,
+}: {
+  balance: number
+  pending: boolean
+  error: string | null
+  onClose: () => void
+  onSubmit: (amount: number) => Promise<void>
+}) {
+  const [amount, setAmount] = useState('')
+  const numericAmount = Number(amount)
+  const validation =
+    !Number.isInteger(numericAmount) || numericAmount <= 0
+      ? '출금할 포인트를 입력해 주세요.'
+      : numericAmount > balance
+        ? '출금 가능 포인트를 초과했습니다.'
+        : null
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-container-margin"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !pending) onClose()
+      }}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="withdrawal-title"
+        className="w-full max-w-sm rounded-2xl bg-surface-container-lowest p-lg shadow-xl"
+      >
+        <h2 id="withdrawal-title" className="font-headline-md text-on-surface">
+          포인트 출금 신청
+        </h2>
+        <p className="mt-1 font-body-md text-secondary">출금 가능 {formatPoints(balance)}</p>
+        <label className="mt-lg block font-label-lg text-on-surface" htmlFor="withdrawal-amount">
+          출금 포인트
+        </label>
+        <div className="relative mt-2">
+          <input
+            id="withdrawal-amount"
+            type="number"
+            min="1"
+            max={balance}
+            inputMode="numeric"
+            value={amount}
+            onChange={(event) => setAmount(event.target.value)}
+            autoFocus
+            className="h-12 w-full rounded-xl border border-surface-container bg-surface-container-lowest px-4 pr-10 font-body-lg focus:outline-none focus:ring-2 focus:ring-primary-container"
+          />
+          <span className="absolute right-4 top-1/2 -translate-y-1/2 font-label-lg text-secondary">P</span>
+        </div>
+        {amount && validation && (
+          <p role="alert" className="mt-2 font-body-md text-error">
+            {validation}
+          </p>
+        )}
+        {error && (
+          <p role="alert" className="mt-2 font-body-md text-error">
+            {error}
+          </p>
+        )}
+        <div className="mt-lg grid grid-cols-2 gap-gutter">
+          <button
+            type="button"
+            disabled={pending}
+            onClick={onClose}
+            className="h-12 rounded-xl border border-surface-container font-label-lg text-on-surface disabled:opacity-50"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            disabled={Boolean(validation) || pending}
+            onClick={() => void onSubmit(numericAmount)}
+            className="h-12 rounded-xl bg-primary-container font-label-lg text-on-primary-container disabled:opacity-40"
+          >
+            {pending ? '신청 중…' : '신청하기'}
+          </button>
+        </div>
+      </section>
     </div>
   )
 }

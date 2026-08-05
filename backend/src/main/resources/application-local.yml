@@ -26,6 +26,11 @@ session:
 app:
   public-base-url: ""
 
+# backend 디렉터리에서 실행하면 프로젝트 루트의 data/proof/... 아래에 인증 사진을 저장한다.
+rider:
+  delivery-proof:
+    local-root: ${RIDER_DELIVERY_PROOF_LOCAL_ROOT:../data}
+
 logging:
   level:
     com.turkey.quick: DEBUG

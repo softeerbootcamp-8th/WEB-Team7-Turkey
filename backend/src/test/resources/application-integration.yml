@@ -35,3 +35,19 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+
+
+
+  # --- 배송 완료 인증 사진 업로드(#61 후속) ---
+  # 의도적으로 넉넉하게 열어 둔다 — docs/worklog/2026-08-04-61-delivery-completion-proof.md 참고.
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+# --- S3: 배송 완료 인증 사진 저장 ---
+# 자격 증명은 기본 프로바이더 체인(환경변수/인스턴스 프로파일)을 쓴다. 버킷은 배포 시 환경변수로 채운다.
+aws:
+  s3:
+    bucket: ${AWS_S3_BUCKET:}
+    region: ${AWS_REGION:ap-northeast-2}

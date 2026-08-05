@@ -229,7 +229,7 @@ class RiderDeliveryServiceIntegrationTest extends IntegrationTestSupport {
         moveToDelivering(fixture);
 
         var response = riderDeliveryService.complete(authenticated(fixture), fixture.orderId(),
-                new RiderDeliveryCompleteRequest(ProofType.PHOTO, "proof/62-a.jpg"));
+                new RiderDeliveryCompleteRequest(ProofType.PHOTO, null, "proof/62-a.jpg"));
 
         assertThat(response.status()).isEqualTo(OrderStatus.COMPLETED);
         assertThat(response.operatingStatus()).isEqualTo(OperatingStatus.AVAILABLE);
@@ -250,7 +250,7 @@ class RiderDeliveryServiceIntegrationTest extends IntegrationTestSupport {
         Fixture fixture = saveAssignedOrder(true, "integration_rider_62_b", "01062000002");
         moveToDelivering(fixture);
         RiderDeliveryCompleteRequest request =
-                new RiderDeliveryCompleteRequest(ProofType.RECIPIENT_CONFIRMATION, "recipient-62-b");
+                new RiderDeliveryCompleteRequest(ProofType.RECIPIENT_CONFIRMATION, null, "recipient-62-b");
         riderDeliveryService.complete(authenticated(fixture), fixture.orderId(), request);
 
         assertThatThrownBy(() -> riderDeliveryService.complete(authenticated(fixture), fixture.orderId(), request))
@@ -269,7 +269,7 @@ class RiderDeliveryServiceIntegrationTest extends IntegrationTestSupport {
         pointWalletRepository.deleteById(fixture.riderId());
 
         assertThatThrownBy(() -> riderDeliveryService.complete(authenticated(fixture), fixture.orderId(),
-                new RiderDeliveryCompleteRequest(ProofType.AUTH_CODE, "auth-62-c")))
+                new RiderDeliveryCompleteRequest(ProofType.AUTH_CODE, null, "auth-62-c")))
                 .isInstanceOf(IllegalStateException.class);
 
         DeliveryOrder persisted = deliveryOrderRepository.findById(fixture.orderId()).orElseThrow();

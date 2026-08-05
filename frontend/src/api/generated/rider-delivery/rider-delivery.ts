@@ -27,7 +27,8 @@ import type {
 import type {
   ApiResponseRiderDeliveryCompleteResponse,
   ApiResponseRiderDeliveryResponse,
-  RiderDeliveryCompleteRequest,
+  CompleteRiderDeliveryBody,
+  CompleteRiderDeliveryParams,
   RiderDeliveryTransitionRequest
 } from '../turkeyQuickDeliveryAPI.schemas';
 
@@ -133,20 +134,26 @@ export function useGetCurrentRiderDelivery<TData = Awaited<ReturnType<typeof get
 
 
 /**
- * DELIVERING→COMPLETED + 라이더 BUSY→AVAILABLE + 정산 생성을 한 트랜잭션으로 처리하고 배송 완료 인증을 남긴다. 사진은 업로드 후 참조값(URL/키)만 넘긴다.
+ * DELIVERING→COMPLETED + 라이더 BUSY→AVAILABLE + 정산 생성을 한 트랜잭션으로 처리하고 배송 완료 인증을 남긴다. proofType=PHOTO 면 file 을 받아 서버가 직접 S3 에 올린다 — 의도적으로 가장 단순하게 구현했다(#61 후속, docs/worklog/2026-08-04-61-delivery-completion-proof.md 참고). 그 외 인증 방식은 file 없이 proofValue 로 참조값을 직접 받는다. 완료 인증 등록(RIDE-QUICK-008, #61)을 별도 API로 분리하지 않고 이 완료 트랜잭션 안에 통합했다 — 배정 라이더·상태 검증, 인증 형식 검증, 중복 등록 차단을 이 한 요청이 전부 수행한다(사람 확인, #61 검토).
  * @summary 배송 완료
  */
 export const completeRiderDelivery = (
     deliveryId: number,
-    riderDeliveryCompleteRequest: BodyType<RiderDeliveryCompleteRequest>,
+    completeRiderDeliveryBody: BodyType<CompleteRiderDeliveryBody>,
+    params: CompleteRiderDeliveryParams,
  options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
 ) => {
       
-      
+      const formData = new FormData();
+if(completeRiderDeliveryBody.file !== undefined) {
+ formData.append(`file`, completeRiderDeliveryBody.file)
+ }
+
       return customInstance<ApiResponseRiderDeliveryCompleteResponse>(
       {url: `/api/rider/deliveries/${deliveryId}/complete`, method: 'POST',
-      headers: {'Content-Type': 'application/json', },
-      data: riderDeliveryCompleteRequest, signal
+      headers: {'Content-Type': 'multipart/form-data', },
+       data: formData,
+        params, signal
     },
       options);
     }
@@ -154,8 +161,8 @@ export const completeRiderDelivery = (
 
 
 export const getCompleteRiderDeliveryMutationOptions = <TError = ErrorType<ApiResponseRiderDeliveryCompleteResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeRiderDelivery>>, TError,{deliveryId: number;data: BodyType<RiderDeliveryCompleteRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
-): UseMutationOptions<Awaited<ReturnType<typeof completeRiderDelivery>>, TError,{deliveryId: number;data: BodyType<RiderDeliveryCompleteRequest>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeRiderDelivery>>, TError,{deliveryId: number;data: BodyType<CompleteRiderDeliveryBody>;params: CompleteRiderDeliveryParams}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof completeRiderDelivery>>, TError,{deliveryId: number;data: BodyType<CompleteRiderDeliveryBody>;params: CompleteRiderDeliveryParams}, TContext> => {
 
 const mutationKey = ['completeRiderDelivery'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -167,10 +174,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof completeRiderDelivery>>, {deliveryId: number;data: BodyType<RiderDeliveryCompleteRequest>}> = (props) => {
-          const {deliveryId,data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof completeRiderDelivery>>, {deliveryId: number;data: BodyType<CompleteRiderDeliveryBody>;params: CompleteRiderDeliveryParams}> = (props) => {
+          const {deliveryId,data,params} = props ?? {};
 
-          return  completeRiderDelivery(deliveryId,data,requestOptions)
+          return  completeRiderDelivery(deliveryId,data,params,requestOptions)
         }
 
         
@@ -179,18 +186,18 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type CompleteRiderDeliveryMutationResult = NonNullable<Awaited<ReturnType<typeof completeRiderDelivery>>>
-    export type CompleteRiderDeliveryMutationBody = BodyType<RiderDeliveryCompleteRequest>
+    export type CompleteRiderDeliveryMutationBody = BodyType<CompleteRiderDeliveryBody>
     export type CompleteRiderDeliveryMutationError = ErrorType<ApiResponseRiderDeliveryCompleteResponse>
 
     /**
  * @summary 배송 완료
  */
 export const useCompleteRiderDelivery = <TError = ErrorType<ApiResponseRiderDeliveryCompleteResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeRiderDelivery>>, TError,{deliveryId: number;data: BodyType<RiderDeliveryCompleteRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeRiderDelivery>>, TError,{deliveryId: number;data: BodyType<CompleteRiderDeliveryBody>;params: CompleteRiderDeliveryParams}, TContext>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof completeRiderDelivery>>,
         TError,
-        {deliveryId: number;data: BodyType<RiderDeliveryCompleteRequest>},
+        {deliveryId: number;data: BodyType<CompleteRiderDeliveryBody>;params: CompleteRiderDeliveryParams},
         TContext
       > => {
 

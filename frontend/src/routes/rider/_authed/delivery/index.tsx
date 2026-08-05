@@ -170,9 +170,16 @@ function RiderDelivery() {
             {transitionMutation.isPending ? '처리 중…' : stage.actionLabel}
           </button>
         ) : needsCompletionProof ? (
-          <div className="flex flex-1 items-center justify-center bg-surface-container-high px-4 text-center font-label-lg text-secondary">
-            배송 완료 인증 필요
-          </div>
+          <button
+            type="button"
+            onClick={() => void router.navigate({
+              to: '/rider/delivery/$deliveryId/complete',
+              params: { deliveryId: String(delivery.deliveryId) },
+            })}
+            className="flex flex-1 items-center justify-center bg-primary-container px-4 text-center font-headline-sm text-headline-sm font-bold text-on-primary-container transition-colors hover:bg-primary-fixed active:scale-[0.99]"
+          >
+            배달인증하기
+          </button>
         ) : (
           <div role="alert" className="flex flex-1 items-center justify-center bg-error-container px-4 text-center font-label-lg text-on-error-container">
             다음 행동 정보 없음

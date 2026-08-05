@@ -53,7 +53,8 @@ public record DeliveryDetailResponse(
         @Schema(description = "배송 완료 인증 방식. 완료 전이면 null.")
         ProofType proofType,
 
-        @Schema(description = "배송 완료 인증 참조값(사진 URL/키, 인증코드 등). 완료 전이면 null.",
+        @Schema(description = "배송 완료 인증 참조값. proofType=PHOTO 면 저장소에서 해석한 실제 경로"
+                + "(로컬은 절대경로, S3는 객체 URL), 그 외 타입이면 등록값을 그대로 담는다. 완료 전이면 null.",
                 example = "https://cdn.example.com/proof/1024.jpg")
         String proofValue,
 
@@ -76,12 +77,15 @@ public record DeliveryDetailResponse(
         String riderPhoneNumber
 ) {
     /**
-     * @param fare  완료 주문은 FINAL, 그 외는 ESTIMATE 스냅샷으로 호출자가 미리 골라 넘긴다
-     *              (스냅샷 조회는 트랜잭션 경계가 있는 서비스 계층 책임).
-     * @param proof 완료 인증 기록. 완료 전이면 null.
+     * @param fare       완료 주문은 FINAL, 그 외는 ESTIMATE 스냅샷으로 호출자가 미리 골라 넘긴다
+     *                   (스냅샷 조회는 트랜잭션 경계가 있는 서비스 계층 책임).
+     * @param proof      완료 인증 기록. 완료 전이면 null.
+     * @param proofValue 응답에 실을 인증 참조값. proofType=PHOTO 면 호출자가
+     *                   {@code RiderDeliveryProofStorage}로 해석한 저장 경로, 그 외 타입이면
+     *                   {@code proof.getProofValue()}를 그대로 넘긴다(스토리지 접근은 서비스 계층 책임).
      */
     public static DeliveryDetailResponse from(DeliveryOrder order, FareBreakdownResponse fare,
-                                              DeliveryProof proof) {
+                                              DeliveryProof proof, String proofValue) {
         Member rider = order.getAssignedRider() == null ? null : order.getAssignedRider().getMember();
 
         return new DeliveryDetailResponse(
@@ -100,7 +104,7 @@ public record DeliveryDetailResponse(
                 fare,
                 steps(order),
                 proof == null ? null : proof.getProofType(),
-                proof == null ? null : proof.getProofValue(),
+                proofValue,
                 order.getRequestedAt(),
                 order.getCompletedAt(),
                 order.getCanceledAt(),

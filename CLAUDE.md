@@ -304,7 +304,11 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - **emitter 레지스트리가 테스트 사이에 살아남는 문제는 해결됨**(#291). `SseRegistry.clear()`를
   추가하고 `IntegrationTestSupport`가 매 테스트 전에 부른다 — 다중 인스턴스 카운팅 자체가 없어져서
   Redis 쪽도 같이 풀어줘야 했던 예전 `TrackingEmitterCleaner`보다 훨씬 간단해졌다
-- 배송 완료 인증 데이터 구조(단건/다건, 사진·수령인 확인·인증코드 중 채택 범위)
+- ~~배송 완료 인증 데이터 구조(단건/다건, 사진·수령인 확인·인증코드 중 채택 범위)~~
+  **해소(#61 검토, 2026-08-04)**: 단건(주문당 1건, `uk_delivery_proof_order`),
+  `PHOTO`/`RECIPIENT_CONFIRMATION`/`AUTH_CODE` 3종 채택. 인증 등록(#61)과 완료 전이(#62)를
+  별도 API로 분리하지 않고 `RiderDeliveryService.complete()` 하나의 트랜잭션에 통합하기로
+  결정함 — 완료 요청에는 인증정보가 항상 함께 필요하다(사람 확인, `docs/worklog/2026-08-04-61-delivery-completion-proof.md`).
 - 정산 생성 시점과 실패 처리 방식
 - 주소·좌표 컬럼 구조, 배차 결과를 별도 테이블로 둘지 주문 FK로 단순화할지
 - 포인트 잔액 캐시 컬럼 유지 여부, 논리 삭제 사용 범위

@@ -550,6 +550,10 @@ export interface DeliveryDetailResponse {
   recipient?: ContactResponse;
   /** 요청 시각(UTC) */
   requestedAt?: string;
+  /** 배정된 라이더 이름. 배차 전이면 null. */
+  riderName?: string;
+  /** 배정된 라이더 연락처. 배차 전이면 null. */
+  riderPhoneNumber?: string;
   sender?: ContactResponse;
   /** 배송 상태 */
   status?: DeliveryDetailResponseStatus;
@@ -1053,33 +1057,6 @@ export interface PointTransactionResponse {
   transactionType?: PointTransactionResponseTransactionType;
   /** 연관 출금 식별자(WITHDRAWAL·WITHDRAWAL_REFUND 만) */
   withdrawalId?: number;
-}
-
-/**
- * 인증 방식
- */
-export type RiderDeliveryCompleteRequestProofType = typeof RiderDeliveryCompleteRequestProofType[keyof typeof RiderDeliveryCompleteRequestProofType];
-
-
-// eslint-disable-next-line @typescript-eslint/no-redeclare
-export const RiderDeliveryCompleteRequestProofType = {
-  PHOTO: 'PHOTO',
-  RECIPIENT_CONFIRMATION: 'RECIPIENT_CONFIRMATION',
-  AUTH_CODE: 'AUTH_CODE',
-} as const;
-
-/**
- * 배송 완료 요청(인증 참조값)
- */
-export interface RiderDeliveryCompleteRequest {
-  /** 인증 방식 */
-  proofType: RiderDeliveryCompleteRequestProofType;
-  /**
-   * 인증 참조값(사진 URL/스토리지 키, 수령인 확인 참조, 인증코드)
-   * @minLength 0
-   * @maxLength 500
-   */
-  proofValue: string;
 }
 
 /**
@@ -1594,10 +1571,12 @@ export type GetDeliveriesParams = {
 status?: GetDeliveriesStatus;
 /**
  * 페이지(0부터)
+ * @minimum 0
  */
 page?: number;
 /**
  * 페이지 크기
+ * @minimum 1
  */
 size?: number;
 };
@@ -1647,6 +1626,25 @@ export const GetCustomerPointTransactionsType = {
 
 export type CheckLoginIdAvailabilityParams = {
 loginId: string;
+};
+
+export type CompleteRiderDeliveryParams = {
+proofType: CompleteRiderDeliveryProofType;
+proofValue?: string;
+};
+
+export type CompleteRiderDeliveryProofType = typeof CompleteRiderDeliveryProofType[keyof typeof CompleteRiderDeliveryProofType];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const CompleteRiderDeliveryProofType = {
+  PHOTO: 'PHOTO',
+  RECIPIENT_CONFIRMATION: 'RECIPIENT_CONFIRMATION',
+  AUTH_CODE: 'AUTH_CODE',
+} as const;
+
+export type CompleteRiderDeliveryBody = {
+  file?: Blob;
 };
 
 export type GetRiderSettlementsParams = {
