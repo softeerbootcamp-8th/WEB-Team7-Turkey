@@ -1,4 +1,5 @@
 import { isAxiosError } from 'axios'
+import { Capacitor } from '@capacitor/core'
 import type {
   AddressResponse,
   ApiResponseDeliveryCancelResponse,
@@ -13,6 +14,58 @@ const ITEM_TYPE_LABELS: Record<DeliveryDetailResponseItemType, string> = {
   MEDIUM_PARCEL: '중형 소포',
   LARGE_PARCEL: '대형 소포',
   FOOD: '음식',
+}
+
+export type ProofImageEnvironment = 'development-web' | 'native' | 'production-web'
+
+function currentProofImageEnvironment(): ProofImageEnvironment {
+  if (Capacitor.isNativePlatform()) {
+    return 'native'
+  }
+  return import.meta.env.DEV ? 'development-web' : 'production-web'
+}
+
+function localPathFromProofValue(value: string): string | null {
+  if (/^[A-Za-z]:[\\/]/.test(value)) {
+    return value.replaceAll('\\', '/')
+  }
+  if (/^\/(Users|home|private|tmp|var)\//.test(value)) {
+    return value
+  }
+  if (value.startsWith('file://')) {
+    try {
+      return decodeURIComponent(new URL(value).pathname)
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
+/**
+ * S3/CDN URL과 웹 상대 URL은 그대로 사용한다. 로컬 절대경로는 네이티브 WebView 또는
+ * 로컬 Vite 개발 서버에서만 변환하며, 배포 웹에서는 브라우저 보안상 읽을 수 없어 null을 반환한다.
+ */
+export function resolveProofImageSource(
+  proofValue: string | null | undefined,
+  environment: ProofImageEnvironment = currentProofImageEnvironment(),
+): string | null {
+  const value = proofValue?.trim()
+  if (!value) {
+    return null
+  }
+
+  const localPath = localPathFromProofValue(value)
+  if (!localPath) {
+    return value
+  }
+  if (environment === 'native') {
+    return Capacitor.convertFileSrc(localPath)
+  }
+  if (environment === 'development-web') {
+    return `/@fs${encodeURI(localPath)}`
+  }
+  return null
 }
 
 export function formatDetailItemType(itemType: string | null | undefined): string {

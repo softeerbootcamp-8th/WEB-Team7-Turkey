@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import {
@@ -19,6 +19,7 @@ import {
   getDeliveryCancelErrorMessage,
   getDeliveryDetailErrorState,
   isDeliveryCancelSuccess,
+  resolveProofImageSource,
 } from './-deliveryDetail'
 
 export const Route = createFileRoute('/customer/_authed/deliveries/$deliveryId/')({
@@ -163,14 +164,7 @@ function DeliveryDetail() {
 
         <FareSection detail={detail} />
 
-        <section className="rounded-2xl bg-surface-container-lowest p-5 shadow-sm">
-          <h2 className="text-headline-sm font-bold">인수 정보</h2>
-          <div className="mt-4 flex items-center gap-4 rounded-xl bg-surface-container-low p-4 text-secondary">
-            <span className="material-symbols-outlined text-3xl" aria-hidden="true">image</span>
-            <p className="text-body-md">배송 완료 인증 사진은 준비 중입니다.</p>
-          </div>
-          {/* TODO(#99): 배송 완료 인증 조회 API 확정 후 사진 연결 */}
-        </section>
+        <DeliveryProofSection detail={detail} />
       </div>
 
       {canCancel && (
@@ -228,6 +222,39 @@ function FareSection({ detail }: { detail: DeliveryDetailResponse }) {
         <InfoRow label="총 요금" value={formatDetailFare(detail.fare?.totalFare)} strong />
       </div>
     </InfoSection>
+  )
+}
+
+function DeliveryProofSection({ detail }: { detail: DeliveryDetailResponse }) {
+  const imageSource = detail.proofType === 'PHOTO'
+    ? resolveProofImageSource(detail.proofValue)
+    : null
+  const [imageFailed, setImageFailed] = useState(false)
+
+  useEffect(() => {
+    setImageFailed(false)
+  }, [imageSource])
+
+  return (
+    <section className="rounded-2xl bg-surface-container-lowest p-5 shadow-sm">
+      <h2 className="text-headline-sm font-bold">인수 정보</h2>
+      {imageSource && !imageFailed ? (
+        <figure className="mt-4 overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low">
+          <img
+            src={imageSource}
+            alt="배송 완료 인증 사진"
+            onError={() => setImageFailed(true)}
+            className="max-h-96 w-full object-contain"
+          />
+          <figcaption className="px-4 py-3 text-body-md text-secondary">배송 완료 인증 사진</figcaption>
+        </figure>
+      ) : (
+        <div className="mt-4 flex items-center gap-4 rounded-xl bg-surface-container-low p-4 text-secondary">
+          <span className="material-symbols-outlined text-3xl" aria-hidden="true">image</span>
+          <p className="text-body-md">배송 완료 인증 사진은 준비 중입니다.</p>
+        </div>
+      )}
+    </section>
   )
 }
 

@@ -9,6 +9,7 @@ import {
   getDeliveryCancelErrorMessage,
   getDeliveryDetailErrorState,
   isDeliveryCancelSuccess,
+  resolveProofImageSource,
 } from './-deliveryDetail'
 
 describe('delivery detail', () => {
@@ -43,5 +44,17 @@ describe('delivery detail', () => {
   it('취소 응답의 성공 상태를 검증한다', () => {
     expect(isDeliveryCancelSuccess({ success: true, data: { status: 'CANCELED' } })).toBe(true)
     expect(isDeliveryCancelSuccess({ success: true })).toBe(false)
+  })
+
+  it('웹 사진 주소는 그대로 사용한다', () => {
+    expect(resolveProofImageSource('https://cdn.example.com/proof/photo.png', 'production-web'))
+      .toBe('https://cdn.example.com/proof/photo.png')
+    expect(resolveProofImageSource('/api/proofs/1', 'production-web')).toBe('/api/proofs/1')
+  })
+
+  it('로컬 사진 경로는 개발 서버용 주소로 변환한다', () => {
+    expect(resolveProofImageSource('/Users/admin/data/배송 사진.png', 'development-web'))
+      .toBe('/@fs/Users/admin/data/%EB%B0%B0%EC%86%A1%20%EC%82%AC%EC%A7%84.png')
+    expect(resolveProofImageSource('/Users/admin/data/photo.png', 'production-web')).toBeNull()
   })
 })
