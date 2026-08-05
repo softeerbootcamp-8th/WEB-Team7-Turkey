@@ -63,50 +63,57 @@ public class RiderDeliveryRequestService {
      *   <li>라이더가 AVAILABLE 상태인지, {@code radiusMeters}가 양수인지, {@code sortParam}이
      *       DISTANCE/FARE/REQUESTED_AT 중 하나인지 검사한다. 위반하면 예외를 던진다
      *       (라이더 상태 위반은 403, 나머지는 400으로 변환된다).</li>
-     *   <li>WAITING 상태인 배송요청을 전부 조회한다. 없으면 빈 목록을 바로 반환한다.</li>
+     *   <li>{@code latitude}·{@code longitude}가 둘 다 있으면(#367) bounding box 쿼리
+     *       ({@link DeliveryOrderRepository#findByStatusAndPickup_LatitudeBetweenAndPickup_LongitudeBetween})로
+     *       {@code radiusMeters}를 감싸는 사각형 범위의 WAITING 주문만 가져온다
+     *       ({@code idx_delivery_waiting_location} 인덱스 사용). 하나라도 없으면(요청에 좌표를
+     *       안 실었으면) WAITING 전부를 가져온다(#55 계약 확정 — 위치 없음은 에러가 아니다).</li>
+     *   <li>없으면 빈 목록을 바로 반환한다.</li>
      *   <li>배송요청마다 "예상 운임 스냅샷"(주문 생성 시점에 계산·저장된 ESTIMATE 운임,
      *       {@link OrderFareSnapshot})을 한 번에 조회해 orderId로 매핑해 둔다 — 배송요청 개수만큼
      *       따로 조회하지 않기 위해서다(N+1 방지). 스냅샷이 없는 배송요청이 있으면 데이터 정합성
      *       오류로 보고 예외를 던진다(정상 생성된 주문은 스냅샷이 항상 함께 있어야 한다).</li>
-     *   <li>라이더 좌표는 <b>현재 알 수 없다</b>(항상 {@code Optional.empty()}). 예전에는 Redis
-     *       ({@code riders:geo})에서 라이더 위치를 읽었지만, 배차 위치 검색을 라이더가 아니라 주문
-     *       픽업지 인덱싱으로 뒤집으면서(#101 미구현) 라이더-측 GEO 사용처를 제거했다(#342, 디스커션
-     *       #338). 좌표를 검색 요청 파라미터로 받는 계약 변경은 별도 이슈(주문 GEOSEARCH 개편)에서
-     *       다룬다. 그때까지는 위치 없음으로 아래처럼 degrade 한다.</li>
      *   <li>배송요청마다 응답 한 줄(summary, {@link RiderDeliveryRequestSummaryResponse})로
-     *       변환한다. 라이더 위치를 알면 라이더→픽업지 거리를 계산해 채우고, 모르면 거리 필드는
+     *       변환한다. 라이더 좌표가 있으면 라이더→픽업지 거리를 계산해 채우고, 없으면 거리 필드는
      *       {@code null}로 남긴다.</li>
-     *   <li>라이더 위치를 알면 {@code radiusMeters} 반경 밖의 배송요청은 결과에서 뺀다. 위치를
-     *       모르면 거리로 거를 수 없으므로 반경 필터 없이 전체를 반환한다(위치 미확보를 에러로
-     *       취급하지 않는다 — #55 계약 확정).</li>
+     *   <li>라이더 좌표가 있으면 {@code radiusMeters} 반경(원) 밖의 배송요청은 결과에서 뺀다 —
+     *       bounding box(사각형)가 원보다 넓어(4/π ≈ 1.27배) 생긴 모서리 후보를 여기서 다시
+     *       걸러낸다. 좌표가 없으면 거리로 거를 수 없으므로 반경 필터 없이 전체를 반환한다.</li>
      *   <li>{@code sortParam}에 따라 정렬한다: DISTANCE(가까운 순) · FARE(예상 정산액 높은 순) ·
-     *       REQUESTED_AT(오래 기다린 순). 단 DISTANCE를 요청했는데 라이더 위치를 몰라 거리를 계산할
+     *       REQUESTED_AT(오래 기다린 순). 단 DISTANCE를 요청했는데 좌표가 없어 거리를 계산할
      *       수 없으면 REQUESTED_AT으로 대체한다.</li>
      * </ol>
      *
      * @param rider 세션 인증을 통과해 이미 식별된 현재 라이더
-     * @param radiusMeters 검색 반경(m). 라이더 위치를 알 때만 실제로 적용된다.
+     * @param latitude 라이더 현재 위도. {@code longitude}와 둘 다 있어야 위치 필터가 적용된다.
+     * @param longitude 라이더 현재 경도. {@code latitude}와 둘 다 있어야 위치 필터가 적용된다.
+     * @param radiusMeters 검색 반경(m). 좌표가 있을 때만 실제로 적용된다.
      * @param sortParam {@code "DISTANCE"} · {@code "FARE"} · {@code "REQUESTED_AT"} 중 하나
      *                 (대소문자 구분). 그 외 값은 {@link IllegalArgumentException}.
      * @return 반경 내 WAITING 배송요청 목록(정렬 적용됨). 대상이 없으면 빈 리스트.
      */
     @Transactional(readOnly = true)
     public List<RiderDeliveryRequestSummaryResponse> getDeliveryRequests(
-            AuthenticatedRider rider, int radiusMeters, String sortParam) {
+            AuthenticatedRider rider, BigDecimal latitude, BigDecimal longitude,
+            int radiusMeters, String sortParam) {
 
         requireAvailable(rider);
         requirePositiveRadius(radiusMeters);
         DeliveryRequestSort sort = DeliveryRequestSort.from(sortParam);
 
-        List<DeliveryOrder> waitingOrders = deliveryOrderRepository.findByStatus(OrderStatus.WAITING);
+        boolean hasPosition = latitude != null && longitude != null;
+
+        List<DeliveryOrder> waitingOrders = hasPosition
+                ? findWithinBoundingBox(latitude, longitude, radiusMeters)
+                : deliveryOrderRepository.findByStatus(OrderStatus.WAITING);
         if (waitingOrders.isEmpty()) {
             return List.of();
         }
 
         Map<Long, OrderFareSnapshot> estimateByOrderId = loadEstimateSnapshots(waitingOrders);
-        // 라이더-측 GEO 사용처 제거(#342, 디스커션 #338) — 좌표 소스가 요청 파라미터로 이동하기
-        // 전까지 위치 없음으로 degrade 한다: 거리 null, 반경 필터 스킵, DISTANCE 정렬은 REQUESTED_AT 로.
-        Optional<Point> riderPosition = Optional.empty();
+        Optional<Point> riderPosition = hasPosition
+                ? Optional.of(new Point(longitude.doubleValue(), latitude.doubleValue()))
+                : Optional.empty();
 
         List<RiderDeliveryRequestSummaryResponse> summaries = waitingOrders.stream()
                 .map(order -> toSummary(order, estimateSnapshotOf(order, estimateByOrderId), riderPosition))
@@ -115,6 +122,12 @@ public class RiderDeliveryRequestService {
 
         summaries.sort(comparatorFor(sort, riderPosition.isPresent()));
         return summaries;
+    }
+
+    private List<DeliveryOrder> findWithinBoundingBox(BigDecimal latitude, BigDecimal longitude, int radiusMeters) {
+        DeliveryService.BoundingBox box = deliveryService.boundingBox(latitude, longitude, radiusMeters);
+        return deliveryOrderRepository.findByStatusAndPickup_LatitudeBetweenAndPickup_LongitudeBetween(
+                OrderStatus.WAITING, box.latMin(), box.latMax(), box.lngMin(), box.lngMax());
     }
 
     /**

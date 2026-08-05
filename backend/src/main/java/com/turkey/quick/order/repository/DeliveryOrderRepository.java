@@ -4,6 +4,7 @@ import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.TrackableDelivery;
 import jakarta.persistence.LockModeType;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -156,6 +157,18 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
     Optional<Long> findInProgressIdByActiveRiderId(@Param("riderId") Long riderId);
 
     List<DeliveryOrder> findByStatus(OrderStatus status);
+
+    /**
+     * 라이더 콜 목록 위치 검색(#367)의 bounding box 쿼리. status·픽업 위경도가 사각형 범위 안에
+     * 있는 WAITING 주문만 가져온다 — {@code idx_delivery_waiting_location(status,
+     * pickup_latitude, pickup_longitude)}를 그대로 탄다(V10에 있었지만 쓰는 쿼리가 없었다).
+     *
+     * <p>사각형은 실제 반경(원)보다 넓다(4/π ≈ 1.27배) — 모서리에 걸리는 후보는 이 쿼리로
+     * 걸러지지 않는다. 호출자({@code RiderDeliveryRequestService})가 하버사인 거리로 다시
+     * 걸러 원 밖을 제외한다.
+     */
+    List<DeliveryOrder> findByStatusAndPickup_LatitudeBetweenAndPickup_LongitudeBetween(
+            OrderStatus status, BigDecimal latMin, BigDecimal latMax, BigDecimal lngMin, BigDecimal lngMax);
 
     /**
      * 배차 대기 시간 초과 자동 취소(#42)의 능동 스캐너용 조회. WAITING 이면서 {@code requestedAt}
