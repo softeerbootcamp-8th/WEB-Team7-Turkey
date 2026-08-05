@@ -72,7 +72,7 @@ public class RiderPaymentController implements RiderPointApi {
             AuthenticatedRider rider,
 
             @Valid @RequestBody WithdrawalRequest request) {
-        return null;
+        return ApiResponse.ok(riderPaymentService.requestWithdrawal(rider.memberId(), request));
     }
 
     @Override
