@@ -4,7 +4,7 @@
 - 브랜치: `feature/218-rider-history-detail-ui` (**`feature/71` 위 스택** — 아래 선택 2)
 - 범위: frontend
 - 작성일: 2026-08-05
-- 상태: **구현·단위테스트 완료, 전체 빌드는 red로 대기** (아래 「새로 생긴 미결 사항」 · #379)
+- 상태: **완료** — #379가 dev에 머지된 뒤 feature/218을 dev 위로 rebase해 전체 빌드 green (typecheck·test·build 통과)
 
 ## 무엇을 만들었나
 
@@ -100,18 +100,18 @@
 ```text
 pnpm exec vitest run .../-riderHistoryDetail.test.ts → 7 tests passed
 pnpm test (전체)                                     → 20 files, 147 tests passed
-pnpm typecheck / pnpm build                          → RED (내 파일 아님 — #47 화면 useCancelDelivery, #379)
+pnpm typecheck / pnpm build                          → 통과 (#379 dev 머지 후 rebase로 해소)
 ```
 
 ### 검증하지 못한 것
 
-- **전체 `pnpm typecheck`/`build`**: #379(dev stale 클라이언트)로 인해 #47 고객 취소 화면에서 실패.
-  내가 추가/수정한 파일에는 타입 오류가 없다. #379가 dev에 반영되면 재생성 후 녹색 확인한다.
-- **브라우저 렌더**(상세 조회·정산 표시): 빌드가 녹색이 된 뒤 수동 확인 예정.
+- **브라우저 렌더**(상세 조회·정산 표시): 자동 테스트로 덮지 않았다(프론트 러너는 순수 함수만). 사람이
+  로컬(백엔드 local + 프론트 dev 서버)에서 완료 배송 상세를 열어 수동 확인 예정.
 
 ## 새로 생긴 미결 사항
 
 - **[#379] dev의 Orval 생성 클라이언트가 백엔드 operationId와 불일치**: 필수 regen이 드러낸 선행 버그.
   #47 고객 취소 화면이 낡은 `useCancelDelivery`를 쓰는데 실제 백엔드는 `cancelCustomerDelivery`
   (→`useCancelCustomerDelivery`)다. CI가 프론트 typecheck/build를 돌리지 않아(백엔드 `-x test`) 조용히
-  병합됐다. **이 버그가 dev에 반영되어야 #218 빌드가 녹색이 된다.** 예방책(프론트 CI 게이트)은 #379에서 논의.
+  병합됐다. **해소됨**: #379(PR #381)가 dev에 머지된 뒤 feature/218을 dev 위로 rebase해 빌드 green.
+  예방책(프론트 CI 게이트)은 #379에서 계속 논의.
