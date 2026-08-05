@@ -3,8 +3,11 @@ package com.turkey.quick.rider.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 import com.turkey.quick.common.exception.BusinessException;
 import com.turkey.quick.member.domain.Member;
@@ -95,7 +98,7 @@ class RiderDeliveryRequestServiceTest {
         @Test
         @DisplayName("라이더 운행 상태가 AVAILABLE이 아니면 403으로 거부한다")
         void shouldRejectWhenRiderNotAvailable() {
-            assertThatThrownBy(() -> service.getDeliveryRequests(rider(OperatingStatus.BUSY), 3000, "DISTANCE"))
+            assertThatThrownBy(() -> service.getDeliveryRequests(rider(OperatingStatus.BUSY), null, null, 3000, "DISTANCE"))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("AVAILABLE");
         }
@@ -103,14 +106,14 @@ class RiderDeliveryRequestServiceTest {
         @Test
         @DisplayName("검색 반경이 0 이하면 거부한다")
         void shouldRejectWhenRadiusNotPositive() {
-            assertThatThrownBy(() -> service.getDeliveryRequests(rider(OperatingStatus.AVAILABLE), 0, "DISTANCE"))
+            assertThatThrownBy(() -> service.getDeliveryRequests(rider(OperatingStatus.AVAILABLE), null, null, 0, "DISTANCE"))
                     .isInstanceOf(IllegalArgumentException.class);
         }
 
         @Test
         @DisplayName("정렬 기준 값이 잘못되면 거부한다")
         void shouldRejectWhenSortInvalid() {
-            assertThatThrownBy(() -> service.getDeliveryRequests(rider(OperatingStatus.AVAILABLE), 3000, "NEAREST"))
+            assertThatThrownBy(() -> service.getDeliveryRequests(rider(OperatingStatus.AVAILABLE), null, null, 3000, "NEAREST"))
                     .isInstanceOf(IllegalArgumentException.class);
         }
 
@@ -120,7 +123,7 @@ class RiderDeliveryRequestServiceTest {
             given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of());
 
             List<RiderDeliveryRequestSummaryResponse> result =
-                    service.getDeliveryRequests(rider(OperatingStatus.AVAILABLE), 3000, "DISTANCE");
+                    service.getDeliveryRequests(rider(OperatingStatus.AVAILABLE), null, null, 3000, "DISTANCE");
 
             assertThat(result).isEmpty();
         }
@@ -133,18 +136,19 @@ class RiderDeliveryRequestServiceTest {
             given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(List.of(near.getId()), FareType.ESTIMATE))
                     .willReturn(List.of());
 
-            assertThatThrownBy(() -> service.getDeliveryRequests(rider(OperatingStatus.AVAILABLE), 3000, "DISTANCE"))
+            assertThatThrownBy(() -> service.getDeliveryRequests(rider(OperatingStatus.AVAILABLE), null, null, 3000, "DISTANCE"))
                     .isInstanceOf(IllegalStateException.class);
         }
     }
 
     /**
-     * 라이더 좌표 소스(Redis GEO)를 제거해(#342, 디스커션 #338) 콜 목록은 이제 <b>항상</b> 위치
-     * 없음으로 degrade 한다: 반경 필터 없이 전체 반환, 거리 필드 null, DISTANCE 요청은 REQUESTED_AT
-     * 로 대체. 좌표를 요청 파라미터로 받는 계약 변경은 별도 이슈에서 다룬다.
+     * 요청에 좌표(latitude/longitude)가 없으면(#367) 위치 없음으로 degrade 한다: 반경 필터
+     * 없이 전체 반환, 거리 필드 null, DISTANCE 요청은 REQUESTED_AT 로 대체(#55 계약 확정 —
+     * 위치 없음은 에러가 아니다). 좌표가 있을 때의 bounding box 경로는
+     * {@link WithRiderPositionTest} 를 본다.
      */
     @Nested
-    @DisplayName("라이더 좌표 없음으로 항상 degrade (#342)")
+    @DisplayName("좌표 없이 조회하면 위치 없음으로 degrade (#55/#367)")
     class DegradedWithoutRiderPositionTest {
 
         @Test
@@ -159,7 +163,7 @@ class RiderDeliveryRequestServiceTest {
                     .willReturn(List.of(estimateSnapshot(o1, 4000L), estimateSnapshot(o2, 4000L)));
 
             List<RiderDeliveryRequestSummaryResponse> result =
-                    service.getDeliveryRequests(rider(OperatingStatus.AVAILABLE), 3000, "DISTANCE");
+                    service.getDeliveryRequests(rider(OperatingStatus.AVAILABLE), null, null, 3000, "DISTANCE");
 
             assertThat(result).hasSize(2);
             assertThat(result).allSatisfy(r -> assertThat(r.distanceToPickupMeters()).isNull());
@@ -179,7 +183,7 @@ class RiderDeliveryRequestServiceTest {
                     .willReturn(List.of(estimateSnapshot(newerOrder, 4000L), estimateSnapshot(olderOrder, 4000L)));
 
             List<RiderDeliveryRequestSummaryResponse> result =
-                    service.getDeliveryRequests(rider(OperatingStatus.AVAILABLE), 3000, "DISTANCE");
+                    service.getDeliveryRequests(rider(OperatingStatus.AVAILABLE), null, null, 3000, "DISTANCE");
 
             assertThat(result).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
                     .containsExactly(olderOrder.getId(), newerOrder.getId());
@@ -197,10 +201,100 @@ class RiderDeliveryRequestServiceTest {
                     .willReturn(List.of(estimateSnapshot(cheap, 4000L), estimateSnapshot(expensive, 9000L)));
 
             List<RiderDeliveryRequestSummaryResponse> result =
-                    service.getDeliveryRequests(rider(OperatingStatus.AVAILABLE), 3000, "FARE");
+                    service.getDeliveryRequests(rider(OperatingStatus.AVAILABLE), null, null, 3000, "FARE");
 
             assertThat(result).extracting(RiderDeliveryRequestSummaryResponse::expectedSettlementAmount)
                     .containsExactly(9000L, 4000L);
+        }
+    }
+
+    /**
+     * 요청에 좌표가 둘 다 있으면(#367) bounding box 쿼리로 WAITING 후보를 가져오고, 실제 반경
+     * 밖인 사각형 모서리 후보는 하버사인 거리로 다시 걸러낸다. 하나만 있으면(다른 하나가 null)
+     * 여전히 {@link DegradedWithoutRiderPositionTest} 와 같은 degrade 경로다.
+     */
+    @Nested
+    @DisplayName("좌표가 있으면 bounding box로 조회한다 (#367)")
+    class WithRiderPositionTest {
+
+        private static final BigDecimal RIDER_LAT = new BigDecimal("37.5000000");
+        private static final BigDecimal RIDER_LNG = new BigDecimal("127.0000000");
+
+        /**
+         * {@code getDeliveryRequests}는 좌표를 {@code org.springframework.data.geo.Point}(double)로
+         * 왕복시킨 뒤 {@code BigDecimal.valueOf(double)}로 되돌려 {@code deliveryService.distance}에
+         * 넘긴다 — 이 과정에서 스케일이 바뀐다(예: "37.5000000" → "37.5"). {@code BigDecimal.equals}는
+         * 스케일까지 비교하므로, 스텁의 기대값도 같은 변환을 거친 값이어야 매칭된다.
+         */
+        private static final BigDecimal RIDER_LAT_VIA_POINT = BigDecimal.valueOf(RIDER_LAT.doubleValue());
+        private static final BigDecimal RIDER_LNG_VIA_POINT = BigDecimal.valueOf(RIDER_LNG.doubleValue());
+
+        private final DeliveryService.BoundingBox box = new DeliveryService.BoundingBox(
+                new BigDecimal("37.4910000"), new BigDecimal("37.5090000"),
+                new BigDecimal("126.9887000"), new BigDecimal("127.0113000"));
+
+        @Test
+        @DisplayName("bounding box 쿼리로 조회하고, 전수 스캔(findByStatus)은 호출하지 않는다")
+        void shouldQueryBoundingBoxInsteadOfFullScan() {
+            DeliveryOrder near = order(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"), LocalDateTime.now());
+            given(deliveryService.boundingBox(RIDER_LAT, RIDER_LNG, 1000)).willReturn(box);
+            given(deliveryOrderRepository.findByStatusAndPickup_LatitudeBetweenAndPickup_LongitudeBetween(
+                    OrderStatus.WAITING, box.latMin(), box.latMax(), box.lngMin(), box.lngMax()))
+                    .willReturn(List.of(near));
+            given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(List.of(near.getId()), FareType.ESTIMATE))
+                    .willReturn(List.of(estimateSnapshot(near, 4000L)));
+            given(deliveryService.distance(RIDER_LAT_VIA_POINT, RIDER_LNG_VIA_POINT,
+                    near.getPickup().getLatitude(), near.getPickup().getLongitude()))
+                    .willReturn(new BigDecimal("0.500"));
+
+            List<RiderDeliveryRequestSummaryResponse> result = service.getDeliveryRequests(
+                    rider(OperatingStatus.AVAILABLE), RIDER_LAT, RIDER_LNG, 1000, "DISTANCE");
+
+            verify(deliveryOrderRepository, never()).findByStatus(any());
+            assertThat(result).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
+                    .containsExactly(near.getId());
+            assertThat(result.get(0).distanceToPickupMeters()).isEqualTo(500);
+        }
+
+        @Test
+        @DisplayName("사각형 후보 중 실제 반경(원) 밖인 것은 결과에서 제외한다")
+        void shouldExcludeCandidatesOutsideActualRadius() {
+            DeliveryOrder near = order(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"), LocalDateTime.now());
+            DeliveryOrder corner = order(new BigDecimal("37.5089000"), new BigDecimal("127.0112000"), LocalDateTime.now());
+            given(deliveryService.boundingBox(RIDER_LAT, RIDER_LNG, 1000)).willReturn(box);
+            given(deliveryOrderRepository.findByStatusAndPickup_LatitudeBetweenAndPickup_LongitudeBetween(
+                    OrderStatus.WAITING, box.latMin(), box.latMax(), box.lngMin(), box.lngMax()))
+                    .willReturn(List.of(near, corner));
+            given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(
+                    List.of(near.getId(), corner.getId()), FareType.ESTIMATE))
+                    .willReturn(List.of(estimateSnapshot(near, 4000L), estimateSnapshot(corner, 4000L)));
+            given(deliveryService.distance(RIDER_LAT_VIA_POINT, RIDER_LNG_VIA_POINT,
+                    near.getPickup().getLatitude(), near.getPickup().getLongitude()))
+                    .willReturn(new BigDecimal("0.500"));
+            given(deliveryService.distance(RIDER_LAT_VIA_POINT, RIDER_LNG_VIA_POINT,
+                    corner.getPickup().getLatitude(), corner.getPickup().getLongitude()))
+                    .willReturn(new BigDecimal("1.300"));
+
+            List<RiderDeliveryRequestSummaryResponse> result = service.getDeliveryRequests(
+                    rider(OperatingStatus.AVAILABLE), RIDER_LAT, RIDER_LNG, 1000, "DISTANCE");
+
+            assertThat(result).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
+                    .containsExactly(near.getId());
+        }
+
+        @Test
+        @DisplayName("좌표 중 하나만 있으면(경도 없음) 여전히 위치 없음으로 degrade한다")
+        void shouldDegradeWhenOnlyOneCoordinateGiven() {
+            DeliveryOrder order = order(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"), LocalDateTime.now());
+            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(order));
+            given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(List.of(order.getId()), FareType.ESTIMATE))
+                    .willReturn(List.of(estimateSnapshot(order, 4000L)));
+
+            List<RiderDeliveryRequestSummaryResponse> result = service.getDeliveryRequests(
+                    rider(OperatingStatus.AVAILABLE), RIDER_LAT, null, 1000, "DISTANCE");
+
+            verify(deliveryService, never()).boundingBox(any(), any(), anyInt());
+            assertThat(result.get(0).distanceToPickupMeters()).isNull();
         }
     }
 

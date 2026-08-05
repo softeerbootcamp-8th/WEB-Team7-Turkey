@@ -51,9 +51,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * 실제 MySQL(JPA 매핑·조회)에 붙여서 콜 목록·상세·수락을 검증한다.
  *
- * <p>라이더-측 GEO 사용처를 제거하면서(#342, 디스커션 #338) 콜 목록은 라이더 좌표를 읽지 않는다 —
- * 거리·반경 필터는 항상 위치 없음으로 degrade 한다. 좌표를 요청 파라미터로 받는 계약 변경은 별도
- * 이슈에서 다룬다.
+ * <p>라이더-측 GEO 사용처를 제거하면서(#342, 디스커션 #338) 콜 목록은 한동안 라이더 좌표를 읽지
+ * 못했다 — 거리·반경 필터가 항상 위치 없음으로 degrade 했었다. #367부터 좌표를 요청 파라미터로
+ * 받아 {@code idx_delivery_waiting_location} bounding box 쿼리로 실제 반경 필터링을 한다.
+ * 좌표를 안 주면 여전히 이전과 같은 degrade 경로다.
  */
 @SpringBootTest(properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")
@@ -189,7 +190,7 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         deliveryOrderRepository.save(assignedTarget);
 
         List<RiderDeliveryRequestSummaryResponse> result = riderDeliveryRequestService.getDeliveryRequests(
-                authenticatedRider(OperatingStatus.AVAILABLE), 100_000, "REQUESTED_AT");
+                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "REQUESTED_AT");
 
         assertThat(result).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
                 .contains(waiting.getId())
@@ -197,18 +198,55 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
     }
 
     @Test
-    @DisplayName("라이더 좌표를 읽지 않으므로 반경으로 거르지 않고 거리 필드는 null이다(#342 degrade)")
+    @DisplayName("좌표를 안 주면 반경으로 거르지 않고 거리 필드는 null이다(#55/#367 degrade)")
     void shouldDegradeGracefullyWithoutRiderPosition() {
-        // 좁은 반경(100m)을 줘도 먼 주문이 그대로 반환된다 — 라이더 좌표 소스가 없어 반경 필터가
+        // 좁은 반경(100m)을 줘도 먼 주문이 그대로 반환된다 — 좌표를 안 줬으므로 반경 필터가
         // 적용되지 않기 때문이다.
         DeliveryOrder order = saveWaitingOrder(new BigDecimal("37.9000000"), new BigDecimal("127.9000000"));
 
         List<RiderDeliveryRequestSummaryResponse> result = riderDeliveryRequestService.getDeliveryRequests(
-                authenticatedRider(OperatingStatus.AVAILABLE), 100, "DISTANCE");
+                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100, "DISTANCE");
 
         assertThat(result).extracting(RiderDeliveryRequestSummaryResponse::deliveryId).contains(order.getId());
         assertThat(result.stream().filter(r -> r.deliveryId().equals(order.getId())).findFirst().orElseThrow()
                 .distanceToPickupMeters()).isNull();
+    }
+
+    @Test
+    @DisplayName("좌표를 주면 bounding box 인덱스로 반경 내 주문만 반환하고 거리 필드를 채운다(#367)")
+    void shouldFilterByBoundingBoxWhenPositionGiven() {
+        BigDecimal riderLat = new BigDecimal("37.5000000");
+        BigDecimal riderLng = new BigDecimal("127.0000000");
+        // 라이더 위치에서 약 150m — 반경(3km) 안
+        DeliveryOrder near = saveWaitingOrder(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"));
+        // 라이더 위치에서 수십 km — 반경(3km) 훨씬 밖(사각형 범위 자체에도 안 걸림)
+        DeliveryOrder far = saveWaitingOrder(new BigDecimal("37.9000000"), new BigDecimal("127.9000000"));
+
+        List<RiderDeliveryRequestSummaryResponse> result = riderDeliveryRequestService.getDeliveryRequests(
+                authenticatedRider(OperatingStatus.AVAILABLE), riderLat, riderLng, 3000, "DISTANCE");
+
+        assertThat(result).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
+                .contains(near.getId())
+                .doesNotContain(far.getId());
+        assertThat(result.stream().filter(r -> r.deliveryId().equals(near.getId())).findFirst().orElseThrow()
+                .distanceToPickupMeters()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("사각형(bounding box) 범위엔 들어오지만 실제 반경(원) 밖인 주문은 제외한다(#367)")
+    void shouldExcludeBoundingBoxCornerOutsideActualRadius() {
+        BigDecimal riderLat = new BigDecimal("37.5000000");
+        BigDecimal riderLng = new BigDecimal("127.0000000");
+        int radiusMeters = 1000;
+        // 반경 1km를 감싸는 사각형의 대각선 모서리 방향 — 사각형 안에는 들어오지만 원(1km) 밖이다
+        // (사각형이 원보다 4/π≈1.27배 넓어서 생기는 모서리 후보, #367 처리 흐름 ④의 실제 예시).
+        DeliveryOrder corner = saveWaitingOrder(new BigDecimal("37.5088000"), new BigDecimal("127.0112000"));
+
+        List<RiderDeliveryRequestSummaryResponse> result = riderDeliveryRequestService.getDeliveryRequests(
+                authenticatedRider(OperatingStatus.AVAILABLE), riderLat, riderLng, radiusMeters, "DISTANCE");
+
+        assertThat(result).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
+                .doesNotContain(corner.getId());
     }
 
     @Test
@@ -217,7 +255,7 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         DeliveryOrder order = saveWaitingOrder(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"));
 
         List<RiderDeliveryRequestSummaryResponse> result = riderDeliveryRequestService.getDeliveryRequests(
-                authenticatedRider(OperatingStatus.AVAILABLE), 100_000, "REQUESTED_AT");
+                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "REQUESTED_AT");
 
         RiderDeliveryRequestSummaryResponse summary = result.stream()
                 .filter(r -> r.deliveryId().equals(order.getId())).findFirst().orElseThrow();
