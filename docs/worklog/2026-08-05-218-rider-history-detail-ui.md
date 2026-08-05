@@ -72,10 +72,15 @@
   할증·수수료 항목이 없다. 기본운임(baseFare)+거리운임(distanceFare)+물품할증(itemSurcharge)=확정운임
   (totalFare) + 별도 `settlementAmount`(최종 정산 금액)으로 매핑했다. 물품 할증은 0이면 행을 숨긴다.
   현재 정책상 settlementAmount == totalFare지만(수수료 정책 미도입), 화면은 두 값을 각각 받아 표시한다.
-- **완료 인증(proof)은 이미지 대신 텍스트로**: proofValue가 PHOTO면 로컬 절대경로/S3 URL이라 `<img>`로
-  못 그린다. proofType 라벨 + (PHOTO가 아니면) proofValue를 텍스트로 표시했다.
+- **완료 인증(proof) 사진을 고객 상세와 같은 방식으로 표시**(사후 보완): 처음엔 proofValue가 PHOTO면
+  로컬 절대경로/S3라 `<img>`로 못 그린다고 보고 라벨만 뒀으나, 고객 배송 상세가 로컬에서도 사진을
+  띄우는 걸 확인하고 그 방식을 이식했다. proof 이미지 해석 로직을 `shared/delivery/proofImage.ts`
+  (`resolveProofImageSource`)로 공용 추출 — S3/CDN URL은 그대로, 로컬 절대경로는 Vite 개발 서버(`/@fs`)·
+  네이티브 WebView(Capacitor)에서만 변환, 배포 웹의 로컬 경로는 null→안내 문구. 고객
+  `-deliveryDetail.ts`의 중복 정의를 제거하고 이 공용을 재노출하게 바꿨다(동작 불변, 고객 index.tsx·
+  테스트 무변경). PHOTO가 아니면 proofValue를 텍스트로 병기하는 건 유지.
 - **지도 영역 축소**: 시안의 지도 placeholder(`TODO: 지도/이미지 연결`)는 지도 SDK 미결(#209)이라
-  제거하고 "이동 거리" 텍스트로 대체했다.
+  제거하고 "이동 거리" 텍스트로 대체했다. (그 자리의 "이미지"는 완료 인증 사진으로, 위처럼 별도 표시.)
 - **주문번호를 `#{deliveryId}`로**: 시안의 `ORD-20231025-001`은 백엔드에 없는 형식이라 숫자 id로 표시
   (`requests/$deliveryId`와 동일).
 - **완료 시각은 steps의 COMPLETED에서 얻고 없으면 settledAt으로 보완**(헤더 날짜·시각).

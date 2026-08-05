@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { useGetDeliveryHistoryDetail } from '@/api/generated/rider-history/rider-history'
+import { resolveProofImageSource } from '@/shared/delivery/proofImage'
 import {
   formatDetailDate,
   formatDetailTime,
@@ -136,12 +138,15 @@ function RiderHistoryDetail() {
               <p className="font-body-lg text-body-lg font-semibold text-on-surface">{formatItemType(detail.itemType)}</p>
             </div>
           </div>
-          <div className="mt-sm flex justify-between items-center">
-            <p className="font-label-sm text-label-sm text-secondary">배송 완료 인증</p>
-            <p className="font-body-md text-body-md text-on-surface">
-              {formatProofType(detail.proofType)}
-              {detail.proofType && detail.proofType !== 'PHOTO' && detail.proofValue ? ` · ${detail.proofValue}` : ''}
-            </p>
+          <div className="mt-sm">
+            <div className="flex justify-between items-center">
+              <p className="font-label-sm text-label-sm text-secondary">배송 완료 인증</p>
+              <p className="font-body-md text-body-md text-on-surface">
+                {formatProofType(detail.proofType)}
+                {detail.proofType && detail.proofType !== 'PHOTO' && detail.proofValue ? ` · ${detail.proofValue}` : ''}
+              </p>
+            </div>
+            {detail.proofType === 'PHOTO' && <ProofPhoto proofValue={detail.proofValue} />}
           </div>
         </section>
         {/* Section 4: History Timeline */}
@@ -209,6 +214,41 @@ function RiderHistoryDetail() {
         </section>
       </main>
     </div>
+  )
+}
+
+/**
+ * 배송 완료 인증 사진. 고객 배송 상세와 같은 방식으로 표시한다(공용
+ * {@link resolveProofImageSource}) — S3/CDN URL은 그대로, 로컬 절대경로는 Vite 개발 서버(/@fs)나
+ * 네이티브 WebView에서만 보인다. 표시할 수 없으면(배포 웹의 로컬 경로 등) 안내 문구로 대체한다.
+ */
+function ProofPhoto({ proofValue }: { proofValue?: string }) {
+  const source = resolveProofImageSource(proofValue)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    setFailed(false)
+  }, [source])
+
+  if (!source || failed) {
+    return (
+      <div className="mt-sm flex items-center gap-sm rounded-lg bg-surface-container-low p-sm text-secondary">
+        <span className="material-symbols-outlined" aria-hidden="true">image</span>
+        <p className="font-body-md text-body-md">인증 사진을 표시할 수 없습니다.</p>
+      </div>
+    )
+  }
+
+  return (
+    <figure className="mt-sm overflow-hidden rounded-lg border border-surface-variant bg-surface-container-low">
+      <img
+        src={source}
+        alt="배송 완료 인증 사진"
+        onError={() => setFailed(true)}
+        className="max-h-80 w-full object-contain"
+      />
+      <figcaption className="px-sm py-2 font-label-sm text-label-sm text-secondary">배송 완료 인증 사진</figcaption>
+    </figure>
   )
 }
 
