@@ -181,6 +181,26 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - 동일 요청 재전송에 대한 API 멱등성 정책(요청 식별값 기준)
 - 예상 요금과 최종 요금의 차이 허용 >> 허용하기로 했음
 - 포인트 차감·환불 시점, 포인트 동시성 처리 방식(선차감 vs 결제 승인 모킹 포함)
+- **배차 대기 시간 초과 자동 취소(#42)가 폴링 기반 스캐너(1분 주기) + 지연 만료 하이브리드로
+  확정됨**(사람 확인, 2026-08-04). 다만 남은 미결이 있다:
+  - 고객이 재주문·배차 수락 시도를 하지 않고 그냥 기다리기만 하면, 실제 취소·환급까지 최대
+    스캔 주기(1분)만큼 창이 남는다. 이걸 감내 가능한 백스톱으로 명시적으로 확정하지는 않았다 —
+    창을 없애려면 주문별 정밀 타이머(`TaskScheduler.schedule`)가 필요한데, 인스턴스 재시작 시
+    예약이 사라지는 문제가 있어 도입하지 않았다.
+  - 고객이 자기 주문의 "만료됨" 상태를 능동적으로 조회할 방법이 없다(#44/#46 미구현). 그 화면이
+    생기면 `DeliveryTimeoutService.cancelIfExpired`류 판정을 같은 원칙으로 적용해야 한다.
+    포인트 잔액 조회(`CustomerPaymentService.getPointBalance`)에 적용하려면 payment → order
+    의존이 생겨 아래 "order → payment 의존 방향 고정" 확정 결정과 충돌하므로(순환 참조),
+    조정 로직을 어느 레이어에 둘지 별도 설계가 필요하다.
+  - 다중 인스턴스로 확장되면 스캐너 중복 실행(정합성 문제 아님, 효율 문제)을 Redis 기반 분산
+    락으로 막을지 재검토해야 한다. 지금은(단일 인스턴스 전제) 조건부 UPDATE만으로 정합성이
+    보장돼 락 없이 간다.
+- **고객 배송 주문 취소(#47)가 시간 제약 없는 범용 "취소하기"로 구현됨**(사람 확인,
+  2026-08-04) — 배차 대기 타임아웃(#42) 이후에만 노출되는 조건부 "환급받기" 버튼은 만들지
+  않기로 했다(취소=환급이라 후자가 전자의 부분집합). 다만 상세화면에서 `requestedAt + 5분`
+  기준 클라이언트 사이드 카운트다운으로 화면을 켜둔 채 자동으로 "만료됨" 안내로 전환되는
+  기능은 아직 미구현이다 — 서버 재폴링 없이 순수 클라이언트 계산으로 만들어야 하며,
+  #46/#47 프론트 연동 시 반영해야 한다.
 - **위치 추적이 #297(2026-08-02)에서 단순화됐고, 그중 두 가지를 #317(2026-08-03)에서 되돌렸다.**
   되돌린 것: Redis 최신 위치 저장(`RiderLocationRepository`, Lua 조건부 갱신), SSE Pub/Sub
   팬아웃(`TrackingChannel`·`TrackingPublisher`·`TrackingSubscriber`·`RedisMessageListenerConfig`).
@@ -433,6 +453,10 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   `delivery_order`에 관련 컬럼이 없음(`itemType` 열거형만 존재). 화면에서 실제로 필요해지면 스키마
   변경(Flyway 마이그레이션)과 주문 생성(REQ-ORD-002) 쪽 값 저장까지 함께 논의해야 함
   (2026-07-30: #56 rebase 중 dev 병합 과정에서 이 항목이 유실됐던 걸 복구함)
+- `RiderPointApi`의 `getSettlements`(정산 전용)·`getWithdrawals`(출금 전용, 상태 포함)가
+  여전히 `return null` 스텁이다(#69에서 `getPointTransactions`만 구현). 어느 화면·이슈가
+  이 둘을 담당하는지 명시돼 있지 않다 — `getSettlements`는 아직 없는 `/api/rider/history`
+  주간 요약용으로, `getWithdrawals`는 #103(출금 요청 상세)류와 겹치는 것으로 추정만 함
 - 포인트 지갑 없음의 응답 코드가 고객(400)과 라이더(500)로 갈린다(#67). 라이더는
   `BusinessException(INTERNAL_SERVER_ERROR)`로 `RiderPointApi` 문서와 맞췄지만, 고객
   (`CustomerPaymentService`)은 `IllegalStateException` → `GlobalExceptionHandler` → 400 이라
@@ -486,3 +510,6 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   프론트가 사유별로 다른 UX를 보여줘야 하면 에러코드 체계 신설을 별도 이슈로 논의해야 함
 - 배송요청 생성 화면의 기사님 전달사항(#205)을 저장할 백엔드 계약과 `delivery_order` 컬럼이 없다.
   저장이 필요하면 최대 길이·라이더 노출 시점과 함께 DTO·Flyway 범위를 별도 이슈로 정해야 함
+- 라이더 출금 최소 금액이 잠정값(#68, 사람 확인): `RiderPaymentService.MIN_WITHDRAWAL_AMOUNT` 5,000P.
+  충전 최소 단위(#32, 1,000원)와는 별개 상수이며 화면 프리셋·이체 수수료 정책이 확정되면 재검토
+  필요. 계좌 미등록·잔액 부족은 둘 다 409 로 응답한다(`RiderPointApi` 문서에서 이미 확정).

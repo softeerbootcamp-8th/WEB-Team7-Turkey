@@ -6,6 +6,7 @@ import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 
 /**
  * S3 업로드 클라이언트(#61 후속, 배송 완료 인증 사진). 자격 증명은 기본 프로바이더 체인
@@ -17,6 +18,7 @@ import org.springframework.context.annotation.Configuration;
  * (사람 확인, {@code docs/worklog/2026-08-04-61-delivery-completion-proof.md}).
  */
 @Configuration
+@Profile("!local")
 public class S3Config {
 
     @Value("${aws.s3.region}")

@@ -61,7 +61,8 @@ public class RiderPaymentController implements RiderPointApi {
             @RequestParam(name = "page", defaultValue = "0") int page,
 
             @RequestParam(name = "size", defaultValue = "20") int size) {
-        return null;
+        return ApiResponse.ok(
+                riderPaymentService.getPointTransactions(rider.memberId(), type, page, size));
     }
 
     @Override
@@ -72,7 +73,7 @@ public class RiderPaymentController implements RiderPointApi {
             AuthenticatedRider rider,
 
             @Valid @RequestBody WithdrawalRequest request) {
-        return null;
+        return ApiResponse.ok(riderPaymentService.requestWithdrawal(rider.memberId(), request));
     }
 
     @Override

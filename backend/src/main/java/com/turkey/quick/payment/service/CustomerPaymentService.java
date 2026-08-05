@@ -133,6 +133,45 @@ public class CustomerPaymentService {
     }
 
     /**
+     * 취소 주문 포인트 환급(CUS-PAY-003, #38). {@link #payForOrder} 와 대칭 구조다 — DEBIT/ORDER_USE
+     * 대신 CREDIT/ORDER_REFUND 라는 점만 다르다.
+     *
+     * <p><b>{@code Propagation.MANDATORY}</b>: 호출자(주문 취소)의 트랜잭션에 반드시 참여한다.
+     * #38/#42 비고가 요구하는 "주문 취소와 포인트 환급은 하나의 상위 트랜잭션"을 애노테이션으로
+     * 강제한 것 — {@code payForOrder} 와 같은 이유다.
+     *
+     * <p><b>{@code requestKey} 는 새로 만들지 않고 주문의 요청 멱등키를 그대로 쓴다.</b> V18 이
+     * {@code point_transaction} 의 유니크를 {@code (request_key, transaction_type)} 으로 완화해 둔 게
+     * 정확히 이 용도다 — 같은 주문의 ORDER_USE 와 ORDER_REFUND 가 키를 공유하는 것 자체가 "같은 주문
+     * 요청에서 나온 결제와 환불"이라는 추적 근거가 된다.
+     *
+     * <p>이 메서드 자체는 중복 환급을 막지 않는다 — 호출부(주문 취소의 조건부 UPDATE)가 같은 주문에
+     * 대해 정확히 한 번만 도달하도록 보장하므로, 여기서 다시 조회·검사하지 않는다.
+     *
+     * @param customerId 환급 대상 고객
+     * @param order      취소된 주문. 같은 트랜잭션에서 방금 CANCELED 로 바뀐 managed 엔터티(또는 참조)여야 한다.
+     * @param fare       환급할 금액. 그 주문의 ESTIMATE 스냅샷 {@code totalFare} 를 그대로 쓴다(차감 당시 금액과 동일).
+     * @return 환급 후 잔액
+     * @throws IllegalStateException 지갑 없음(회원가입 트랜잭션에서 함께 생성되므로 정합성 오류)
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public long refundForCancel(Long customerId, DeliveryOrder order, long fare) {
+        PointWallet wallet = pointWalletRepository.findByMemberIdForUpdate(customerId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "지갑 정보가 없습니다. memberId=" + customerId));
+
+        long balanceBefore = wallet.getBalance();
+        wallet.credit(fare);
+        pointTransactionRepository.save(PointTransaction.forOrder(
+                wallet, PointTransactionType.ORDER_REFUND, fare, balanceBefore, order.getRequestKey(), order));
+
+        log.info("[포인트-취소환급] deliveryId={}, customerId={}, amount={}, balanceBefore={}, balanceAfter={}",
+                order.getId(), customerId, fare, balanceBefore, wallet.getBalance());
+
+        return wallet.getBalance();
+    }
+
+    /**
      * 포인트 충전 준비(CUS-POINT-002, #32).
      *
      * <p>하는 일은 세 가지다: 금액 검증 → 멱등키로 기존 요청 확인 → {@code point_charge} 를 PENDING

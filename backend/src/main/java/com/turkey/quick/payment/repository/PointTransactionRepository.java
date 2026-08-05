@@ -3,6 +3,8 @@ package com.turkey.quick.payment.repository;
 import com.turkey.quick.payment.domain.PointTransaction;
 import com.turkey.quick.payment.domain.PointTransactionType;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface PointTransactionRepository extends JpaRepository<PointTransaction, Long> {
@@ -16,4 +18,11 @@ public interface PointTransactionRepository extends JpaRepository<PointTransacti
      */
     Optional<PointTransaction> findByPointCharge_IdAndTransactionType(
             Long pointChargeId, PointTransactionType transactionType);
+
+    /** 회원 지갑의 거래 내역 전체(유형 미필터, #69). 정렬·페이지는 {@link Pageable}이 담당한다. */
+    Page<PointTransaction> findByWallet_MemberId(Long memberId, Pageable pageable);
+
+    /** 회원 지갑의 거래 내역 중 특정 유형만(#69, 화면 필터 탭). */
+    Page<PointTransaction> findByWallet_MemberIdAndTransactionType(
+            Long memberId, PointTransactionType transactionType, Pageable pageable);
 }

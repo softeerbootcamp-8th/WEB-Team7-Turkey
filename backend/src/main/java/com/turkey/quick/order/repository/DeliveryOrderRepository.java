@@ -166,6 +166,42 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
     List<DeliveryOrder> findByStatus(OrderStatus status);
 
     /**
+     * 배차 대기 시간 초과 자동 취소(#42)의 능동 스캐너용 조회. WAITING 이면서 {@code requestedAt}
+     * 이 컷오프보다 이전인 주문을 전부 가져온다. {@code idx_delivery_status_requested
+     * (status, requested_at)} 를 그대로 탄다.
+     *
+     * <p>결과를 스캐너가 순회하며 {@link #cancelIfWaiting} 을 한 건씩 호출한다 — 한 건이 실패해도
+     * (예: 그 사이 라이더가 배차를 확정함) 나머지에 영향을 주지 않기 위해서다.
+     */
+    List<DeliveryOrder> findByStatusAndRequestedAtBefore(OrderStatus status, LocalDateTime cutoff);
+
+    /**
+     * 고객의 현재 진행 중 배송요청을 조회한다(지연 만료, #42). {@code active_customer_id} 생성 컬럼을
+     * 그대로 읽는다 — "진행 중"의 정의(WAITING~DELIVERING)를 JPQL 에 다시 나열하지 않기 위해서다.
+     * 그 컬럼의 UNIQUE 제약상 결과는 최대 1건이다.
+     *
+     * <p>{@link #findInProgressIdByActiveRiderId} 와 같은 이유로 네이티브 쿼리다 — 생성 컬럼은
+     * 엔터티에 매핑돼 있지 않다.
+     */
+    @Query(value = "SELECT * FROM delivery_order WHERE active_customer_id = :customerId",
+           nativeQuery = true)
+    Optional<DeliveryOrder> findActiveByCustomerId(@Param("customerId") Long customerId);
+
+    /**
+     * 배차 대기 시간 초과 자동 취소(#42)의 조건부 UPDATE. WAITING 인 행만 CANCELED 로 바꾸고
+     * 영향 행 수(0 또는 1)로 성공 여부를 판정한다 — {@link #assignIfWaiting} 과 같은 ADR-006 패턴이다.
+     *
+     * <p>0 이면 그 사이 배차가 확정됐거나(#56) 이미 취소된 것이다. 둘 다 정상 흐름이며 예외가 아니다
+     * — 배차 확정과 자동 취소가 동시에 벌어져도 정확히 하나만 성공한다는 #42 의 성공 조건이 이 조건
+     * 하나로 보장된다.
+     */
+    @Modifying(clearAutomatically = true)
+    @Query(value = "UPDATE delivery_order SET status = 'CANCELED', canceled_at = :canceledAt, "
+            + "cancel_reason = :reason WHERE order_id = :orderId AND status = 'WAITING'", nativeQuery = true)
+    int cancelIfWaiting(@Param("orderId") Long orderId, @Param("canceledAt") LocalDateTime canceledAt,
+                       @Param("reason") String reason);
+
+    /**
      * 요청 멱등키로 기존 주문을 찾는다(#37 흐름 ③). {@code uk_delivery_customer_request}
      * (customer_id, request_key) 와 같은 조합이라 결과는 0 또는 1건이다.
      *
