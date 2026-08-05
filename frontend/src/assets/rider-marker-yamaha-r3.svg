@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 116" width="128" height="116" role="img" aria-label="야마하 R3 블루 오토바이 마커">
+  <defs>
+    <linearGradient id="r3-body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3D8CF2" />
+      <stop offset="0.5" stop-color="#1560CE" />
+      <stop offset="1" stop-color="#0A3A85" />
+    </linearGradient>
+    <filter id="r3-shadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0B1F3A" flood-opacity="0.3" />
+    </filter>
+  </defs>
+
+  <!-- 말풍선형 판. 아래 꼭짓점(64, 102)이 실제 좌표에 닿는 지점이라 offset 계산의 기준이 된다. -->
+  <path
+    d="M20 6h88a14 14 0 0 1 14 14v52a14 14 0 0 1-14 14H74l-10 16-10-16H20A14 14 0 0 1 6 72V20A14 14 0 0 1 20 6Z"
+    fill="#FFFFFF" stroke="#0B3F8C" stroke-width="2.5" filter="url(#r3-shadow)" />
+
+  <!-- 프레임: 스윙암 · 프런트 포크 · 클립온 핸들 (차체 아래로 깔린다) -->
+  <g stroke="#39465A" stroke-linecap="round" fill="none">
+    <path d="M36 59 62 50" stroke-width="4.5" />
+    <path d="M94 59 85 29" stroke-width="4.5" />
+    <path d="M74 31 86 27" stroke-width="3" />
+  </g>
+  <path d="M56 52 32 55" stroke="#95A3B5" stroke-width="3.5" stroke-linecap="round" />
+
+  <!-- 엔진 블록 -->
+  <path d="M57 43h21l3 10H59Z" fill="#4A5768" />
+
+  <!-- 바퀴 -->
+  <g>
+    <circle cx="36" cy="59" r="12" fill="#1B2430" />
+    <circle cx="36" cy="59" r="6" fill="#C6D1DE" />
+    <circle cx="36" cy="59" r="2" fill="#5A6779" />
+    <circle cx="94" cy="59" r="12" fill="#1B2430" />
+    <circle cx="94" cy="59" r="6" fill="#C6D1DE" />
+    <circle cx="94" cy="59" r="2" fill="#5A6779" />
+  </g>
+
+  <!-- 시트카울(짧고 위로 솟은 테일) -->
+  <path d="M27 35c7-3 15-3 23-2l9 11-25 3c-7-1-10-6-7-12Z" fill="url(#r3-body)" />
+  <path d="M29 34c7-2 14-2 21-1l2 3-23 1Z" fill="#101A28" />
+
+  <!-- 탱크 + 프런트카울. 아랫면을 파내 프레임·엔진이 보이게 한다. -->
+  <path d="M50 36c8-6 16-9 26-10 12-2 21 4 26 13 3 5 2 11-3 12h-11c-6-5-14-7-22-7h-10c-5-1-8-4-6-8Z"
+    fill="url(#r3-body)" />
+  <!-- 로어 카울 -->
+  <path d="M79 46c9 0 15 4 18 9H74c-2-5 0-9 5-9Z" fill="#12489E" />
+  <!-- 프런트 펜더 -->
+  <path d="M84 48c7-2 14 0 19 5l-2 3c-4-4-10-5-16-4Z" fill="#1560CE" />
+  <!-- 윈드스크린 -->
+  <path d="M81 26c8 0 15 4 19 10l-11-3c-3-4-6-6-8-7Z" fill="#16273F" />
+  <!-- 헤드라이트 -->
+  <path d="M100 37c4 4 5 10 2 13l-7-4 1-9Z" fill="#FFD86B" />
+  <!-- 하이라이트 -->
+  <path d="M58 38 78 33l10 3-18 5Z" fill="#FFFFFF" opacity="0.26" />
+</svg>
