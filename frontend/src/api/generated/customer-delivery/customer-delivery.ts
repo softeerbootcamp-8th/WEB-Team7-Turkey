@@ -363,10 +363,10 @@ export function useGetDelivery<TData = Awaited<ReturnType<typeof getDelivery>>, 
 
 
 /**
- * 배차 전(WAITING)에만 허용한다. ASSIGNED 이상은 MVP 범위 밖이라 거부된다.
+ * 배차 전(WAITING)에만 허용한다. ASSIGNED 이상·완료는 MVP 범위 밖이라 거부된다. 이미 취소된 주문에 다시 요청하면 그 결과를 그대로 돌려주고 중복 환급하지 않는다(멱등). 취소와 포인트 환급(CUS-PAY-003)은 하나의 트랜잭션으로 처리된다.
  * @summary 배송요청 취소
  */
-export const cancelDelivery = (
+export const cancelCustomerDelivery = (
     deliveryId: number,
     deliveryCancelRequest: BodyType<DeliveryCancelRequest>,
  options?: SecondParameter<typeof customInstance>,) => {
@@ -382,11 +382,11 @@ export const cancelDelivery = (
   
 
 
-export const getCancelDeliveryMutationOptions = <TError = ErrorType<ApiResponseDeliveryCancelResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelDelivery>>, TError,{deliveryId: number;data: BodyType<DeliveryCancelRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
-): UseMutationOptions<Awaited<ReturnType<typeof cancelDelivery>>, TError,{deliveryId: number;data: BodyType<DeliveryCancelRequest>}, TContext> => {
+export const getCancelCustomerDeliveryMutationOptions = <TError = ErrorType<ApiResponseDeliveryCancelResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelCustomerDelivery>>, TError,{deliveryId: number;data: BodyType<DeliveryCancelRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelCustomerDelivery>>, TError,{deliveryId: number;data: BodyType<DeliveryCancelRequest>}, TContext> => {
 
-const mutationKey = ['cancelDelivery'];
+const mutationKey = ['cancelCustomerDelivery'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
@@ -396,10 +396,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelDelivery>>, {deliveryId: number;data: BodyType<DeliveryCancelRequest>}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelCustomerDelivery>>, {deliveryId: number;data: BodyType<DeliveryCancelRequest>}> = (props) => {
           const {deliveryId,data} = props ?? {};
 
-          return  cancelDelivery(deliveryId,data,requestOptions)
+          return  cancelCustomerDelivery(deliveryId,data,requestOptions)
         }
 
         
@@ -407,23 +407,23 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
   return  { mutationFn, ...mutationOptions }}
 
-    export type CancelDeliveryMutationResult = NonNullable<Awaited<ReturnType<typeof cancelDelivery>>>
-    export type CancelDeliveryMutationBody = BodyType<DeliveryCancelRequest>
-    export type CancelDeliveryMutationError = ErrorType<ApiResponseDeliveryCancelResponse>
+    export type CancelCustomerDeliveryMutationResult = NonNullable<Awaited<ReturnType<typeof cancelCustomerDelivery>>>
+    export type CancelCustomerDeliveryMutationBody = BodyType<DeliveryCancelRequest>
+    export type CancelCustomerDeliveryMutationError = ErrorType<ApiResponseDeliveryCancelResponse>
 
     /**
  * @summary 배송요청 취소
  */
-export const useCancelDelivery = <TError = ErrorType<ApiResponseDeliveryCancelResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelDelivery>>, TError,{deliveryId: number;data: BodyType<DeliveryCancelRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
+export const useCancelCustomerDelivery = <TError = ErrorType<ApiResponseDeliveryCancelResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelCustomerDelivery>>, TError,{deliveryId: number;data: BodyType<DeliveryCancelRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof cancelDelivery>>,
+        Awaited<ReturnType<typeof cancelCustomerDelivery>>,
         TError,
         {deliveryId: number;data: BodyType<DeliveryCancelRequest>},
         TContext
       > => {
 
-      const mutationOptions = getCancelDeliveryMutationOptions(options);
+      const mutationOptions = getCancelCustomerDeliveryMutationOptions(options);
 
       return useMutation(mutationOptions, queryClient);
     }

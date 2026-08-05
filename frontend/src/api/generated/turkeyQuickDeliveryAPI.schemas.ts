@@ -551,7 +551,7 @@ export interface DeliveryDetailResponse {
   pickup?: AddressResponse;
   /** 배송 완료 인증 방식. 완료 전이면 null. */
   proofType?: DeliveryDetailResponseProofType;
-  /** 배송 완료 인증 참조값(사진 URL/키, 인증코드 등). 완료 전이면 null. */
+  /** 배송 완료 인증 참조값. proofType=PHOTO 면 저장소에서 해석한 실제 경로(로컬은 절대경로, S3는 객체 URL), 그 외 타입이면 등록값을 그대로 담는다. 완료 전이면 null. */
   proofValue?: string;
   recipient?: ContactResponse;
   /** 요청 시각(UTC) */
