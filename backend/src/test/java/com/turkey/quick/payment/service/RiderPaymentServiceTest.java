@@ -34,7 +34,10 @@ class RiderPaymentServiceTest {
     @BeforeEach
     void setUp() {
         pointWalletRepository = mock(PointWalletRepository.class);
-        riderPaymentService = new RiderPaymentService(pointWalletRepository);
+        riderPaymentService = new RiderPaymentService(pointWalletRepository,
+                mock(com.turkey.quick.rider.repository.RiderPayoutAccountRepository.class),
+                mock(com.turkey.quick.rider.repository.RiderWithdrawalRepository.class),
+                mock(com.turkey.quick.payment.repository.PointTransactionRepository.class));
     }
 
     private PointWallet walletWith(long balance) {
