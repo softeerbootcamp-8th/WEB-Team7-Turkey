@@ -79,6 +79,14 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
     Page<DeliveryOrder> findByCustomer_IdAndStatus(Long customerId, OrderStatus status, Pageable pageable);
 
     /**
+     * 라이더 본인의 운행 기록 목록(#70). 자신에게 배정되어 완료된 배송만 최신순으로 페이지 조회한다.
+     * {@code assignedRider.memberId} 는 {@code existsByAssignedRider_MemberIdAndStatusIn} 과 같은
+     * 파생 경로다(FK {@code assigned_rider_id} = RiderProfile PK). 정렬 기준은 호출자가 {@link Pageable}
+     * 로 넘긴다(고객 목록과 대칭). 배차 이후 취소는 MVP 범위 밖이라 라이더 기록에는 COMPLETED 만 남는다.
+     */
+    Page<DeliveryOrder> findByAssignedRider_MemberIdAndStatus(Long riderId, OrderStatus status, Pageable pageable);
+
+    /**
      * 배송요청 상세 조회(#46)용. {@link #findTrackableByIdAndCustomerId} 와 같은 이유로 고객 조건을
      * 쿼리에 둔다(없음/타인 것을 같은 404 로 응답). 상세는 상태를 가리지 않고(취소·완료 포함) 전체
      * 필드가 필요해 투영이 아니라 엔터티를 그대로 반환한다.

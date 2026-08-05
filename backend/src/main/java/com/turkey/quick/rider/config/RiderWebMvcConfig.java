@@ -40,7 +40,9 @@ public class RiderWebMvcConfig implements WebMvcConfigurer {
                                  "/api/rider/location",
                                  "/api/rider/operating-status",
                                  "/api/rider/points",
-                                 "/api/rider/points/**"
+                                 "/api/rider/points/**",
+                                 "/api/rider/history",
+                                 "/api/rider/history/**"
                                 );
     }
 }

@@ -346,7 +346,10 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
     `RedisCleaner`가 연결된 인스턴스의 `redis_version`을 확인해 이 상황을 테스트 실패로 만든다.
   - 남은 것: **실제 TTL 만료 동작**(키가 시간이 지나 사라지는 것)은 여전히 검증하지 않는다 — 대기 시간
     때문이다. 그리고 **CI는 아직 테스트를 돌리지 않는다**(`deploy.yml`이 `-x test`). CI에서 켜려면
-    MySQL·Redis 서비스 컨테이너가 필요하다
+    MySQL·Redis 서비스 컨테이너가 필요하다. **이 공백이 실제로 물렸다**(#70, 2026-08-04): #339의
+    rename 커밋(`1106b52`)이 `RiderGeoRepositoryTest`를 `OrderGeoRepositoryTest.java`로 파일명만 바꾸고
+    내용(클래스명·타입 참조·KEY)을 안 고쳐 **컴파일 안 되는 테스트가 dev에 병합**됐다 — CI가 테스트를
+    돌렸다면 막혔을 것이다. #70에서 최소 수정해 되살렸다
 - `GlobalExceptionHandler`에 `HttpMessageNotReadableException` 핸들러가 없고
   `ResponseEntityExceptionHandler`를 상속하지도 않음(#81 에서 발견) — 본문 JSON 파싱 실패 400이
   `ApiResponse` 형태가 아닌 스프링 기본 오류 본문으로 나갈 것으로 보임. 프론트가 의존하는 응답
