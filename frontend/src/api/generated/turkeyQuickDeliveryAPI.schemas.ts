@@ -185,6 +185,12 @@ export interface ApiResponseRiderDeliveryCompleteResponse {
   success?: boolean;
 }
 
+export interface ApiResponseRiderDeliveryHistoryDetailResponse {
+  data?: RiderDeliveryHistoryDetailResponse;
+  message?: string;
+  success?: boolean;
+}
+
 export interface ApiResponseRiderDeliveryHistoryListResponse {
   data?: RiderDeliveryHistoryListResponse;
   message?: string;
@@ -1109,6 +1115,59 @@ export interface RiderDeliveryCompleteResponse {
   settlementAmount?: number;
   /** 배송 상태(완료 시 COMPLETED) */
   status?: RiderDeliveryCompleteResponseStatus;
+}
+
+/**
+ * 물품 종류
+ */
+export type RiderDeliveryHistoryDetailResponseItemType = typeof RiderDeliveryHistoryDetailResponseItemType[keyof typeof RiderDeliveryHistoryDetailResponseItemType];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RiderDeliveryHistoryDetailResponseItemType = {
+  DOCUMENT: 'DOCUMENT',
+  SMALL_PARCEL: 'SMALL_PARCEL',
+  MEDIUM_PARCEL: 'MEDIUM_PARCEL',
+  LARGE_PARCEL: 'LARGE_PARCEL',
+  FOOD: 'FOOD',
+} as const;
+
+/**
+ * 배송 완료 인증 방식
+ */
+export type RiderDeliveryHistoryDetailResponseProofType = typeof RiderDeliveryHistoryDetailResponseProofType[keyof typeof RiderDeliveryHistoryDetailResponseProofType];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RiderDeliveryHistoryDetailResponseProofType = {
+  PHOTO: 'PHOTO',
+  RECIPIENT_CONFIRMATION: 'RECIPIENT_CONFIRMATION',
+  AUTH_CODE: 'AUTH_CODE',
+} as const;
+
+/**
+ * 라이더 운행 기록 상세
+ */
+export interface RiderDeliveryHistoryDetailResponse {
+  /** 배송요청 식별자 */
+  deliveryId?: number;
+  destination?: AddressResponse;
+  finalFare?: FareBreakdownResponse;
+  /** 물품 종류 */
+  itemType?: RiderDeliveryHistoryDetailResponseItemType;
+  pickup?: AddressResponse;
+  /** 배송 완료 인증 방식 */
+  proofType?: RiderDeliveryHistoryDetailResponseProofType;
+  /** 배송 완료 인증 참조값 */
+  proofValue?: string;
+  /** 정산 시각(UTC) */
+  settledAt?: string;
+  /** 정산 금액(원) */
+  settlementAmount?: number;
+  /** 상태 전이 타임라인 */
+  steps?: DeliveryStatusStepResponse[];
+  /** 픽업지-도착지 직선거리(m) */
+  straightDistanceMeters?: number;
 }
 
 /**
