@@ -4,7 +4,7 @@ import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import {
   getGetDeliveriesQueryKey,
   getGetDeliveryQueryKey,
-  useCancelDelivery,
+  useCancelCustomerDelivery,
   useGetDelivery,
 } from '@/api/generated/customer-delivery/customer-delivery'
 import type { DeliveryDetailResponse } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
@@ -38,7 +38,7 @@ function DeliveryDetail() {
   const detailQuery = useGetDelivery(deliveryId, {
     query: { enabled: isValidDeliveryId, retry: false },
   })
-  const cancelMutation = useCancelDelivery()
+  const cancelMutation = useCancelCustomerDelivery()
   const detail = detailQuery.data?.data
   const invalidResponse = detailQuery.isSuccess && detail == null
 

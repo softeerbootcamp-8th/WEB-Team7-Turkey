@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import {
-  useCancelDelivery,
+  useCancelCustomerDelivery,
   useGetDelivery,
   useGetDeliveryTracking,
 } from '@/api/generated/customer-delivery/customer-delivery'
@@ -64,7 +64,7 @@ function DeliveryTracking() {
 
   const trackingQuery = useGetDeliveryTracking(deliveryId)
   const detailQuery = useGetDelivery(deliveryId)
-  const cancelMutation = useCancelDelivery()
+  const cancelMutation = useCancelCustomerDelivery()
 
   // ApiResponse<T> 봉투를 벗긴다 — customInstance는 axios 레벨(AxiosResponse<T>)만
   // 언랩하고, 우리 도메인 봉투(success/data/message)는 훅을 쓰는 쪽이 직접 벗겨야 한다
