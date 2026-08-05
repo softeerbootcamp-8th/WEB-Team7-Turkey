@@ -430,6 +430,10 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   `delivery_order`에 관련 컬럼이 없음(`itemType` 열거형만 존재). 화면에서 실제로 필요해지면 스키마
   변경(Flyway 마이그레이션)과 주문 생성(REQ-ORD-002) 쪽 값 저장까지 함께 논의해야 함
   (2026-07-30: #56 rebase 중 dev 병합 과정에서 이 항목이 유실됐던 걸 복구함)
+- `RiderPointApi`의 `getSettlements`(정산 전용)·`getWithdrawals`(출금 전용, 상태 포함)가
+  여전히 `return null` 스텁이다(#69에서 `getPointTransactions`만 구현). 어느 화면·이슈가
+  이 둘을 담당하는지 명시돼 있지 않다 — `getSettlements`는 아직 없는 `/api/rider/history`
+  주간 요약용으로, `getWithdrawals`는 #103(출금 요청 상세)류와 겹치는 것으로 추정만 함
 - 포인트 지갑 없음의 응답 코드가 고객(400)과 라이더(500)로 갈린다(#67). 라이더는
   `BusinessException(INTERNAL_SERVER_ERROR)`로 `RiderPointApi` 문서와 맞췄지만, 고객
   (`CustomerPaymentService`)은 `IllegalStateException` → `GlobalExceptionHandler` → 400 이라
