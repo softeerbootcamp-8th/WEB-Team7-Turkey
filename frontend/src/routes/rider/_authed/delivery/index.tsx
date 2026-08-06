@@ -135,8 +135,6 @@ function RiderDelivery() {
           </div>
         </section>
 
-        <DeliveryTimeline delivery={delivery} />
-
         {needsCompletionProof && (
           <p role="status" className="rounded-xl bg-tertiary-fixed p-md font-body-md text-body-md text-on-tertiary-fixed-variant">
             배송 완료 처리를 위해 수령 인증정보를 등록해 주세요.
@@ -238,21 +236,6 @@ function InfoCard({ label, value, icon }: { label: string; value: string; icon: 
         <p className="truncate font-body-lg text-body-lg font-bold text-on-surface">{value}</p>
       </div>
     </div>
-  )
-}
-
-function DeliveryTimeline({ delivery }: { delivery: RiderDeliveryResponse }) {
-  return (
-    <section aria-labelledby="delivery-timeline" className="rounded-xl bg-surface-container-lowest p-md">
-      <h2 id="delivery-timeline" className="font-headline-sm text-headline-sm font-bold text-on-surface">배송 진행 단계</h2>
-      <ol className="mt-3 flex flex-wrap gap-2">
-        {(delivery.steps ?? []).map(step => (
-          <li key={`${step.status}-${step.occurredAt}`} className="rounded-full bg-surface-container-high px-3 py-1 font-label-sm text-label-sm text-secondary">
-            {getDeliveryStageContent(step.status)?.statusLabel ?? step.status}
-          </li>
-        ))}
-      </ol>
-    </section>
   )
 }
 
