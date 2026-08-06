@@ -14,17 +14,22 @@ function hasCoordinates(address: AddressResponse | undefined): address is Addres
   return typeof address?.latitude === 'number' && typeof address.longitude === 'number'
 }
 
-// 상세 화면 타임라인 색과 동일하게 맞춘다(픽업=tertiary, 도착=primary). 카카오 마커 이미지는
-// Tailwind 클래스를 못 쓰므로 같은 토큰 hex 를 직접 넣는다.
-const PICKUP_PIN_COLOR = '#005ac1'
-const DESTINATION_PIN_COLOR = '#6a5f00'
+// 상세 화면 타임라인 색과 동일하게 맞춘다(픽업=파랑, 도착=선명한 빨강). 카카오 마커 이미지는
+// Tailwind 클래스를 못 쓰므로 hex 를 직접 넣고, 아래 범례 점도 이 상수를 공유해 항상 핀과 일치시킨다.
+const PICKUP_PIN_COLOR = '#3b82f6'
+const DESTINATION_PIN_COLOR = '#ef4444'
 
 function createPinImage(color: string): kakao.maps.MarkerImage {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40"><path d="M16 1C8.27 1 2 7.27 2 15c0 9.5 14 24 14 24s14-14.5 14-24C30 7.27 23.73 1 16 1z" fill="${color}" stroke="#ffffff" stroke-width="2"/><circle cx="16" cy="15" r="5.5" fill="#ffffff"/></svg>`
-  const src = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`
-  return new window.kakao.maps.MarkerImage(src, new window.kakao.maps.Size(32, 40), {
-    offset: new window.kakao.maps.Point(16, 39),
-  })
+  // 고객 추적 지도와 동일한 핀 모양 — 바깥 테두리(stroke) 없이 색 채운 핀 + 가운데 흰 점만.
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">
+    <path d="M16 0C7.163 0 0 7.163 0 16c0 11 16 24 16 24s16-13 16-24C32 7.163 24.837 0 16 0z" fill="${color}"/>
+    <circle cx="16" cy="16" r="6" fill="white"/>
+  </svg>`
+  return new window.kakao.maps.MarkerImage(
+    `data:image/svg+xml;base64,${btoa(svg)}`,
+    new window.kakao.maps.Size(32, 40),
+    { offset: new window.kakao.maps.Point(16, 40) },
+  )
 }
 
 export function RequestRouteMap({ pickup, destination }: RequestRouteMapProps) {
@@ -119,10 +124,20 @@ export function RequestRouteMap({ pickup, destination }: RequestRouteMapProps) {
       {!mapError && (
         <div className="pointer-events-none absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-3 whitespace-nowrap rounded-full bg-surface-container-lowest/95 px-4 py-2 text-label-sm font-bold text-secondary shadow-md">
           <span className="flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-tertiary" aria-hidden="true" />픽업
+            <span
+              className="h-2.5 w-2.5 rounded-full"
+              style={{ backgroundColor: PICKUP_PIN_COLOR }}
+              aria-hidden="true"
+            />
+            픽업
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-primary" aria-hidden="true" />도착
+            <span
+              className="h-2.5 w-2.5 rounded-full"
+              style={{ backgroundColor: DESTINATION_PIN_COLOR }}
+              aria-hidden="true"
+            />
+            도착
           </span>
         </div>
       )}
