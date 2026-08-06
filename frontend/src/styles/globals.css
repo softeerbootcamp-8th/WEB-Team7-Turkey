@@ -153,18 +153,46 @@ body {
 }
 
 .customer-home__hero {
+    position: relative;
     width: 100%;
     max-width: 280px;
     height: 192px;
     margin-bottom: 32px;
     border-radius: var(--radius-large);
-    background-color: var(--color-surface-container-highest);
+    background-color: var(--color-primary);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--color-on-surface-variant);
-    font-size: 14px;
     overflow: hidden;
+    box-shadow: var(--shadow-sm);
+}
+
+/* 중앙 흰 원 + 택배 박스 아이콘 */
+.customer-home__hero-icon {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 112px;
+    height: 112px;
+    border-radius: var(--radius-full);
+    background-color: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
+    box-shadow: var(--shadow-md);
+}
+
+.customer-home__hero-badge {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    padding: 4px 12px;
+    border-radius: var(--radius-full);
+    background-color: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    box-shadow: var(--shadow-sm);
 }
 
 .customer-home__actions {
