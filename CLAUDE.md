@@ -424,13 +424,24 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - `RiderDeliveryRequestApi`의 `getDeliveryRequest`/`acceptDeliveryRequest`/`skipDeliveryRequest`
   세 메서드에 라이더 식별 파라미터(`AuthenticatedRider`)가 빠져 있음(#55) — #56/#57 구현 시
   `getDeliveryRequests`와 같은 방식(`@RequestAttribute`)으로 추가 필요
-- 라이더 콜 목록(`GET /api/rider/requests`, #55)에 `radiusMeters` 상한이 없고 페이지네이션도
-  없음 — WAITING 주문이 크게 늘어나는 시점(다도시 동시 운영 등)에 성능 문제가 되면 계약을 다시 열어야 함.
-  **#367로 위치 검색 자체는 bounding box 인덱스(`idx_delivery_waiting_location`)를 타도록 바뀌었지만
-  ([#367 worklog](docs/worklog/2026-08-05-367-rider-call-list-location-search.md)), 상한·페이지네이션
-  미비는 그대로 남아 있다** — 좌표를 안 보내는 요청(#367에서 선택 파라미터로 확정, 사람 확인)은
-  여전히 WAITING 전체를 반환한다. #60(필터/정렬 확장)에서 페이지네이션 도입 시 이 문제를 함께 해소할지
-  판단 필요
+- 라이더 콜 목록(`GET /api/rider/requests`, #55)에 `radiusMeters` 상한이 없음 — WAITING 주문이
+  크게 늘어나는 시점(다도시 동시 운영 등)에 성능 문제가 되면 계약을 다시 열어야 함(페이지네이션은
+  #60으로 해소됨, 아래 항목 참고). **#367로 위치 검색 자체는 bounding box 인덱스
+  (`idx_delivery_waiting_location`)를 타도록 바뀌었지만
+  ([#367 worklog](docs/worklog/2026-08-05-367-rider-call-list-location-search.md)), 좌표를 안
+  보내는 요청(#367에서 선택 파라미터로 확정, 사람 확인)은 여전히 WAITING 전체를 걸러 정렬한 뒤
+  페이지 크기만큼 잘라 반환한다** — 후보 자체가 줄어들지 않는다는 뜻이라, radiusMeters 상한
+  미비는 그대로 남아 있다.
+- **콜 목록 필터·정렬 확장(#60)이 완료됨**(사람 확인, 2026-08-06) — 운임·배송거리 범위 필터,
+  정렬 방향(`sortDirection`), keyset(커서) 페이지네이션을 추가함
+  ([#60 worklog](docs/worklog/2026-08-06-60-rider-quick-request-filter-sort.md)). 운임·배송거리
+  필터는 반경 필터와 같은 구조(자바 메모리 필터)로 두었고, 페이지 자르기·커서 비교도 그 필터가
+  끝난 최종 목록 위에서 자바로 수행한다(SQL 커서 쿼리 아님) — bounding box 후보가 수백 건
+  수준이라는 전제(#367 실측)에서 성능 문제가 없다고 판단했다. 응답이 `List`에서
+  `{items, hasNext}`로 바뀌었다(총 건수는 안 담음 — keyset은 매 요청 재조회라 COUNT 비용이
+  이 조회 자체와 안 맞음). **새로 생긴 미결**: (a) 여러 정렬 기준 조합(예: "가까우면서 비싼
+  순")은 지원하지 않음 — 이슈 입력값이 단일 기준만 전제했음, 필요해지면 별도 이슈. (b) 총
+  건수 노출이 필요해지면 keyset과 어떻게 공존시킬지 판단 필요.
 - **라이더 좌표를 요청 파라미터로 받는 계약 변경(#367)이 완료됨**(사람 확인, 2026-08-05) — #342가
   없앤 `findPosition(self)`(옛 `riders:geo` 조회)의 대체 경로로, `latitude`/`longitude`를 선택 쿼리
   파라미터로 추가했다. 둘 다 없으면 #55 원래 계약(위치 없음 → 반경 필터 스킵, 전체 반환)을 그대로
