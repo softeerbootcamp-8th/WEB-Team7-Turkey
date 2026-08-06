@@ -21,6 +21,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  ApiResponseRiderDeliveryHistoryDetailResponse,
   ApiResponseRiderDeliveryHistoryListResponse,
   GetDeliveryHistoriesParams
 } from '../turkeyQuickDeliveryAPI.schemas';
@@ -116,6 +117,99 @@ export function useGetDeliveryHistories<TData = Awaited<ReturnType<typeof getDel
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetDeliveryHistoriesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+/**
+ * 본인이 완료한 배송 한 건의 출발지·도착지·물품, 상태 전이 타임라인, 확정 운임(FINAL 스냅샷), 정산 내역, 완료 인증을 조회한다. 존재하지 않거나 본인이 완료한 배송이 아니면 404 다.
+ * @summary 운행 기록 상세
+ */
+export const getDeliveryHistoryDetail = (
+    deliveryId: number,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+      
+      
+      return customInstance<ApiResponseRiderDeliveryHistoryDetailResponse>(
+      {url: `/api/rider/history/${deliveryId}`, method: 'GET', signal
+    },
+      options);
+    }
+  
+
+
+
+export const getGetDeliveryHistoryDetailQueryKey = (deliveryId?: number,) => {
+    return [
+    `/api/rider/history/${deliveryId}`
+    ] as const;
+    }
+
+    
+export const getGetDeliveryHistoryDetailQueryOptions = <TData = Awaited<ReturnType<typeof getDeliveryHistoryDetail>>, TError = ErrorType<ApiResponseRiderDeliveryHistoryDetailResponse>>(deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryHistoryDetail>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDeliveryHistoryDetailQueryKey(deliveryId);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDeliveryHistoryDetail>>> = ({ signal }) => getDeliveryHistoryDetail(deliveryId, requestOptions, signal);
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(deliveryId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDeliveryHistoryDetail>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetDeliveryHistoryDetailQueryResult = NonNullable<Awaited<ReturnType<typeof getDeliveryHistoryDetail>>>
+export type GetDeliveryHistoryDetailQueryError = ErrorType<ApiResponseRiderDeliveryHistoryDetailResponse>
+
+
+export function useGetDeliveryHistoryDetail<TData = Awaited<ReturnType<typeof getDeliveryHistoryDetail>>, TError = ErrorType<ApiResponseRiderDeliveryHistoryDetailResponse>>(
+ deliveryId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryHistoryDetail>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getDeliveryHistoryDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getDeliveryHistoryDetail>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetDeliveryHistoryDetail<TData = Awaited<ReturnType<typeof getDeliveryHistoryDetail>>, TError = ErrorType<ApiResponseRiderDeliveryHistoryDetailResponse>>(
+ deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryHistoryDetail>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getDeliveryHistoryDetail>>,
+          TError,
+          Awaited<ReturnType<typeof getDeliveryHistoryDetail>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetDeliveryHistoryDetail<TData = Awaited<ReturnType<typeof getDeliveryHistoryDetail>>, TError = ErrorType<ApiResponseRiderDeliveryHistoryDetailResponse>>(
+ deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryHistoryDetail>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 운행 기록 상세
+ */
+
+export function useGetDeliveryHistoryDetail<TData = Awaited<ReturnType<typeof getDeliveryHistoryDetail>>, TError = ErrorType<ApiResponseRiderDeliveryHistoryDetailResponse>>(
+ deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryHistoryDetail>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient 
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetDeliveryHistoryDetailQueryOptions(deliveryId,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
