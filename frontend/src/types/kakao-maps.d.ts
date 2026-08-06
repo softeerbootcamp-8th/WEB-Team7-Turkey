@@ -103,6 +103,7 @@ declare global {
         onclose?: () => void
       })
       open(): void
+      embed(element: HTMLElement): void
     }
   }
 }
