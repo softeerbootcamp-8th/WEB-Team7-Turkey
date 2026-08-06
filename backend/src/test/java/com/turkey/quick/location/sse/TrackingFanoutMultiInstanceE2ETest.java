@@ -3,6 +3,7 @@ package com.turkey.quick.location.sse;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.turkey.quick.common.response.ApiResponse;
+import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.support.IntegrationTestSupport;
 import com.turkey.quick.support.SecondaryInstance;
 import com.turkey.quick.support.SseTestClient;
@@ -51,6 +52,7 @@ class TrackingFanoutMultiInstanceE2ETest extends IntegrationTestSupport {
     private static final String RIDER_LOGIN = "/api/rider/login";
     private static final String RIDER_LOCATION = "/api/rider/location";
     private static final String RIDER_DELIVERY_TRANSITION = "/api/rider/deliveries/%d/transition";
+    private static final String RIDER_ACCEPT_REQUEST = "/api/rider/requests/%d/accept";
     private static final Duration AWAIT = Duration.ofSeconds(10);
 
     private static SecondaryInstance secondary;
@@ -126,6 +128,13 @@ class TrackingFanoutMultiInstanceE2ETest extends IntegrationTestSupport {
                 new HttpEntity<>(Map.of("action", action), withCookie(riderCookie)),
                 ApiResponse.class);
         assertThat(posted.getStatusCode()).as("단계 전이 %s", url).isEqualTo(HttpStatus.OK);
+    }
+
+    private void postAccept(String url, String riderCookie) {
+        var posted = rest.exchange(url, HttpMethod.POST,
+                new HttpEntity<>(Map.of(), withCookie(riderCookie)),
+                ApiResponse.class);
+        assertThat(posted.getStatusCode()).as("배차 수락 %s", url).isEqualTo(HttpStatus.OK);
     }
 
     @Test
@@ -235,6 +244,27 @@ class TrackingFanoutMultiInstanceE2ETest extends IntegrationTestSupport {
             assertThat(client.awaitData(AWAIT))
                     .contains("\"type\":\"status\"")
                     .contains("\"status\":\"MOVING_TO_PICKUP\"");
+        }
+    }
+
+    @Test
+    @DisplayName("WAITING일 때 미리 연결해 두면 배차 확정(ASSIGNED)을 그 연결로 받는다(#398+#401)")
+    void receivesAssignedEventOnConnectionOpenedWhileWaiting() {
+        // 이게 이번 세 서브 이슈(#398/#399/#401)를 합쳐야 성립하는 핵심 시나리오다: 라이더가
+        // 수락하기 *전*(WAITING)부터 고객이 이미 연결해 둔 상태에서, 그 연결로 ASSIGNED 전이가
+        // 도착해야 한다. 연결이 배차 *이후*에나 열린다면(#401 이전) 이 전이 자체를 절대 못 받는다.
+        var scenario = fixture.deliveryWithStatus(OrderStatus.WAITING);
+        String customerCookie = loginOnA(CUSTOMER_LOGIN, scenario.customerLoginId());
+        String riderCookie = loginOnA(RIDER_LOGIN, scenario.riderLoginId());
+
+        try (var client = SseTestClient.get(streamUrlOnA(scenario.deliveryId()), customerCookie)) {
+            assertThat(client.statusCode()).as("WAITING도 이제 200이어야 한다(#401)").isEqualTo(200);
+
+            postAccept(secondary.url(RIDER_ACCEPT_REQUEST.formatted(scenario.deliveryId())), riderCookie);
+
+            assertThat(client.awaitData(AWAIT))
+                    .contains("\"type\":\"status\"")
+                    .contains("\"status\":\"ASSIGNED\"");
         }
     }
 
