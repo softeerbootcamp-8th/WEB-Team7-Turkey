@@ -238,8 +238,8 @@ class RiderDeliveryRequestServiceTest {
         void shouldQueryBoundingBoxInsteadOfFullScan() {
             DeliveryOrder near = order(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"), LocalDateTime.now());
             given(deliveryService.boundingBox(RIDER_LAT, RIDER_LNG, 1000)).willReturn(box);
-            given(deliveryOrderRepository.findByStatusAndPickup_LatitudeBetweenAndPickup_LongitudeBetween(
-                    OrderStatus.WAITING, box.latMin(), box.latMax(), box.lngMin(), box.lngMax()))
+            given(deliveryOrderRepository.findWaitingOrdersWithinBoundingBox(
+                    box.latMin(), box.latMax(), box.lngMin(), box.lngMax()))
                     .willReturn(List.of(near));
             given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(List.of(near.getId()), FareType.ESTIMATE))
                     .willReturn(List.of(estimateSnapshot(near, 4000L)));
@@ -262,8 +262,8 @@ class RiderDeliveryRequestServiceTest {
             DeliveryOrder near = order(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"), LocalDateTime.now());
             DeliveryOrder corner = order(new BigDecimal("37.5089000"), new BigDecimal("127.0112000"), LocalDateTime.now());
             given(deliveryService.boundingBox(RIDER_LAT, RIDER_LNG, 1000)).willReturn(box);
-            given(deliveryOrderRepository.findByStatusAndPickup_LatitudeBetweenAndPickup_LongitudeBetween(
-                    OrderStatus.WAITING, box.latMin(), box.latMax(), box.lngMin(), box.lngMax()))
+            given(deliveryOrderRepository.findWaitingOrdersWithinBoundingBox(
+                    box.latMin(), box.latMax(), box.lngMin(), box.lngMax()))
                     .willReturn(List.of(near, corner));
             given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(
                     List.of(near.getId(), corner.getId()), FareType.ESTIMATE))
