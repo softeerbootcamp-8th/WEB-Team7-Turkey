@@ -14,6 +14,19 @@ function hasCoordinates(address: AddressResponse | undefined): address is Addres
   return typeof address?.latitude === 'number' && typeof address.longitude === 'number'
 }
 
+// 상세 화면 타임라인 색과 동일하게 맞춘다(픽업=tertiary, 도착=primary). 카카오 마커 이미지는
+// Tailwind 클래스를 못 쓰므로 같은 토큰 hex 를 직접 넣는다.
+const PICKUP_PIN_COLOR = '#005ac1'
+const DESTINATION_PIN_COLOR = '#6a5f00'
+
+function createPinImage(color: string): kakao.maps.MarkerImage {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40"><path d="M16 1C8.27 1 2 7.27 2 15c0 9.5 14 24 14 24s14-14.5 14-24C30 7.27 23.73 1 16 1z" fill="${color}" stroke="#ffffff" stroke-width="2"/><circle cx="16" cy="15" r="5.5" fill="#ffffff"/></svg>`
+  const src = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`
+  return new window.kakao.maps.MarkerImage(src, new window.kakao.maps.Size(32, 40), {
+    offset: new window.kakao.maps.Point(16, 39),
+  })
+}
+
 export function RequestRouteMap({ pickup, destination }: RequestRouteMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const markersRef = useRef<kakao.maps.Marker[]>([])
@@ -51,8 +64,18 @@ export function RequestRouteMap({ pickup, destination }: RequestRouteMapProps) {
         )
         const map = new window.kakao.maps.Map(containerRef.current, { center, level: 7 })
         markersRef.current = [
-          new window.kakao.maps.Marker({ position: pickupPosition, map }),
-          new window.kakao.maps.Marker({ position: destinationPosition, map }),
+          new window.kakao.maps.Marker({
+            position: pickupPosition,
+            map,
+            image: createPinImage(PICKUP_PIN_COLOR),
+            title: '픽업',
+          }),
+          new window.kakao.maps.Marker({
+            position: destinationPosition,
+            map,
+            image: createPinImage(DESTINATION_PIN_COLOR),
+            title: '도착',
+          }),
         ]
         routeLineRef.current = new window.kakao.maps.Polyline({
           path: [pickupPosition, destinationPosition],
@@ -62,6 +85,13 @@ export function RequestRouteMap({ pickup, destination }: RequestRouteMapProps) {
           strokeStyle: 'solid',
           map,
         })
+
+        // 첫 렌더에 출발·도착이 모두 보이도록 두 지점을 감싸는 범위로 맞춘다(고객 추적 지도와 동일).
+        // 핀 이미지(세로 40px)와 하단 "픽업/도착" 범례에 안 잘리도록 여백을 둔다.
+        const bounds = new window.kakao.maps.LatLngBounds()
+        bounds.extend(pickupPosition)
+        bounds.extend(destinationPosition)
+        map.setBounds(bounds, 40, 40, 60, 40)
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -87,8 +117,13 @@ export function RequestRouteMap({ pickup, destination }: RequestRouteMapProps) {
         </div>
       )}
       {!mapError && (
-        <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-surface-container-lowest/95 px-4 py-2 text-label-sm font-bold text-secondary shadow-md">
-          픽업 · 도착 위치
+        <div className="pointer-events-none absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-3 whitespace-nowrap rounded-full bg-surface-container-lowest/95 px-4 py-2 text-label-sm font-bold text-secondary shadow-md">
+          <span className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-tertiary" aria-hidden="true" />픽업
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-primary" aria-hidden="true" />도착
+          </span>
         </div>
       )}
     </div>
