@@ -71,7 +71,7 @@ function DeliveryTracking() {
 
   if (detailQuery.isLoading) {
     return (
-      <div className="w-full max-w-md h-full flex items-center justify-center bg-white text-sm text-gray-500">
+      <div className="w-full max-w-md min-h-screen flex items-center justify-center bg-white text-sm text-gray-500">
         불러오는 중…
       </div>
     )
@@ -79,7 +79,7 @@ function DeliveryTracking() {
 
   if (detailQuery.isError || !detail) {
     return (
-      <div role="alert" className="w-full max-w-md h-full flex flex-col items-center justify-center gap-4 bg-white px-6 text-center">
+      <div role="alert" className="w-full max-w-md min-h-screen flex flex-col items-center justify-center gap-4 bg-white px-6 text-center">
         <p className="text-sm text-gray-600">배송 정보를 불러오지 못했습니다. 본인 주문이 맞는지 확인해 주세요.</p>
         <button
           type="button"
@@ -106,7 +106,7 @@ function DeliveryTracking() {
   }
 
   return (
-    <div className="relative w-full max-w-md h-full bg-white shadow-xl overflow-hidden flex flex-col">
+    <div className="relative w-full max-w-md min-h-screen bg-white shadow-xl flex flex-col">
       {/* BEGIN: Map / Waiting-Final area */}
       <div className="w-full h-64 relative shrink-0">
         <TrackingMap
