@@ -3,7 +3,10 @@ package com.turkey.quick.location.sse;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.turkey.quick.common.response.ApiResponse;
+import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.order.domain.OrderStatus;
+import com.turkey.quick.payment.domain.PointWallet;
+import com.turkey.quick.payment.repository.PointWalletRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
 import com.turkey.quick.support.SecondaryInstance;
 import com.turkey.quick.support.SseTestClient;
@@ -26,6 +29,10 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 
 /**
  * <b>이 기능의 핵심을 증명하는 유일한 자동 검증이다</b>(#317).
@@ -62,6 +69,15 @@ class TrackingFanoutMultiInstanceE2ETest extends IntegrationTestSupport {
 
     @Autowired
     private TestRestTemplate rest;
+
+    @Autowired
+    private MemberRepository memberRepository;
+
+    @Autowired
+    private PointWalletRepository pointWalletRepository;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @Autowired
     private TrackingFixture fixture;
@@ -248,6 +264,46 @@ class TrackingFanoutMultiInstanceE2ETest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("B 에서 배송 완료 처리되면 A 에 연결된 고객 스트림으로 COMPLETED가 전달된다(#398)")
+    void deliversCompletedEventAcrossInstances() {
+        // complete()는 transition()과 다른 메서드다 — 정산·포인트 적립까지 한 트랜잭션에서
+        // 처리하므로 발행 호출부가 독립적이다. transition() 케이스가 통과한다고 이 경로도
+        // 통과한다고 볼 수 없다.
+        var scenario = fixture.deliveryWithStatus(OrderStatus.DELIVERING);
+        // TrackingFixture는 위치·추적 테스트용이라 포인트 지갑을 만들지 않는다 — complete()의
+        // 정산 적립이 지갑을 요구하므로 여기서 직접 채워 준다(회원가입 때는 항상 함께 생긴다).
+        // 지갑·회원을 같은 트랜잭션(같은 영속성 컨텍스트)에서 조회·저장해야 한다 — 서로 다른
+        // 리포지토리 호출로 나누면 @MapsId 연관의 Member 가 준영속 상태로 넘어가
+        // "uninitialized proxy passed to persist()" 로 깨진다.
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                pointWalletRepository.save(
+                        PointWallet.create(memberRepository.findById(scenario.riderId()).orElseThrow())));
+        String customerCookie = loginOnA(CUSTOMER_LOGIN, scenario.customerLoginId());
+        String riderCookie = loginOnA(RIDER_LOGIN, scenario.riderLoginId());
+
+        try (var client = SseTestClient.get(streamUrlOnA(scenario.deliveryId()), customerCookie)) {
+            assertThat(client.statusCode()).isEqualTo(200);
+
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            body.add("proofType", "PHOTO");
+            body.add("proofValue", "proof/fanout-test.jpg");
+            HttpHeaders headers = new HttpHeaders();
+            headers.add(HttpHeaders.COOKIE, riderCookie);
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+            var completed = rest.exchange(
+                    secondary.url("/api/rider/deliveries/%d/complete".formatted(scenario.deliveryId())),
+                    HttpMethod.POST, new HttpEntity<>(body, headers), ApiResponse.class);
+            assertThat(completed.getStatusCode()).as("배송 완료 처리 body=%s", completed.getBody())
+                    .isEqualTo(HttpStatus.OK);
+
+            assertThat(client.awaitData(AWAIT))
+                    .contains("\"type\":\"status\"")
+                    .contains("\"status\":\"COMPLETED\"");
+        }
+    }
+
+    @Test
     @DisplayName("WAITING일 때 미리 연결해 두면 배차 확정(ASSIGNED)을 그 연결로 받는다(#398+#401)")
     void receivesAssignedEventOnConnectionOpenedWhileWaiting() {
         // 이게 이번 세 서브 이슈(#398/#399/#401)를 합쳐야 성립하는 핵심 시나리오다: 라이더가
@@ -265,6 +321,52 @@ class TrackingFanoutMultiInstanceE2ETest extends IntegrationTestSupport {
             assertThat(client.awaitData(AWAIT))
                     .contains("\"type\":\"status\"")
                     .contains("\"status\":\"ASSIGNED\"");
+        }
+    }
+
+    @Test
+    @DisplayName("WAITING부터 COMPLETED까지, 하나의 연결로 모든 상태 전이를 순서대로 받는다(사용자 보고 버그 재현)")
+    void receivesEveryStatusTransitionOnOneLongLivedConnection() {
+        // 지금까지의 케이스는 전이 하나씩을 갓 연 연결로 확인했다. 실제 사용자 흐름은 연결 하나가
+        // WAITING부터 COMPLETED까지 계속 열려 있다 — "완료 시에만 화면이 안 바뀐다"는 버그 신고를
+        // 재현하려면, 그 앞의 네 번의 전이(ASSIGNED/MOVING_TO_PICKUP/PICKED_UP/DELIVERING)를
+        // 이미 받은 뒤에도 다섯 번째(COMPLETED)가 같은 연결로 여전히 도착하는지 확인해야 한다.
+        var scenario = fixture.deliveryWithStatus(OrderStatus.WAITING);
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                pointWalletRepository.save(
+                        PointWallet.create(memberRepository.findById(scenario.riderId()).orElseThrow())));
+        String customerCookie = loginOnA(CUSTOMER_LOGIN, scenario.customerLoginId());
+        String riderCookie = loginOnA(RIDER_LOGIN, scenario.riderLoginId());
+
+        try (var client = SseTestClient.get(streamUrlOnA(scenario.deliveryId()), customerCookie)) {
+            assertThat(client.statusCode()).isEqualTo(200);
+
+            postAccept(secondary.url(RIDER_ACCEPT_REQUEST.formatted(scenario.deliveryId())), riderCookie);
+            assertThat(client.awaitData(AWAIT)).as("1: ASSIGNED").contains("\"status\":\"ASSIGNED\"");
+
+            String transitionUrl = secondary.url(RIDER_DELIVERY_TRANSITION.formatted(scenario.deliveryId()));
+            postTransition(transitionUrl, "START_MOVING_TO_PICKUP", riderCookie);
+            assertThat(client.awaitData(AWAIT)).as("2: MOVING_TO_PICKUP").contains("\"status\":\"MOVING_TO_PICKUP\"");
+
+            postTransition(transitionUrl, "PICK_UP", riderCookie);
+            assertThat(client.awaitData(AWAIT)).as("3: PICKED_UP").contains("\"status\":\"PICKED_UP\"");
+
+            postTransition(transitionUrl, "START_DELIVERING", riderCookie);
+            assertThat(client.awaitData(AWAIT)).as("4: DELIVERING").contains("\"status\":\"DELIVERING\"");
+
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            body.add("proofType", "PHOTO");
+            body.add("proofValue", "proof/full-journey-test.jpg");
+            HttpHeaders headers = new HttpHeaders();
+            headers.add(HttpHeaders.COOKIE, riderCookie);
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+            var completed = rest.exchange(
+                    secondary.url("/api/rider/deliveries/%d/complete".formatted(scenario.deliveryId())),
+                    HttpMethod.POST, new HttpEntity<>(body, headers), ApiResponse.class);
+            assertThat(completed.getStatusCode()).as("배송 완료 처리 body=%s", completed.getBody())
+                    .isEqualTo(HttpStatus.OK);
+
+            assertThat(client.awaitData(AWAIT)).as("5: COMPLETED").contains("\"status\":\"COMPLETED\"");
         }
     }
 
