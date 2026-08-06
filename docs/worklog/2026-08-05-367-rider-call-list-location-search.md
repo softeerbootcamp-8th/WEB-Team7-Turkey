@@ -47,6 +47,30 @@
 - **영향**: #60이 페이지네이션을 도입할 때 이 "좌표 없음 → 전체 반환" 경로도 자연히 상한이 걸리게
   된다. CLAUDE.md의 「확인이 필요한 항목」에 이 연결 관계를 남겨 뒀다.
 
+### 2. bounding box 쿼리를 JPA 파생 메서드로 둘지, FORCE INDEX 네이티브 쿼리로 바꿀지 (PR #378 리뷰, 2026-08-06)
+
+- **물었던 것**: bigbell999가 PR #378 리뷰에서 두 가지를 제안함 — ① 파생 메서드 이름
+  (`findByStatusAndPickup_LatitudeBetweenAndPickup_LongitudeBetween`)이 길어 가독성이 떨어지니
+  `@Query`로 바꿀 것, ② discussion #380 실측(합성 데이터, MySQL vs Redis GEO 성능 비교)에서
+  WAITING이 테이블 전체의 100%에 가깝고 절대 건수가 약 2만 건을 넘으면 옵티마이저가
+  `idx_delivery_waiting_location` 대신 `idx_delivery_status_requested`로 갈아타 응답 시간이
+  77배까지 뛰는 현상(#380 7장)을 확인했으니, `FORCE INDEX`로 항상 위치 인덱스를 강제할 것.
+- **선택지**:
+  - (A) 그대로 둔다 — 코드 변경 없음. 다만 위 절벽 현상에 그대로 노출된다.
+  - (B) `@Query`로 가독성만 개선한다 — 절벽 현상은 그대로 남는다.
+  - (C) `@Query` + `FORCE INDEX`로 둘 다 반영한다.
+- **고른 것**: (C)
+- **근거**: #380 4-2장 실측에서, 인덱스를 강제해도 정상 범위(WAITING이 적을 때)에서 성능 손해가
+  없었다(13.9ms 자연 선택 vs 14.6ms 강제, 사실상 동일). `delivery_order`는 COMPLETED·CANCELED가
+  영구히 누적되는 테이블이라 WAITING이 100%에 가까워지는 절벽 조건 자체가 실제 운영에서 발생할
+  가능성은 낮다고 판단했지만, 강제 지정에 비용이 안 든다는 게 실측으로 확인된 이상 예방적으로
+  적용하지 않을 이유가 없다고 봄(사람 확인, emes-g).
+- **영향**: `FORCE INDEX`는 MySQL 고유 문법이라 JPQL로 표현할 수 없다 — 파생 메서드를
+  `nativeQuery = true`인 `@Query`로 바꿔야 했다. 메서드명도 `findWaitingOrdersWithinBoundingBox`로
+  줄였다(어차피 이 메서드는 WAITING 전용이라, 같은 파일의 다른 네이티브 쿼리들처럼 `status` 값을
+  파라미터로 안 받고 SQL에 `'WAITING'`으로 고정했다 — 관례 통일). 실제로 `FORCE INDEX`가 걸리는지는
+  `EXPLAIN`으로 수동 확인했다(`possible_keys`가 `idx_delivery_waiting_location` 하나로 좁혀짐).
+
 ## 스스로 판단한 것
 
 - **`RiderDeliveryRequestApi`를 새 컨트롤러/인터페이스 분리 스타일로 마이그레이션하지 않음**:
