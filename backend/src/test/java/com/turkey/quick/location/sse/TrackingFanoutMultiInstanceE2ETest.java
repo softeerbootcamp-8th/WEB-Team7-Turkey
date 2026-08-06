@@ -2,6 +2,7 @@ package com.turkey.quick.location.sse;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.turkey.quick.common.response.ApiResponse;
 import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.order.domain.OrderStatus;
@@ -300,6 +301,18 @@ class TrackingFanoutMultiInstanceE2ETest extends IntegrationTestSupport {
             assertThat(client.awaitData(AWAIT))
                     .contains("\"type\":\"status\"")
                     .contains("\"status\":\"COMPLETED\"");
+
+            // 실제 버그(사람 확인, 2026-08-06): 발행이 정산·포인트 적립보다 먼저 일어나면, 이
+            // 이벤트를 받고 고객이 곧바로 재조회해도 원본 트랜잭션이 아직 커밋 전이라 옛 상태
+            // (DELIVERING)를 읽는다 — 화면이 새로고침 전까지 안 바뀌는 것처럼 보인다. 이벤트
+            // 수신 직후의 재조회가 이미 COMPLETED를 보는지까지 확인해야 이 커밋 시점 경쟁을 잡는다.
+            var detail = rest.exchange(streamUrlOnA(scenario.deliveryId())
+                            .replace("/tracking/stream", ""),
+                    HttpMethod.GET, new HttpEntity<>(withCookie(customerCookie)), JsonNode.class);
+            assertThat(detail.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(detail.getBody().get("data").get("status").asText())
+                    .as("이벤트 수신 직후 재조회한 상태 — 커밋 전이면 아직 DELIVERING으로 보인다")
+                    .isEqualTo("COMPLETED");
         }
     }
 

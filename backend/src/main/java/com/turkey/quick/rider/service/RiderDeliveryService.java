@@ -208,8 +208,6 @@ public class RiderDeliveryService {
         deliveryProofRepository.save(proof);
         order.complete();
         riderProfile.release();
-        trackingPublisher.publishStatus(deliveryId, OrderStatus.COMPLETED,
-                order.getCompletedAt().toInstant(ZoneOffset.UTC));
 
         long settlementAmount = finalFare.getTotalFare();
         RiderSettlement settlement = riderSettlementRepository.save(
@@ -221,6 +219,15 @@ public class RiderDeliveryService {
         wallet.credit(settlementAmount);
         pointTransactionRepository.save(PointTransaction.forSettlement(
                 wallet, settlementAmount, balanceBefore, settlementRequestKey(deliveryId), settlement));
+
+        // 발행은 이 트랜잭션의 남은 DB 작업을 전부 마친 뒤, 반환 직전에 한다(#398 버그 수정).
+        // 정산·포인트 적립보다 먼저 발행하면 Redis 알림이 커밋보다 먼저 도착해, 그 알림을 받은
+        // 고객이 곧바로 재조회해도 아직 커밋 전이라 옛 상태(DELIVERING)를 읽는다 — 재조회가
+        // "너무 이른 재조회"가 되어 화면이 갱신 안 된 것처럼 보이고, 그 뒤로는 아무도 다시
+        // 재조회를 트리거하지 않아 수동 새로고침 전까지 그대로 멈춘다. transition()은 발행 뒤
+        // 커밋까지 남은 작업이 없어 이 창이 사실상 없었기 때문에 같은 문제가 드러나지 않았다.
+        trackingPublisher.publishStatus(deliveryId, OrderStatus.COMPLETED,
+                order.getCompletedAt().toInstant(ZoneOffset.UTC));
 
         log.info("event=RIDER_DELIVERY_COMPLETED riderId={} orderId={} settlementAmount={}",
                 rider.memberId(), deliveryId, settlementAmount);
