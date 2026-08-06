@@ -50,6 +50,7 @@ class TrackingFanoutMultiInstanceE2ETest extends IntegrationTestSupport {
     private static final String CUSTOMER_LOGIN = "/api/customer/login";
     private static final String RIDER_LOGIN = "/api/rider/login";
     private static final String RIDER_LOCATION = "/api/rider/location";
+    private static final String RIDER_DELIVERY_TRANSITION = "/api/rider/deliveries/%d/transition";
     private static final Duration AWAIT = Duration.ofSeconds(10);
 
     private static SecondaryInstance secondary;
@@ -118,6 +119,13 @@ class TrackingFanoutMultiInstanceE2ETest extends IntegrationTestSupport {
                 new HttpEntity<>(locationBody(latitude), withCookie(riderCookie)),
                 ApiResponse.class);
         assertThat(posted.getStatusCode()).as("위치 갱신 %s", url).isEqualTo(HttpStatus.OK);
+    }
+
+    private void postTransition(String url, String action, String riderCookie) {
+        var posted = rest.exchange(url, HttpMethod.POST,
+                new HttpEntity<>(Map.of("action", action), withCookie(riderCookie)),
+                ApiResponse.class);
+        assertThat(posted.getStatusCode()).as("단계 전이 %s", url).isEqualTo(HttpStatus.OK);
     }
 
     @Test
@@ -205,6 +213,28 @@ class TrackingFanoutMultiInstanceE2ETest extends IntegrationTestSupport {
             // 자기 배송의 좌표가 먼저 도착해야 한다. 남의 좌표가 섞였다면 이 프레임이 38.1111 이다.
             assertThat(client.awaitData(AWAIT)).contains("\"latitude\":37.4979");
             assertThat(client.receivedLines()).noneMatch(line -> line.contains("38.1111"));
+        }
+    }
+
+    @Test
+    @DisplayName("B 에서 일어난 배송 상태 전이가 A 에 연결된 고객 스트림으로 전달된다(#398)")
+    void deliversStatusChangeAcrossInstances() {
+        // 위치와 같은 채널·같은 팬아웃 경로를 타는지 확인한다. 배차(ASSIGNED)는 픽스처가 도메인
+        // 메서드로 직접 만들어서(위 클래스 Javadoc) 검증 대상이 아니고, 그 다음 실제 HTTP 전이
+        // (ASSIGNED→MOVING_TO_PICKUP)부터가 이 테스트의 대상이다.
+        var scenario = fixture.assignedDelivery();
+        String customerCookie = loginOnA(CUSTOMER_LOGIN, scenario.customerLoginId());
+        String riderCookie = loginOnA(RIDER_LOGIN, scenario.riderLoginId());
+
+        try (var client = SseTestClient.get(streamUrlOnA(scenario.deliveryId()), customerCookie)) {
+            assertThat(client.statusCode()).isEqualTo(200);
+
+            postTransition(secondary.url(RIDER_DELIVERY_TRANSITION.formatted(scenario.deliveryId())),
+                    "START_MOVING_TO_PICKUP", riderCookie);
+
+            assertThat(client.awaitData(AWAIT))
+                    .contains("\"type\":\"status\"")
+                    .contains("\"status\":\"MOVING_TO_PICKUP\"");
         }
     }
 
