@@ -239,6 +239,21 @@ body {
     color: var(--color-on-surface-variant);
 }
 
+.customer-home__summary-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    font-size: 13px;
+    line-height: 18px;
+    color: var(--color-on-surface-variant);
+}
+
+.customer-home__summary-meta > span:not(:first-child)::before {
+    content: "·";
+    margin-right: 10px;
+    color: var(--color-outline, currentColor);
+}
+
 .customer-home__summary-cta {
     display: flex;
     align-items: center;

@@ -10,8 +10,10 @@
 정적이던 고객 홈(`customer/_authed/index.tsx`)에 진행 중 배송 요약을 붙였다. #100 이 만든
 `GET /api/customer/deliveries/active`(Orval 훅 `useGetCustomerActiveDelivery`)를 소비한다.
 
-- 진행 중 배송이 **있으면**: "퀵 부르기" 버튼을 없애고, 상태 + 출발지→도착지 요약 카드를 보여준다.
-  카드를 누르면 추적 화면(`/customer/deliveries/$deliveryId/tracking`)으로 간다.
+- 진행 중 배송이 **있으면**: "퀵 부르기" 버튼을 없애고, 상태 + 출발지→도착지 + 물품 종류·접수 시각
+  요약 카드를 보여준다. 카드를 누르면 추적 화면(`/customer/deliveries/$deliveryId/tracking`)으로 간다.
+  (물품 종류는 #100 후속(#408)에서 `ActiveDeliveryResponse.itemType` 이 추가돼 표시 가능해졌고,
+  접수 시각은 `requestedAt`(기존 필드)을 `formatDeliveryRequestedAt` 로 포맷해 보여준다.)
 - **없으면**: "퀵 부르기"를 주 동작으로 둔다.
 - 조회 **로딩/실패**는 요약 영역에만 표시하고 홈 전체를 오류 화면으로 만들지 않는다. 실패 시에는
   퀵 부르기를 fallback 으로 열어 둔다(진행 중이면 생성은 서버가 409 로 막는다).

@@ -6,6 +6,21 @@
  * OpenAPI spec version: v1
  */
 /**
+ * 물품 종류
+ */
+export type ActiveDeliveryResponseItemType = typeof ActiveDeliveryResponseItemType[keyof typeof ActiveDeliveryResponseItemType];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ActiveDeliveryResponseItemType = {
+  DOCUMENT: 'DOCUMENT',
+  SMALL_PARCEL: 'SMALL_PARCEL',
+  MEDIUM_PARCEL: 'MEDIUM_PARCEL',
+  LARGE_PARCEL: 'LARGE_PARCEL',
+  FOOD: 'FOOD',
+} as const;
+
+/**
  * 배송 상태(WAITING~DELIVERING)
  */
 export type ActiveDeliveryResponseStatus = typeof ActiveDeliveryResponseStatus[keyof typeof ActiveDeliveryResponseStatus];
@@ -30,6 +45,8 @@ export interface ActiveDeliveryResponse {
   deliveryId?: number;
   /** 도착지 도로명 주소 */
   destinationRoadAddress?: string;
+  /** 물품 종류 */
+  itemType?: ActiveDeliveryResponseItemType;
   /** 픽업지 도로명 주소 */
   pickupRoadAddress?: string;
   /** 요청 시각(UTC) */

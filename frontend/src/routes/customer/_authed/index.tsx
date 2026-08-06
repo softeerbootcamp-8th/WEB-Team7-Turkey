@@ -1,11 +1,25 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { ChevronRight, Settings, Truck } from 'lucide-react'
 import { useGetCustomerActiveDelivery } from '@/api/generated/customer-delivery/customer-delivery'
+import type { ActiveDeliveryResponseItemType } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
 import { getCustomerDeliveryStatusLabel } from '@/shared/delivery/status'
+import { formatDeliveryRequestedAt } from './deliveries/-deliveryList'
 
 export const Route = createFileRoute('/customer/_authed/')({
   component: CustomerHome,
 })
+
+const ITEM_TYPE_LABELS: Record<ActiveDeliveryResponseItemType, string> = {
+  DOCUMENT: '문서',
+  SMALL_PARCEL: '소형 소포',
+  MEDIUM_PARCEL: '중형 소포',
+  LARGE_PARCEL: '대형 소포',
+  FOOD: '음식',
+}
+
+function getItemTypeLabel(itemType: ActiveDeliveryResponseItemType | undefined): string | null {
+  return itemType ? ITEM_TYPE_LABELS[itemType] : null
+}
 
 function CustomerHome() {
   // ApiResponse<T> 봉투는 훅을 쓰는 쪽이 벗긴다(customInstance 는 axios 레벨만 언랩).
@@ -65,6 +79,12 @@ function CustomerHome() {
                   <span className="customer-home__summary-addr">{active!.pickupRoadAddress ?? '출발지 미확인'}</span>
                   <span className="customer-home__summary-arrow" aria-hidden="true">→</span>
                   <span className="customer-home__summary-addr">{active!.destinationRoadAddress ?? '도착지 미확인'}</span>
+                </span>
+                <span className="customer-home__summary-meta">
+                  {getItemTypeLabel(active!.itemType) && (
+                    <span>{getItemTypeLabel(active!.itemType)}</span>
+                  )}
+                  <span>접수 {formatDeliveryRequestedAt(active!.requestedAt)}</span>
                 </span>
                 <span className="customer-home__summary-cta">
                   실시간 배송 상태 보기
