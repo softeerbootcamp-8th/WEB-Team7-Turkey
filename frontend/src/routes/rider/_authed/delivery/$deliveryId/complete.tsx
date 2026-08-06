@@ -132,32 +132,31 @@ function DeliveryCompletion() {
       <section className="flex flex-1 flex-col px-container-margin py-xl pb-28">
         <div className="text-center">
           <p className="font-label-sm text-label-sm text-secondary">배송 #{deliveryId}</p>
-          <h2 className="mt-2 font-headline-md text-headline-md font-bold text-on-surface">전달 완료 사진을 촬영해 주세요</h2>
-          <p className="mt-2 font-body-md text-body-md text-secondary">물품이 안전하게 전달된 모습이 잘 보이도록 촬영해 주세요.</p>
+          <h2 className="mt-2 font-headline-md text-headline-md font-bold text-on-surface">전달 완료 사진을 등록해 주세요</h2>
+          <p className="mt-2 font-body-md text-body-md text-secondary">카메라로 촬영하거나 저장된 사진을 선택할 수 있어요.</p>
         </div>
 
         <input
           ref={inputRef}
           type="file"
           accept="image/*"
-          capture="environment"
           onChange={selectPhoto}
           className="sr-only"
-          aria-label="배송 완료 사진 촬영"
+          aria-label="배송 완료 사진 촬영 또는 선택"
         />
 
         <button
           type="button"
           onClick={openCamera}
           disabled={completionMutation.isPending}
-          aria-label={previewUrl ? '배송 완료 사진 다시 촬영하기' : '카메라 열기'}
+          aria-label={previewUrl ? '배송 완료 사진 다시 선택하기' : '사진 촬영 또는 선택하기'}
           className="relative mt-xl flex min-h-80 w-full flex-1 items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-primary-container bg-surface-container-lowest text-on-surface shadow-sm transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-60"
         >
           {previewUrl ? (
             <>
               <img src={previewUrl} alt="촬영한 배송 완료 인증 사진" className="absolute inset-0 h-full w-full object-cover" />
               <span className="absolute bottom-4 rounded-full bg-on-surface/75 px-4 py-2 font-label-md text-label-md text-surface">
-                다시 촬영하기
+                다시 선택하기
               </span>
             </>
           ) : (
@@ -166,8 +165,8 @@ function DeliveryCompletion() {
                 <span className="material-symbols-outlined text-4xl" aria-hidden="true">photo_camera</span>
               </span>
               <span>
-                <span className="block font-headline-md text-headline-md font-bold">카메라 열기</span>
-                <span className="mt-1 block font-body-md text-body-md text-secondary">휴대폰 카메라로 인증 사진을 촬영합니다.</span>
+                <span className="block font-headline-md text-headline-md font-bold">사진 촬영 또는 선택</span>
+                <span className="mt-1 block font-body-md text-body-md text-secondary">카메라나 기기에 저장된 사진을 사용할 수 있어요.</span>
               </span>
             </span>
           )}
