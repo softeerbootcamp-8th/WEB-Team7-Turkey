@@ -86,9 +86,14 @@ function CustomerHome() {
                   {getCustomerDeliveryStatusLabel(active!.status)}
                 </span>
                 <span className="customer-home__summary-route">
-                  <span className="customer-home__summary-addr">{active!.pickupRoadAddress ?? '출발지 미확인'}</span>
-                  <span className="customer-home__summary-arrow" aria-hidden="true">→</span>
-                  <span className="customer-home__summary-addr">{active!.destinationRoadAddress ?? '도착지 미확인'}</span>
+                  <span className="customer-home__summary-point">
+                    <span className="customer-home__summary-label">출발</span>
+                    <span className="customer-home__summary-addr">{active!.pickupRoadAddress ?? '출발지 미확인'}</span>
+                  </span>
+                  <span className="customer-home__summary-point">
+                    <span className="customer-home__summary-label">도착</span>
+                    <span className="customer-home__summary-addr">{active!.destinationRoadAddress ?? '도착지 미확인'}</span>
+                  </span>
                 </span>
                 <span className="customer-home__summary-meta">
                   {getItemTypeLabel(active!.itemType) && (

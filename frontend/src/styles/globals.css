@@ -219,24 +219,35 @@ body {
 
 .customer-home__summary-route {
     display: flex;
-    align-items: center;
-    gap: 8px;
+    flex-direction: column;
+    gap: 6px;
     font-size: 15px;
     line-height: 22px;
     font-weight: 600;
 }
 
+.customer-home__summary-point {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.customer-home__summary-label {
+    flex-shrink: 0;
+    width: 30px;
+    padding-top: 1px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--color-on-surface-variant);
+}
+
 .customer-home__summary-addr {
     flex: 1;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.customer-home__summary-arrow {
-    flex-shrink: 0;
-    color: var(--color-on-surface-variant);
+    /* 주소를 자르지 않고 전부 보여 준다 — 길면 줄바꿈한다. */
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: keep-all;
 }
 
 .customer-home__summary-meta {
