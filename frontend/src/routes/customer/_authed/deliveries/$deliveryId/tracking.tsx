@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import {
   useCancelCustomerDelivery,
   useGetDelivery,
@@ -121,17 +121,17 @@ function DeliveryTracking() {
       {/* BEGIN: Status Sheet */}
       <div className="relative z-10 w-full bg-white rounded-t-3xl shadow-lg flex-1 flex flex-col -mt-6">
         <header className="flex justify-between items-center p-5 pt-8">
-          <button aria-label="Home" className="p-2 -ml-2">
+          <Link to="/customer" aria-label="Home" className="p-2 -ml-2 rounded-full cursor-pointer transition-colors hover:bg-gray-100">
             <svg className="h-6 w-6 text-slate-800" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
               <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" strokeLinecap="round" strokeLinejoin="round"></path>
             </svg>
-          </button>
+          </Link>
           {canCancel && (
             <button
               type="button"
               onClick={handleCancel}
               disabled={cancelMutation.isPending}
-              className="text-sm font-medium text-gray-500 disabled:opacity-50"
+              className="text-sm font-medium text-gray-500 px-2 py-1 -mr-2 rounded-md cursor-pointer transition-colors hover:bg-gray-100 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent"
             >
               주문취소
             </button>
