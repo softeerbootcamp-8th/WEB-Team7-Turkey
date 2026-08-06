@@ -23,6 +23,8 @@ declare global {
           paddingLeft?: number,
         ): void
         panTo(position: LatLng): void
+        // 컨테이너 크기가 바뀐 뒤 지도 타일·영역을 다시 계산한다.
+        relayout(): void
       }
 
       class LatLngBounds {
