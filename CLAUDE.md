@@ -457,6 +457,12 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   여전히 `return null` 스텁이다(#69에서 `getPointTransactions`만 구현). 어느 화면·이슈가
   이 둘을 담당하는지 명시돼 있지 않다 — `getSettlements`는 아직 없는 `/api/rider/history`
   주간 요약용으로, `getWithdrawals`는 #103(출금 요청 상세)류와 겹치는 것으로 추정만 함
+- 라이더 운행 기록 상세(`GET /api/rider/history/{deliveryId}`, #71)는 목록(#70)과 달리 확정 운임+정산액을
+  함께 담는다(사람 확인, 2026-08-05) — "배송 기록=금액 없음, 정산=포인트 API" 원칙의 의도된 예외
+  (정산 확인 화면). 소유+COMPLETED 를 쿼리 조건에 넣어 없음·타인 것·미완료를 같은 404 로 응답한다.
+  프론트 `history/$deliveryId` 목업 연결(#217 계열)은 아직 미구현. 타임라인·요금 변환 공용 팩토리
+  (`DeliveryStatusStepResponse.timelineOf`, `FareBreakdownResponse.from`)를 신설했으나 기존 복제 3곳
+  통합은 범위 밖으로 남김
 - 포인트 지갑 없음의 응답 코드가 고객(400)과 라이더(500)로 갈린다(#67). 라이더는
   `BusinessException(INTERNAL_SERVER_ERROR)`로 `RiderPointApi` 문서와 맞췄지만, 고객
   (`CustomerPaymentService`)은 `IllegalStateException` → `GlobalExceptionHandler` → 400 이라

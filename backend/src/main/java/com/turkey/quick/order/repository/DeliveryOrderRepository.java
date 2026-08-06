@@ -94,6 +94,14 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
     Optional<DeliveryOrder> findByIdAndCustomer_Id(Long id, Long customerId);
 
     /**
+     * 라이더 본인의 운행 기록 상세 조회(#71)용. 목록({@link #findByAssignedRider_MemberIdAndStatus})과
+     * 대칭으로 배정 조건을 쿼리에 두고(없음/타인 것을 같은 404 로 응답), 상태까지 조건에 넣어
+     * COMPLETED 만 통과시킨다. 운행 기록은 완료 배송의 기록이므로, 진행 중 주문 id 를 넣어도 404 다 —
+     * 이 조건이 곧 확정 운임(FINAL 스냅샷)·정산 내역이 반드시 존재한다는 불변식을 보장한다.
+     */
+    Optional<DeliveryOrder> findByIdAndAssignedRider_MemberIdAndStatus(Long id, Long riderId, OrderStatus status);
+
+    /**
      * 라이더가 지금 수행 중인 배송을 상태까지 함께 조회한다. 화면 진입 시 한 번 부르는 경로용이다
      * ({@code RiderOperatingStatusQueryService}).
      *

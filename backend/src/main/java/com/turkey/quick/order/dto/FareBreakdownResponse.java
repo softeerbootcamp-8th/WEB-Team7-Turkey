@@ -1,6 +1,7 @@
 package com.turkey.quick.order.dto;
 
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+import com.turkey.quick.order.domain.OrderFareSnapshot;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
@@ -31,4 +32,17 @@ public record FareBreakdownResponse(
         @Schema(description = "합계 운임(원)", example = "6400")
         Long totalFare
 ) {
+    /**
+     * 요금 스냅샷을 그대로 응답 형태로 옮긴다. ESTIMATE/FINAL 어느 스냅샷이든 컬럼 구성이 같아
+     * 하나로 처리한다. 어느 스냅샷을 쓸지(견적 vs 최종)는 트랜잭션 경계가 있는 서비스 계층이 고른다.
+     */
+    public static FareBreakdownResponse from(OrderFareSnapshot snapshot) {
+        return new FareBreakdownResponse(
+                snapshot.getPolicyVersion(),
+                snapshot.getCalculationDistanceMeters(),
+                snapshot.getBaseFare(),
+                snapshot.getDistanceFare(),
+                snapshot.getItemSurcharge(),
+                snapshot.getTotalFare());
+    }
 }
