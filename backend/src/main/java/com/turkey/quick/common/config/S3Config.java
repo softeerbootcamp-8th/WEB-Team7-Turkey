@@ -28,7 +28,8 @@ public class S3Config {
     public AmazonS3 amazonS3() {
         return AmazonS3ClientBuilder.standard()
                 .withRegion(region)
-                .withCredentials(new DefaultAWSCredentialsProviderChain())
+                // ec2 자체에 롤을 줌
+//                .withCredentials(new DefaultAWSCredentialsProviderChain())
                 .build();
     }
 }

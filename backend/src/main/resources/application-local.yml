@@ -29,8 +29,22 @@ app:
 # backend 디렉터리에서 실행하면 프로젝트 루트의 data/proof/... 아래에 인증 사진을 저장한다.
 rider:
   delivery-proof:
+    # local: 호스트 파일시스템, s3mock: 로컬 S3 mock 컨테이너
+    storage: ${RIDER_DELIVERY_PROOF_STORAGE:local}
     local-root: ${RIDER_DELIVERY_PROOF_LOCAL_ROOT:../data}
 
 logging:
   level:
     com.turkey.quick: DEBUG
+
+
+aws:
+  s3:
+    # 1. 기존 상용 버킷 이름 대신, 로컬 테스트용 버킷 이름(예: my-test-bucket)으로 덮어씁니다.
+    bucket: web-team7-turkey-data-962895253643-ap-northeast-2-an
+    region: ${AWS_REGION:ap-northeast-2}
+
+    # 2. 로컬 테스트 여부를 판별할 엔드포인트 주소를 새로 추가합니다.
+    endpoint: http://localhost:9090
+    access-key: foo
+    secret-key: bar
