@@ -36,6 +36,7 @@ declare global {
       class Marker {
         constructor(options: { position: LatLng; map?: Map; image?: MarkerImage; title?: string })
         setPosition(position: LatLng): void
+        setImage(image: MarkerImage): void
         setMap(map: Map | null): void
       }
 
