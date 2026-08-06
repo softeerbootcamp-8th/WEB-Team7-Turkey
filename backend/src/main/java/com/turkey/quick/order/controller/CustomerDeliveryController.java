@@ -4,6 +4,7 @@ import com.turkey.quick.common.response.ApiResponse;
 import com.turkey.quick.customer.auth.AuthenticatedCustomer;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.*;
+import com.turkey.quick.order.service.ActiveDeliveryQueryService;
 import com.turkey.quick.order.service.DeliveryDetailQueryService;
 import com.turkey.quick.order.service.DeliveryListQueryService;
 import com.turkey.quick.order.service.DeliveryService;
@@ -24,6 +25,7 @@ public class CustomerDeliveryController implements CustomerDeliveryApi {
     private final DeliveryTrackingQueryService deliveryTrackingQueryService;
     private final DeliveryListQueryService deliveryListQueryService;
     private final DeliveryDetailQueryService deliveryDetailQueryService;
+    private final ActiveDeliveryQueryService activeDeliveryQueryService;
 
     @Override
     public ApiResponse<FareQuoteResponse> quoteFare(FareQuoteRequest request) {
@@ -46,6 +48,11 @@ public class CustomerDeliveryController implements CustomerDeliveryApi {
     public ApiResponse<DeliveryListResponse> getDeliveries(OrderStatus status, int page, int size,
                                                             AuthenticatedCustomer customer) {
         return ApiResponse.ok(deliveryListQueryService.getDeliveries(customer.memberId(), status, page, size));
+    }
+
+    @Override
+    public ApiResponse<ActiveDeliveryResponse> getActiveDelivery(AuthenticatedCustomer customer) {
+        return ApiResponse.ok(activeDeliveryQueryService.getActiveDelivery(customer.memberId()));
     }
 
     @Override
