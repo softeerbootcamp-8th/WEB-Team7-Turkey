@@ -50,7 +50,7 @@ public class RiderLocationService extends Service implements LocationListener {
     private static final String CHANNEL_ID = "rider_location_tracking";
     private static final int NOTIFICATION_ID = 1001;
     private static final String PREFERENCES = "rider_location_service";
-    private static final long LOCATION_INTERVAL_MS = 5_000L;
+    private static final long LOCATION_INTERVAL_MS = 500L;
     private static final long FORCE_SEND_AFTER_MS = 120_000L;
     private static final long MAX_FIX_AGE_MS = 60_000L;
     private static final float MAX_ACCURACY_METERS = 100F;
