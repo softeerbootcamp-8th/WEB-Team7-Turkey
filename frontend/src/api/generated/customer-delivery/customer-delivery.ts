@@ -25,6 +25,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  ApiResponseActiveDeliveryResponse,
   ApiResponseDeliveryCancelResponse,
   ApiResponseDeliveryCreateResponse,
   ApiResponseDeliveryDetailResponse,
@@ -205,6 +206,99 @@ export const useCreateCustomerDelivery = <TError = ErrorType<ApiResponseDelivery
       return useMutation(mutationOptions, queryClient);
     }
     /**
+ * 로그인한 고객의 진행 중(WAITING~DELIVERING) 배송을 요약해 조회한다. 고객당 진행 중 배송은 최대 1건이므로 결과는 0건 또는 1건이다. 진행 중 배송이 없으면 응답 data 가 null 이다(빈 결과, 오류 아님). 홈 화면 요약용이라 요금은 담지 않는다 — 상태·출발지·도착지·요청 시각만 준다. 정적 경로라 /{deliveryId} 보다 먼저 매칭된다.
+ * @summary 진행 중 배송 요약 조회
+ */
+export const getCustomerActiveDelivery = (
+    
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+      
+      
+      return customInstance<ApiResponseActiveDeliveryResponse>(
+      {url: `/api/customer/deliveries/active`, method: 'GET', signal
+    },
+      options);
+    }
+  
+
+
+
+export const getGetCustomerActiveDeliveryQueryKey = () => {
+    return [
+    `/api/customer/deliveries/active`
+    ] as const;
+    }
+
+    
+export const getGetCustomerActiveDeliveryQueryOptions = <TData = Awaited<ReturnType<typeof getCustomerActiveDelivery>>, TError = ErrorType<ApiResponseActiveDeliveryResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCustomerActiveDelivery>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCustomerActiveDeliveryQueryKey();
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCustomerActiveDelivery>>> = ({ signal }) => getCustomerActiveDelivery(requestOptions, signal);
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCustomerActiveDelivery>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetCustomerActiveDeliveryQueryResult = NonNullable<Awaited<ReturnType<typeof getCustomerActiveDelivery>>>
+export type GetCustomerActiveDeliveryQueryError = ErrorType<ApiResponseActiveDeliveryResponse>
+
+
+export function useGetCustomerActiveDelivery<TData = Awaited<ReturnType<typeof getCustomerActiveDelivery>>, TError = ErrorType<ApiResponseActiveDeliveryResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCustomerActiveDelivery>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCustomerActiveDelivery>>,
+          TError,
+          Awaited<ReturnType<typeof getCustomerActiveDelivery>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCustomerActiveDelivery<TData = Awaited<ReturnType<typeof getCustomerActiveDelivery>>, TError = ErrorType<ApiResponseActiveDeliveryResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCustomerActiveDelivery>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCustomerActiveDelivery>>,
+          TError,
+          Awaited<ReturnType<typeof getCustomerActiveDelivery>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCustomerActiveDelivery<TData = Awaited<ReturnType<typeof getCustomerActiveDelivery>>, TError = ErrorType<ApiResponseActiveDeliveryResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCustomerActiveDelivery>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 진행 중 배송 요약 조회
+ */
+
+export function useGetCustomerActiveDelivery<TData = Awaited<ReturnType<typeof getCustomerActiveDelivery>>, TError = ErrorType<ApiResponseActiveDeliveryResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCustomerActiveDelivery>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient 
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetCustomerActiveDeliveryQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+/**
  * 주문을 만들지 않고 금액만 계산한다. 산정 기준 거리는 좌표로 서버가 구한다.
  * @summary 요금 견적
  */

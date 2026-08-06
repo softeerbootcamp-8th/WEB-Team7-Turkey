@@ -29,7 +29,7 @@ import type {
   ApiResponseRiderDeliveryRequestAcceptResponse,
   ApiResponseRiderDeliveryRequestDetailResponse,
   ApiResponseVoid,
-  GetDeliveryRequestsParams
+  GetRiderDeliveryRequestsParams
 } from '../turkeyQuickDeliveryAPI.schemas';
 
 import { customInstance } from '../../../lib/axios';
@@ -41,11 +41,11 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 
 /**
- * AVAILABLE 인 라이더에게 수락 가능한 WAITING 요청을 반환한다. 라이더 최신 위치(Redis GEO) 기준 반경으로 거르며, 위치가 없으면 거리 필드는 null 이다. (#55) 라이더 식별을 위한 인증 파라미터가 이 계약에 빠져 있었어 추가함 — 다른 세 메서드(상세/수락/넘기기)는 각자 이슈에서 채운다.
+ * AVAILABLE 인 라이더에게 수락 가능한 WAITING 요청을 반환한다. 라이더 좌표(latitude/longitude)를 요청 파라미터로 받아 그 반경 내 주문만 bounding box 인덱스로 거른다(#367). 좌표를 안 보내면 위치 필터 없이 전체를 반환하고, 거리 필드는 null, DISTANCE 정렬은 REQUESTED_AT 으로 대체한다 (#55 계약 확정 — 위치 없음은 에러가 아니다). (#55) 라이더 식별을 위한 인증 파라미터가 이 계약에 빠져 있었어 추가함 — 다른 세 메서드(상세/수락/넘기기)는 각자 이슈에서 채운다.
  * @summary 배차 대기 콜 목록
  */
-export const getDeliveryRequests = (
-    params?: GetDeliveryRequestsParams,
+export const getRiderDeliveryRequests = (
+    params?: GetRiderDeliveryRequestsParams,
  options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
 ) => {
       
@@ -60,69 +60,69 @@ export const getDeliveryRequests = (
 
 
 
-export const getGetDeliveryRequestsQueryKey = (params?: GetDeliveryRequestsParams,) => {
+export const getGetRiderDeliveryRequestsQueryKey = (params?: GetRiderDeliveryRequestsParams,) => {
     return [
     `/api/rider/requests`, ...(params ? [params]: [])
     ] as const;
     }
 
     
-export const getGetDeliveryRequestsQueryOptions = <TData = Awaited<ReturnType<typeof getDeliveryRequests>>, TError = ErrorType<unknown>>(params?: GetDeliveryRequestsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryRequests>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+export const getGetRiderDeliveryRequestsQueryOptions = <TData = Awaited<ReturnType<typeof getRiderDeliveryRequests>>, TError = ErrorType<unknown>>(params?: GetRiderDeliveryRequestsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getRiderDeliveryRequests>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetDeliveryRequestsQueryKey(params);
+  const queryKey =  queryOptions?.queryKey ?? getGetRiderDeliveryRequestsQueryKey(params);
 
   
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDeliveryRequests>>> = ({ signal }) => getDeliveryRequests(params, requestOptions, signal);
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getRiderDeliveryRequests>>> = ({ signal }) => getRiderDeliveryRequests(params, requestOptions, signal);
 
       
 
       
 
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDeliveryRequests>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getRiderDeliveryRequests>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
 }
 
-export type GetDeliveryRequestsQueryResult = NonNullable<Awaited<ReturnType<typeof getDeliveryRequests>>>
-export type GetDeliveryRequestsQueryError = ErrorType<unknown>
+export type GetRiderDeliveryRequestsQueryResult = NonNullable<Awaited<ReturnType<typeof getRiderDeliveryRequests>>>
+export type GetRiderDeliveryRequestsQueryError = ErrorType<unknown>
 
 
-export function useGetDeliveryRequests<TData = Awaited<ReturnType<typeof getDeliveryRequests>>, TError = ErrorType<unknown>>(
- params: undefined |  GetDeliveryRequestsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryRequests>>, TError, TData>> & Pick<
+export function useGetRiderDeliveryRequests<TData = Awaited<ReturnType<typeof getRiderDeliveryRequests>>, TError = ErrorType<unknown>>(
+ params: undefined |  GetRiderDeliveryRequestsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getRiderDeliveryRequests>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getDeliveryRequests>>,
+          Awaited<ReturnType<typeof getRiderDeliveryRequests>>,
           TError,
-          Awaited<ReturnType<typeof getDeliveryRequests>>
+          Awaited<ReturnType<typeof getRiderDeliveryRequests>>
         > , 'initialData'
       >, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetDeliveryRequests<TData = Awaited<ReturnType<typeof getDeliveryRequests>>, TError = ErrorType<unknown>>(
- params?: GetDeliveryRequestsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryRequests>>, TError, TData>> & Pick<
+export function useGetRiderDeliveryRequests<TData = Awaited<ReturnType<typeof getRiderDeliveryRequests>>, TError = ErrorType<unknown>>(
+ params?: GetRiderDeliveryRequestsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getRiderDeliveryRequests>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getDeliveryRequests>>,
+          Awaited<ReturnType<typeof getRiderDeliveryRequests>>,
           TError,
-          Awaited<ReturnType<typeof getDeliveryRequests>>
+          Awaited<ReturnType<typeof getRiderDeliveryRequests>>
         > , 'initialData'
       >, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetDeliveryRequests<TData = Awaited<ReturnType<typeof getDeliveryRequests>>, TError = ErrorType<unknown>>(
- params?: GetDeliveryRequestsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryRequests>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+export function useGetRiderDeliveryRequests<TData = Awaited<ReturnType<typeof getRiderDeliveryRequests>>, TError = ErrorType<unknown>>(
+ params?: GetRiderDeliveryRequestsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getRiderDeliveryRequests>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary 배차 대기 콜 목록
  */
 
-export function useGetDeliveryRequests<TData = Awaited<ReturnType<typeof getDeliveryRequests>>, TError = ErrorType<unknown>>(
- params?: GetDeliveryRequestsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryRequests>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+export function useGetRiderDeliveryRequests<TData = Awaited<ReturnType<typeof getRiderDeliveryRequests>>, TError = ErrorType<unknown>>(
+ params?: GetRiderDeliveryRequestsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getRiderDeliveryRequests>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient 
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getGetDeliveryRequestsQueryOptions(params,options)
+  const queryOptions = getGetRiderDeliveryRequestsQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
