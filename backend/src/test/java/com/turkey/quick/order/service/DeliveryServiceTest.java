@@ -24,6 +24,7 @@ import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.order.repository.FarePolicyRepository;
 import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
 import com.turkey.quick.payment.service.CustomerPaymentService;
+import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -39,6 +40,7 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -113,6 +115,70 @@ class DeliveryServiceTest {
             assertThat(haversineDiff)
                     .as("하버사인 오차가 피타고라스 오차보다 작아야 함")
                     .isLessThan(pythagorasDiff);
+        }
+    }
+
+    @Nested
+    @DisplayName("bounding box 좌표 범위 계산(#367, 라이더 콜 목록 위치 검색)")
+    class BoundingBoxTest {
+
+        private static final int RADIUS_METERS = 3000;
+
+        @Test
+        @DisplayName("좌표가 없으면 거부한다")
+        void shouldRejectNullCoordinates() {
+            assertThatThrownBy(() -> deliveryService.boundingBox(null, SINSA_STATION.longitude(), RADIUS_METERS))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> deliveryService.boundingBox(SINSA_STATION.latitude(), null, RADIUS_METERS))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("남북(위도) 경계까지의 실제 거리는 반경(m)과 거의 같다")
+        void latBoundaryShouldMatchRadius() {
+            BigDecimal lat = SINSA_STATION.latitude();
+            BigDecimal lng = SINSA_STATION.longitude();
+
+            DeliveryService.BoundingBox box = deliveryService.boundingBox(lat, lng, RADIUS_METERS);
+
+            double northMeters = deliveryService.distance(lat, lng, box.latMax(), lng)
+                    .multiply(BigDecimal.valueOf(1000)).doubleValue();
+            double southMeters = deliveryService.distance(lat, lng, box.latMin(), lng)
+                    .multiply(BigDecimal.valueOf(1000)).doubleValue();
+
+            assertThat(northMeters).isCloseTo(RADIUS_METERS, Offset.offset(1.0));
+            assertThat(southMeters).isCloseTo(RADIUS_METERS, Offset.offset(1.0));
+        }
+
+        @Test
+        @DisplayName("동서(경도) 경계까지의 실제 거리도 반경(m)에 가깝다(위도 보정 근사)")
+        void lngBoundaryShouldBeCloseToRadius() {
+            BigDecimal lat = SINSA_STATION.latitude();
+            BigDecimal lng = SINSA_STATION.longitude();
+
+            DeliveryService.BoundingBox box = deliveryService.boundingBox(lat, lng, RADIUS_METERS);
+
+            double eastMeters = deliveryService.distance(lat, lng, lat, box.lngMax())
+                    .multiply(BigDecimal.valueOf(1000)).doubleValue();
+            double westMeters = deliveryService.distance(lat, lng, lat, box.lngMin())
+                    .multiply(BigDecimal.valueOf(1000)).doubleValue();
+
+            assertThat(eastMeters).isCloseTo(RADIUS_METERS, Offset.offset(50.0));
+            assertThat(westMeters).isCloseTo(RADIUS_METERS, Offset.offset(50.0));
+        }
+
+        @Test
+        @DisplayName("사각형은 원보다 넓다 — 모서리는 반경보다 멀다")
+        void cornerShouldBeFartherThanRadius() {
+            BigDecimal lat = SINSA_STATION.latitude();
+            BigDecimal lng = SINSA_STATION.longitude();
+
+            DeliveryService.BoundingBox box = deliveryService.boundingBox(lat, lng, RADIUS_METERS);
+
+            double cornerMeters = deliveryService.distance(lat, lng, box.latMax(), box.lngMax())
+                    .multiply(BigDecimal.valueOf(1000)).doubleValue();
+
+            assertThat(cornerMeters).isGreaterThan(RADIUS_METERS);
         }
     }
 

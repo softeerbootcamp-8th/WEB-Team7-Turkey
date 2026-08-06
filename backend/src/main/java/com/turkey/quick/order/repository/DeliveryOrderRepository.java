@@ -4,6 +4,7 @@ import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.TrackableDelivery;
 import jakarta.persistence.LockModeType;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -172,6 +173,33 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
     Optional<Long> findInProgressIdByActiveRiderId(@Param("riderId") Long riderId);
 
     List<DeliveryOrder> findByStatus(OrderStatus status);
+
+    /**
+     * 라이더 콜 목록 위치 검색(#367)의 bounding box 쿼리. status·픽업 위경도가 사각형 범위 안에
+     * 있는 WAITING 주문만 가져온다 — {@code idx_delivery_waiting_location(status,
+     * pickup_latitude, pickup_longitude)}를 강제로 탄다(V10에 있었지만 쓰는 쿼리가 없었다).
+     *
+     * <p><b>파생 메서드가 아니라 {@code FORCE INDEX} 네이티브 쿼리인 이유</b>(PR #378 리뷰,
+     * discussion #380 실측): WAITING이 테이블 전체의 100%에 가깝고 절대 건수가 일정 임계치
+     * (실측 약 2만 건)를 넘으면, 옵티마이저가 이 인덱스 대신 {@code idx_delivery_status_requested}
+     * 로 갈아타면서 응답 시간이 77배까지 뛰는 현상이 실측으로 확인됐다(비커버링 인덱스라 걸러진
+     * 행마다 원본을 다시 읽어야 해서다). COMPLETED·CANCELED가 영구히 누적되는 이 테이블 특성상
+     * WAITING이 100%에 가까워질 일은 실제로는 거의 없지만, 강제 지정 자체가 정상 범위에서
+     * 성능 손해가 없음이 같이 확인돼(#380 4-2장) 예방 차원에서 항상 강제한다. JPQL은 DB 종속
+     * 힌트를 표현할 방법이 없어 네이티브 SQL이 필요하다.
+     *
+     * <p>사각형은 실제 반경(원)보다 넓다(4/π ≈ 1.27배) — 모서리에 걸리는 후보는 이 쿼리로
+     * 걸러지지 않는다. 호출자({@code RiderDeliveryRequestService})가 하버사인 거리로 다시
+     * 걸러 원 밖을 제외한다.
+     */
+    @Query(value = "SELECT * FROM delivery_order FORCE INDEX (idx_delivery_waiting_location) "
+            + "WHERE status = 'WAITING' "
+            + "AND pickup_latitude BETWEEN :latMin AND :latMax "
+            + "AND pickup_longitude BETWEEN :lngMin AND :lngMax",
+            nativeQuery = true)
+    List<DeliveryOrder> findWaitingOrdersWithinBoundingBox(
+            @Param("latMin") BigDecimal latMin, @Param("latMax") BigDecimal latMax,
+            @Param("lngMin") BigDecimal lngMin, @Param("lngMax") BigDecimal lngMax);
 
     /**
      * 배차 대기 시간 초과 자동 취소(#42)의 능동 스캐너용 조회. WAITING 이면서 {@code requestedAt}
