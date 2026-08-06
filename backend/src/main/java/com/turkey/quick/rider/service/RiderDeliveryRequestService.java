@@ -174,7 +174,7 @@ public class RiderDeliveryRequestService {
                 toAddressResponseWithoutDetail(order.getDestination()),
                 order.getStraightDistanceMeters(),
                 estimatedMinutes,
-                toFareBreakdownResponse(estimate),
+                FareBreakdownResponse.from(estimate),
                 estimate.getTotalFare(),
                 order.getRequestedAt());
     }
@@ -277,16 +277,6 @@ public class RiderDeliveryRequestService {
     private AddressResponse toAddressResponseWithoutDetail(Address address) {
         return new AddressResponse(address.getRoadAddress(), null, address.getPostalCode(),
                 address.getLatitude(), address.getLongitude());
-    }
-
-    private FareBreakdownResponse toFareBreakdownResponse(OrderFareSnapshot snapshot) {
-        return new FareBreakdownResponse(
-                snapshot.getPolicyVersion(),
-                snapshot.getCalculationDistanceMeters(),
-                snapshot.getBaseFare(),
-                snapshot.getDistanceFare(),
-                snapshot.getItemSurcharge(),
-                snapshot.getTotalFare());
     }
 
     private void requireAvailable(AuthenticatedRider rider) {
