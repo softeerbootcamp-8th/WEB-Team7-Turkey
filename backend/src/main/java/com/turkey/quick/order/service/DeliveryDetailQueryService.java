@@ -82,12 +82,6 @@ public class DeliveryDetailQueryService {
                 .orElseThrow(() -> new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR,
                         "배송요청에 운임 스냅샷이 없습니다. deliveryId=" + order.getId() + ", fareType=" + fareType));
 
-        return new FareBreakdownResponse(
-                snapshot.getPolicyVersion(),
-                snapshot.getCalculationDistanceMeters(),
-                snapshot.getBaseFare(),
-                snapshot.getDistanceFare(),
-                snapshot.getItemSurcharge(),
-                snapshot.getTotalFare());
+        return FareBreakdownResponse.from(snapshot);
     }
 }

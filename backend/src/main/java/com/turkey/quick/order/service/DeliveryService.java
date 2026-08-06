@@ -313,10 +313,7 @@ public class DeliveryService {
                 .orElseThrow(() -> new IllegalStateException(
                         "주문에 예상 운임 스냅샷이 없습니다. deliveryId=" + order.getId()));
 
-        return toResponse(order, new FareBreakdownResponse(
-                snapshot.getPolicyVersion(), snapshot.getCalculationDistanceMeters(),
-                snapshot.getBaseFare(), snapshot.getDistanceFare(), snapshot.getItemSurcharge(),
-                snapshot.getTotalFare()));
+        return toResponse(order, FareBreakdownResponse.from(snapshot));
     }
 
     private DeliveryCreateResponse toResponse(DeliveryOrder order, FareBreakdownResponse fare) {
