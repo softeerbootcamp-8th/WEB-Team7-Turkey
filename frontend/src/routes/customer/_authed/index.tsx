@@ -52,9 +52,12 @@ function CustomerHome() {
             <p>{hasActive ? '진행 중인 배송이 있어요.' : '어디로 보낼까요?'}</p>
           </div>
 
-          {/* TODO: 배송 일러스트 이미지 자산 연결 */}
+          {/* 배송 일러스트(CSS 컴포지션) — 라이더 홈과 동일한 구성, 아이콘만 택배 박스로. */}
           <div className="customer-home__hero" aria-hidden="true">
-            배송 일러스트
+            <span className="customer-home__hero-icon">
+              <Package size={52} strokeWidth={1.6} />
+            </span>
+            <span className="customer-home__hero-badge">빠른 배송</span>
           </div>
 
           <div className="customer-home__actions">
