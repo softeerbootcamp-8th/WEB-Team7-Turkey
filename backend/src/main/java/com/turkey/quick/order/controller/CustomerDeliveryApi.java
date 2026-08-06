@@ -4,6 +4,7 @@ import com.turkey.quick.common.response.ApiResponse;
 import com.turkey.quick.customer.auth.AuthenticatedCustomer;
 import com.turkey.quick.customer.auth.CustomerSessionInterceptor;
 import com.turkey.quick.order.domain.OrderStatus;
+import com.turkey.quick.order.dto.ActiveDeliveryResponse;
 import com.turkey.quick.order.dto.DeliveryCancelRequest;
 import com.turkey.quick.order.dto.DeliveryCancelResponse;
 import com.turkey.quick.order.dto.DeliveryCreateRequest;
@@ -164,6 +165,25 @@ public interface CustomerDeliveryApi {
             @Parameter(description = "페이지 크기")
             @RequestParam(defaultValue = "20") @Min(1) int size,
 
+            @Parameter(hidden = true)
+            @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
+            AuthenticatedCustomer customer);
+
+    @Operation(operationId = "getCustomerActiveDelivery",
+            summary = "진행 중 배송 요약 조회",
+            description = "로그인한 고객의 진행 중(WAITING~DELIVERING) 배송을 요약해 조회한다. "
+                    + "고객당 진행 중 배송은 최대 1건이므로 결과는 0건 또는 1건이다. "
+                    + "진행 중 배송이 없으면 응답 data 가 null 이다(빈 결과, 오류 아님). "
+                    + "홈 화면 요약용이라 요금은 담지 않는다 — 상태·출발지·도착지·요청 시각만 준다. "
+                    + "정적 경로라 /{deliveryId} 보다 먼저 매칭된다.")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200", description = "조회 성공(진행 중 배송이 없으면 data=null)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401", description = "미로그인 또는 세션 만료")
+    })
+    @GetMapping("/active")
+    ApiResponse<ActiveDeliveryResponse> getActiveDelivery(
             @Parameter(hidden = true)
             @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
             AuthenticatedCustomer customer);

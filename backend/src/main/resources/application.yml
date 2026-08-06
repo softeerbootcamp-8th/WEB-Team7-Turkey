@@ -62,7 +62,7 @@ spring:
 # 자격 증명은 기본 프로바이더 체인(환경변수/인스턴스 프로파일)을 쓴다. 버킷은 배포 시 환경변수로 채운다.
 aws:
   s3:
-    bucket: ${AWS_S3_BUCKET:}
+    bucket: ${AWS_S3_BUCKET:web-team7-turkey-data-962895253643-ap-northeast-2-an}
     region: ${AWS_REGION:ap-northeast-2}
 
 server:

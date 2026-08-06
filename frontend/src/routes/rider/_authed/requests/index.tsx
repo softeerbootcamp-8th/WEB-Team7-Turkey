@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { isAxiosError } from 'axios'
-import { useGetDeliveryRequests } from '@/api/generated/rider-request/rider-request'
+import { useGetRiderDeliveryRequests } from '@/api/generated/rider-request/rider-request'
 import {
   getGetRiderOperatingStatusQueryKey,
   useChangeRiderOperatingStatus,
@@ -29,7 +29,7 @@ function RiderRequests() {
   const [itemFilter, setItemFilter] = useState<ItemFilter>('ALL')
   const [statusError, setStatusError] = useState<string | null>(null)
 
-  const requestsQuery = useGetDeliveryRequests(
+  const requestsQuery = useGetRiderDeliveryRequests(
     { radiusMeters, sort: 'DISTANCE' },
     { query: { retry: false } },
   )

@@ -6,6 +6,56 @@
  * OpenAPI spec version: v1
  */
 /**
+ * 물품 종류
+ */
+export type ActiveDeliveryResponseItemType = typeof ActiveDeliveryResponseItemType[keyof typeof ActiveDeliveryResponseItemType];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ActiveDeliveryResponseItemType = {
+  DOCUMENT: 'DOCUMENT',
+  SMALL_PARCEL: 'SMALL_PARCEL',
+  MEDIUM_PARCEL: 'MEDIUM_PARCEL',
+  LARGE_PARCEL: 'LARGE_PARCEL',
+  FOOD: 'FOOD',
+} as const;
+
+/**
+ * 배송 상태(WAITING~DELIVERING)
+ */
+export type ActiveDeliveryResponseStatus = typeof ActiveDeliveryResponseStatus[keyof typeof ActiveDeliveryResponseStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ActiveDeliveryResponseStatus = {
+  WAITING: 'WAITING',
+  ASSIGNED: 'ASSIGNED',
+  MOVING_TO_PICKUP: 'MOVING_TO_PICKUP',
+  PICKED_UP: 'PICKED_UP',
+  DELIVERING: 'DELIVERING',
+  COMPLETED: 'COMPLETED',
+  CANCELED: 'CANCELED',
+} as const;
+
+/**
+ * 진행 중 배송 요약(없으면 응답 data 가 null)
+ */
+export interface ActiveDeliveryResponse {
+  /** 배송요청 식별자 */
+  deliveryId?: number;
+  /** 도착지 도로명 주소 */
+  destinationRoadAddress?: string;
+  /** 물품 종류 */
+  itemType?: ActiveDeliveryResponseItemType;
+  /** 픽업지 도로명 주소 */
+  pickupRoadAddress?: string;
+  /** 요청 시각(UTC) */
+  requestedAt?: string;
+  /** 배송 상태(WAITING~DELIVERING) */
+  status?: ActiveDeliveryResponseStatus;
+}
+
+/**
  * 주소 입력(도로명 + 상세 + 우편번호 + 좌표)
  */
 export interface AddressRequest {
@@ -55,6 +105,12 @@ export interface AddressResponse {
   postalCode?: string;
   /** 도로명 주소 */
   roadAddress?: string;
+}
+
+export interface ApiResponseActiveDeliveryResponse {
+  data?: ActiveDeliveryResponse;
+  message?: string;
+  success?: boolean;
 }
 
 export interface ApiResponseCustomerDeliveryLocationResponse {
@@ -1840,7 +1896,19 @@ page?: number;
 size?: number;
 };
 
-export type GetDeliveryRequestsParams = {
+export type GetRiderDeliveryRequestsParams = {
+/**
+ * 라이더 현재 위도(선택, 없으면 위치 무시하고 전체 반환)
+ * @minimum -90
+ * @maximum 90
+ */
+latitude?: number;
+/**
+ * 라이더 현재 경도(선택, 없으면 위치 무시하고 전체 반환)
+ * @minimum -180
+ * @maximum 180
+ */
+longitude?: number;
 /**
  * 검색 반경(m)
  */
@@ -1848,14 +1916,14 @@ radiusMeters?: number;
 /**
  * 정렬 기준
  */
-sort?: GetDeliveryRequestsSort;
+sort?: GetRiderDeliveryRequestsSort;
 };
 
-export type GetDeliveryRequestsSort = typeof GetDeliveryRequestsSort[keyof typeof GetDeliveryRequestsSort];
+export type GetRiderDeliveryRequestsSort = typeof GetRiderDeliveryRequestsSort[keyof typeof GetRiderDeliveryRequestsSort];
 
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
-export const GetDeliveryRequestsSort = {
+export const GetRiderDeliveryRequestsSort = {
   DISTANCE: 'DISTANCE',
   FARE: 'FARE',
   REQUESTED_AT: 'REQUESTED_AT',
