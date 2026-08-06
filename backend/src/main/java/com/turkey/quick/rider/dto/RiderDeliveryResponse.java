@@ -73,25 +73,7 @@ public record RiderDeliveryResponse(
                 order.getStraightDistanceMeters(),
                 expectedSettlementAmount,
                 RiderDeliveryNextAction.from(order.getStatus()),
-                steps(order),
+                DeliveryStatusStepResponse.timelineOf(order),
                 order.getAssignedAt());
-    }
-
-    private static List<DeliveryStatusStepResponse> steps(DeliveryOrder order) {
-        List<DeliveryStatusStepResponse> result = new java.util.ArrayList<>();
-        addStep(result, OrderStatus.WAITING, order.getRequestedAt());
-        addStep(result, OrderStatus.ASSIGNED, order.getAssignedAt());
-        addStep(result, OrderStatus.MOVING_TO_PICKUP, order.getMovingToPickupAt());
-        addStep(result, OrderStatus.PICKED_UP, order.getPickedUpAt());
-        addStep(result, OrderStatus.DELIVERING, order.getDeliveringAt());
-        addStep(result, OrderStatus.COMPLETED, order.getCompletedAt());
-        return List.copyOf(result);
-    }
-
-    private static void addStep(List<DeliveryStatusStepResponse> steps, OrderStatus status,
-                                LocalDateTime occurredAt) {
-        if (occurredAt != null) {
-            steps.add(new DeliveryStatusStepResponse(status, occurredAt));
-        }
     }
 }
