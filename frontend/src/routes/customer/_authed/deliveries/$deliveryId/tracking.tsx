@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { useEffect } from 'react'
 import {
   useCancelCustomerDelivery,
   useGetDelivery,
@@ -67,7 +68,16 @@ function DeliveryTracking() {
   // 게이트를 타지 않는 상세 조회(useGetDelivery)만으로 렌더링한다.
   const detail = detailQuery.data?.data
   const isTrackable = isTrackableDeliveryStatus(detail?.status)
-  const { status: streamStatus, location } = useTrackingStream(deliveryId, isTrackable)
+  const { status: streamStatus, location, statusChangedAt } = useTrackingStream(deliveryId, isTrackable)
+
+  // 상태 전이 SSE 프레임(#398)을 받으면 상세 조회를 재조회해 화면을 갱신한다(#399).
+  // 재조회는 멱등이라 이벤트 순서 역전·중복 걱정이 없다.
+  useEffect(() => {
+    if (statusChangedAt == null) {
+      return
+    }
+    detailQuery.refetch()
+  }, [statusChangedAt])
 
   if (detailQuery.isLoading) {
     return (
