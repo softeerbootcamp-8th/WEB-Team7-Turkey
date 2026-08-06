@@ -24,7 +24,15 @@ function getItemTypeLabel(itemType: ActiveDeliveryResponseItemType | undefined):
 function CustomerHome() {
   // ApiResponse<T> 봉투는 훅을 쓰는 쪽이 벗긴다(customInstance 는 axios 레벨만 언랩).
   // 진행 중 배송이 없으면 서버가 200 + data=null 을 준다(#100) — 오류가 아니라 정상 신호다.
-  const activeQuery = useGetCustomerActiveDelivery({ query: { retry: false } })
+  //
+  // refetchOnMount: 'always' — 홈은 "지금 배송 상태"를 정확히 보여야 하는 랜딩이다. 전역
+  // staleTime(30초, lib/queryClient.ts) 때문에 추적 화면에서 홈으로 돌아왔을 때 직전에 캐시된
+  // "진행 중 없음"이 그대로 남아 새로고침해야 갱신되는 문제가 있었다. 또 라이더가 상태를 바꾸는
+  // 전이는 고객 쪽 mutation 이 없어 캐시가 저절로 무효화되지 않는다. 그래서 마운트마다 강제
+  // 재조회한다(방문 빈도가 낮은 화면이라 비용도 작다).
+  const activeQuery = useGetCustomerActiveDelivery({
+    query: { retry: false, refetchOnMount: 'always' },
+  })
   const active = activeQuery.data?.data ?? null
   const hasActive = active?.deliveryId != null
 
@@ -50,7 +58,9 @@ function CustomerHome() {
           </div>
 
           <div className="customer-home__actions">
-            {activeQuery.isPending ? (
+            {activeQuery.isFetching ? (
+              // isPending 이 아니라 isFetching 으로 건다 — refetchOnMount 재조회 중에는 직전에
+              // 캐시된 상태(예: 진행 중 없음)를 그대로 보여 주면 안 되기 때문이다(잘못된 상태 깜빡임 방지).
               <p role="status" className="customer-home__hint">진행 중 배송을 확인하고 있어요…</p>
             ) : activeQuery.isError ? (
               // 조회 실패는 요약 영역에만 알리고 퀵 부르기는 계속 열어 둔다(홈 전체를 오류로 만들지 않음, #208).
