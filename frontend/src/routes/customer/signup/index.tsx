@@ -132,7 +132,8 @@ function CustomerSignup() {
   const signupMutation = useCustomerSignup({
     mutation: {
       onSuccess: () => {
-        void router.navigate({ to: '/customer/login' })
+        // 완료된 회원가입 폼으로 되돌아가지 않도록 로그인 화면으로 교체한다.
+        void router.navigate({ to: '/customer/login', replace: true })
       },
       onError: (error) => {
         const result = classifyCustomerSignupError(error)
