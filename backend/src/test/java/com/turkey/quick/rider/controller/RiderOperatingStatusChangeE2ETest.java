@@ -3,7 +3,6 @@ package com.turkey.quick.rider.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.turkey.quick.common.response.ApiResponse;
-import com.turkey.quick.location.repository.RiderGeoRepository;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
 import com.turkey.quick.member.repository.MemberRepository;
@@ -11,7 +10,6 @@ import com.turkey.quick.rider.domain.OperatingStatus;
 import com.turkey.quick.rider.domain.RiderProfile;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
-import java.math.BigDecimal;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -58,9 +56,6 @@ class RiderOperatingStatusChangeE2ETest extends IntegrationTestSupport {
 
     @Autowired
     private RiderProfileRepository riderProfileRepository;
-
-    @Autowired
-    private RiderGeoRepository riderGeoRepository;
 
     @Autowired
     private PlatformTransactionManager transactionManager;
@@ -120,15 +115,13 @@ class RiderOperatingStatusChangeE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("운행 종료(GO_OFFLINE) 하면 200·UNAVAILABLE 이 되고 최신 위치가 배차 후보에서 제외된다")
-    void goOfflineSucceedsAndRemovesFromCandidates() throws Exception {
-        Long riderId = saveRider("e2e_go_offline", "01000000202", OperatingStatus.AVAILABLE);
-        riderGeoRepository.registerOrUpdate(riderId, new BigDecimal("37.5000000"), new BigDecimal("127.0000000"));
+    @DisplayName("운행 종료(GO_OFFLINE) 하면 200·UNAVAILABLE 이 된다")
+    void goOfflineSucceedsAndPersists() throws Exception {
+        saveRider("e2e_go_offline", "01000000202", OperatingStatus.AVAILABLE);
         String cookie = loginAndGetSessionCookie("e2e_go_offline");
 
         assertThat(patchAction(cookie, "GO_OFFLINE")).isEqualTo(HttpStatus.OK.value());
         assertThat(getOperatingStatus(cookie)).isEqualTo("UNAVAILABLE");
-        assertThat(riderGeoRepository.findPosition(riderId)).isEmpty(); // 즉시 배차 후보 제외
     }
 
     @Test

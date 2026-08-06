@@ -1,0 +1,78 @@
+package com.turkey.quick.location.sse;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willThrow;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.turkey.quick.location.dto.LocationPayload;
+import java.math.BigDecimal;
+import java.time.Instant;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.data.redis.core.StringRedisTemplate;
+
+@ExtendWith(MockitoExtension.class)
+@DisplayName("TrackingPublisher")
+class TrackingPublisherTest {
+
+    private static final LocationPayload LOCATION = new LocationPayload(
+            new BigDecimal("37.4979"), new BigDecimal("127.0276"),
+            Instant.parse("2026-08-03T01:02:03.456Z"), new BigDecimal("12.5"));
+
+    @Mock
+    private StringRedisTemplate redisTemplate;
+
+    /**
+     * 스프링 부트가 구성하는 {@code ObjectMapper} 와 같게 맞춘다 —
+     * {@code WRITE_DATES_AS_TIMESTAMPS} 가 켜져 있으면 {@code Instant} 가 <b>숫자</b>로 나가고,
+     * 프론트 {@code parseLocationPing} 은 {@code measuredAt} 이 문자열이 아니면 프레임을 버린다.
+     * 기본값으로 두면 이 테스트가 운영과 다른 형식을 검증하게 된다.
+     */
+    private final ObjectMapper objectMapper = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
+    private TrackingPublisher publisher() {
+        return new TrackingPublisher(redisTemplate, objectMapper);
+    }
+
+    @Test
+    @DisplayName("배송 채널로 직렬화된 위치를 발행한다")
+    void publishesSerializedLocationToDeliveryChannel() {
+        publisher().publish(1024L, LOCATION);
+
+        ArgumentCaptor<String> channel = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Object> body = ArgumentCaptor.forClass(Object.class);
+        then(redisTemplate).should().convertAndSend(channel.capture(), body.capture());
+
+        assertThat(channel.getValue()).isEqualTo("tracking:order:1024");
+        // 구독자는 이 문자열을 파싱하지 않고 SSE data: 로 그대로 흘린다. 그래서 프론트
+        // parseLocationPing 이 요구하는 형식이 여기서 결정된다 — measuredAt 은 반드시 문자열이다.
+        assertThat((String) body.getValue())
+                .contains("\"latitude\":37.4979")
+                .contains("\"longitude\":127.0276")
+                .contains("\"measuredAt\":\"2026-08-03T01:02:03.456Z\"")
+                .contains("\"accuracyMeters\":12.5");
+    }
+
+    @Test
+    @DisplayName("Redis 발행이 실패해도 예외를 밖으로 내지 않는다")
+    void swallowsRedisFailure() {
+        // 이 호출은 라이더 위치 갱신 POST 경로에 있다. 여기서 예외가 올라가면 Redis 장애가
+        // 고객 추적을 넘어 배차 후보 갱신(#83)까지 같이 죽인다.
+        willThrow(new RedisConnectionFailureException("down"))
+                .given(redisTemplate).convertAndSend(anyString(), anyString());
+
+        assertThatCode(() -> publisher().publish(1L, LOCATION)).doesNotThrowAnyException();
+    }
+}

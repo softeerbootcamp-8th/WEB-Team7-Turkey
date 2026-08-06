@@ -14,8 +14,9 @@ spring:
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:}
 
-  # --- Redis: 세션 저장 / 라이더 최신 위치 / GEO 위치 검색 / 휴대전화 인증번호(TTL) /
-  #            SSE 이벤트 팬아웃(Pub/Sub) ---
+  # --- Redis: 세션 저장 / 라이더 최신 위치(TTL 10분) / GEO 배차 후보 검색 /
+  #            휴대전화 인증번호(TTL) / SSE 이벤트 팬아웃(Pub/Sub, #317) ---
+  # 팬아웃은 클러스터 모드 비활성을 전제로 한다 — RedisMessageListenerConfig javadoc 참고.
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -24,14 +25,14 @@ spring:
 
   # --- 비동기 응답(SSE) 타임아웃 ---
   # 이 값은 SSE 동작을 바꾸지 않는다 — SseEmitter 를 타임아웃 인자로 만들면 그 값이 이겨서
-  # 요청별로 적용된다(TrackingStreamPolicy.EMITTER_TIMEOUT). 그래도 명시하는 이유는 둘이다:
+  # 요청별로 적용된다(CustomerTrackingStreamController.TTL_MILLIS). 그래도 명시하는 이유는 둘이다:
   #   1. 미설정이면 Tomcat 기본값 30초가 적용된다는 함정을 설정 파일에서 읽을 수 있게 한다.
   #      new SseEmitter() 로 만든 스트림은 이벤트가 흐르고 있어도 30초에 끊긴다(쓰기로 갱신되지
   #      않는다).
   #   2. 앞으로 추가되는 다른 async 엔드포인트의 기본값이 된다.
   mvc:
     async:
-      request-timeout: 300000    # 5분. TrackingStreamPolicy.EMITTER_TIMEOUT 과 같은 값
+      request-timeout: 300000    # 5분. CustomerTrackingStreamController.TTL_MILLIS 와 같은 값
 
   # --- Flyway: 스키마 버전 관리 ---
   # datasource 가 채워지면 앱 기동 시 db/migration 의 마이그레이션이 자동 실행된다.
@@ -49,6 +50,20 @@ spring:
     properties:
       hibernate:
         format_sql: true
+
+  # --- 배송 완료 인증 사진 업로드(#61 후속) ---
+  # 의도적으로 넉넉하게 열어 둔다 — docs/worklog/2026-08-04-61-delivery-completion-proof.md 참고.
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+# --- S3: 배송 완료 인증 사진 저장 ---
+# 자격 증명은 기본 프로바이더 체인(환경변수/인스턴스 프로파일)을 쓴다. 버킷은 배포 시 환경변수로 채운다.
+aws:
+  s3:
+    bucket: ${AWS_S3_BUCKET:web-team7-turkey-data-962895253643-ap-northeast-2-an}
+    region: ${AWS_REGION:ap-northeast-2}
 
 server:
   port: 8080

@@ -1,5 +1,8 @@
 package com.turkey.quick.order.dto;
 
+import com.turkey.quick.member.domain.Member;
+import com.turkey.quick.order.domain.DeliveryOrder;
+import com.turkey.quick.order.domain.DeliveryProof;
 import com.turkey.quick.order.domain.ItemType;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.domain.ProofType;
@@ -49,7 +52,8 @@ public record DeliveryDetailResponse(
         @Schema(description = "배송 완료 인증 방식. 완료 전이면 null.")
         ProofType proofType,
 
-        @Schema(description = "배송 완료 인증 참조값(사진 URL/키, 인증코드 등). 완료 전이면 null.",
+        @Schema(description = "배송 완료 인증 참조값. proofType=PHOTO 면 저장소에서 해석한 실제 경로"
+                + "(로컬은 절대경로, S3는 객체 URL), 그 외 타입이면 등록값을 그대로 담는다. 완료 전이면 null.",
                 example = "https://cdn.example.com/proof/1024.jpg")
         String proofValue,
 
@@ -63,6 +67,49 @@ public record DeliveryDetailResponse(
         LocalDateTime canceledAt,
 
         @Schema(description = "취소 사유", example = "고객 단순 변심")
-        String cancelReason
+        String cancelReason,
+
+        @Schema(description = "배정된 라이더 이름. 배차 전이면 null.", example = "박라이더")
+        String riderName,
+
+        @Schema(description = "배정된 라이더 연락처. 배차 전이면 null.", example = "010-9876-5432")
+        String riderPhoneNumber
 ) {
+    /**
+     * @param fare       완료 주문은 FINAL, 그 외는 ESTIMATE 스냅샷으로 호출자가 미리 골라 넘긴다
+     *                   (스냅샷 조회는 트랜잭션 경계가 있는 서비스 계층 책임).
+     * @param proof      완료 인증 기록. 완료 전이면 null.
+     * @param proofValue 응답에 실을 인증 참조값. proofType=PHOTO 면 호출자가
+     *                   {@code RiderDeliveryProofStorage}로 해석한 저장 경로, 그 외 타입이면
+     *                   {@code proof.getProofValue()}를 그대로 넘긴다(스토리지 접근은 서비스 계층 책임).
+     */
+    public static DeliveryDetailResponse from(DeliveryOrder order, FareBreakdownResponse fare,
+                                              DeliveryProof proof, String proofValue) {
+        Member rider = order.getAssignedRider() == null ? null : order.getAssignedRider().getMember();
+
+        return new DeliveryDetailResponse(
+                order.getId(),
+                order.getStatus(),
+                order.getItemType(),
+                order.getStraightDistanceMeters(),
+                new AddressResponse(order.getPickup().getRoadAddress(), order.getPickup().getDetailAddress(),
+                        order.getPickup().getPostalCode(), order.getPickup().getLatitude(),
+                        order.getPickup().getLongitude()),
+                new AddressResponse(order.getDestination().getRoadAddress(),
+                        order.getDestination().getDetailAddress(), order.getDestination().getPostalCode(),
+                        order.getDestination().getLatitude(), order.getDestination().getLongitude()),
+                new ContactResponse(order.getSender().getName(), order.getSender().getPhoneNumber()),
+                new ContactResponse(order.getRecipient().getName(), order.getRecipient().getPhoneNumber()),
+                fare,
+                DeliveryStatusStepResponse.timelineOf(order),
+                proof == null ? null : proof.getProofType(),
+                proofValue,
+                order.getRequestedAt(),
+                order.getCompletedAt(),
+                order.getCanceledAt(),
+                order.getCancelReason(),
+                rider == null ? null : rider.getName(),
+                rider == null ? null : rider.getPhoneNumber());
+    }
+
 }

@@ -37,6 +37,7 @@ import { Route as RiderAuthedPointsIndexRouteImport } from './routes/rider/_auth
 import { Route as RiderAuthedRequestsIndexRouteImport } from './routes/rider/_authed/requests/index'
 import { Route as CustomerAuthedDeliveriesDeliveryIdIndexRouteImport } from './routes/customer/_authed/deliveries/$deliveryId/index'
 import { Route as CustomerAuthedDeliveriesDeliveryIdTrackingRouteImport } from './routes/customer/_authed/deliveries/$deliveryId/tracking'
+import { Route as RiderAuthedDeliveryDeliveryIdCompleteRouteImport } from './routes/rider/_authed/delivery/$deliveryId/complete'
 import { Route as RiderAuthedHistoryDeliveryIdIndexRouteImport } from './routes/rider/_authed/history/$deliveryId/index'
 import { Route as RiderAuthedRequestsDeliveryIdIndexRouteImport } from './routes/rider/_authed/requests/$deliveryId/index'
 
@@ -189,6 +190,12 @@ const CustomerAuthedDeliveriesDeliveryIdTrackingRoute =
     path: '/deliveries/$deliveryId/tracking',
     getParentRoute: () => CustomerAuthedRoute,
   } as any)
+const RiderAuthedDeliveryDeliveryIdCompleteRoute =
+  RiderAuthedDeliveryDeliveryIdCompleteRouteImport.update({
+    id: '/delivery/$deliveryId/complete',
+    path: '/delivery/$deliveryId/complete',
+    getParentRoute: () => RiderAuthedRoute,
+  } as any)
 const RiderAuthedHistoryDeliveryIdIndexRoute =
   RiderAuthedHistoryDeliveryIdIndexRouteImport.update({
     id: '/history/$deliveryId/',
@@ -230,6 +237,7 @@ export interface FileRoutesByFullPath {
   '/rider/points/': typeof RiderAuthedPointsIndexRoute
   '/rider/requests/': typeof RiderAuthedRequestsIndexRoute
   '/customer/deliveries/$deliveryId/tracking': typeof CustomerAuthedDeliveriesDeliveryIdTrackingRoute
+  '/rider/delivery/$deliveryId/complete': typeof RiderAuthedDeliveryDeliveryIdCompleteRoute
   '/customer/deliveries/$deliveryId/': typeof CustomerAuthedDeliveriesDeliveryIdIndexRoute
   '/rider/history/$deliveryId/': typeof RiderAuthedHistoryDeliveryIdIndexRoute
   '/rider/requests/$deliveryId/': typeof RiderAuthedRequestsDeliveryIdIndexRoute
@@ -259,6 +267,7 @@ export interface FileRoutesByTo {
   '/rider/points': typeof RiderAuthedPointsIndexRoute
   '/rider/requests': typeof RiderAuthedRequestsIndexRoute
   '/customer/deliveries/$deliveryId/tracking': typeof CustomerAuthedDeliveriesDeliveryIdTrackingRoute
+  '/rider/delivery/$deliveryId/complete': typeof RiderAuthedDeliveryDeliveryIdCompleteRoute
   '/customer/deliveries/$deliveryId': typeof CustomerAuthedDeliveriesDeliveryIdIndexRoute
   '/rider/history/$deliveryId': typeof RiderAuthedHistoryDeliveryIdIndexRoute
   '/rider/requests/$deliveryId': typeof RiderAuthedRequestsDeliveryIdIndexRoute
@@ -292,6 +301,7 @@ export interface FileRoutesById {
   '/rider/_authed/points/': typeof RiderAuthedPointsIndexRoute
   '/rider/_authed/requests/': typeof RiderAuthedRequestsIndexRoute
   '/customer/_authed/deliveries/$deliveryId/tracking': typeof CustomerAuthedDeliveriesDeliveryIdTrackingRoute
+  '/rider/_authed/delivery/$deliveryId/complete': typeof RiderAuthedDeliveryDeliveryIdCompleteRoute
   '/customer/_authed/deliveries/$deliveryId/': typeof CustomerAuthedDeliveriesDeliveryIdIndexRoute
   '/rider/_authed/history/$deliveryId/': typeof RiderAuthedHistoryDeliveryIdIndexRoute
   '/rider/_authed/requests/$deliveryId/': typeof RiderAuthedRequestsDeliveryIdIndexRoute
@@ -326,6 +336,7 @@ export interface FileRouteTypes {
     | '/rider/points/'
     | '/rider/requests/'
     | '/customer/deliveries/$deliveryId/tracking'
+    | '/rider/delivery/$deliveryId/complete'
     | '/customer/deliveries/$deliveryId/'
     | '/rider/history/$deliveryId/'
     | '/rider/requests/$deliveryId/'
@@ -355,6 +366,7 @@ export interface FileRouteTypes {
     | '/rider/points'
     | '/rider/requests'
     | '/customer/deliveries/$deliveryId/tracking'
+    | '/rider/delivery/$deliveryId/complete'
     | '/customer/deliveries/$deliveryId'
     | '/rider/history/$deliveryId'
     | '/rider/requests/$deliveryId'
@@ -387,6 +399,7 @@ export interface FileRouteTypes {
     | '/rider/_authed/points/'
     | '/rider/_authed/requests/'
     | '/customer/_authed/deliveries/$deliveryId/tracking'
+    | '/rider/_authed/delivery/$deliveryId/complete'
     | '/customer/_authed/deliveries/$deliveryId/'
     | '/rider/_authed/history/$deliveryId/'
     | '/rider/_authed/requests/$deliveryId/'
@@ -602,6 +615,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CustomerAuthedDeliveriesDeliveryIdTrackingRouteImport
       parentRoute: typeof CustomerAuthedRoute
     }
+    '/rider/_authed/delivery/$deliveryId/complete': {
+      id: '/rider/_authed/delivery/$deliveryId/complete'
+      path: '/delivery/$deliveryId/complete'
+      fullPath: '/rider/delivery/$deliveryId/complete'
+      preLoaderRoute: typeof RiderAuthedDeliveryDeliveryIdCompleteRouteImport
+      parentRoute: typeof RiderAuthedRoute
+    }
     '/rider/_authed/history/$deliveryId/': {
       id: '/rider/_authed/history/$deliveryId/'
       path: '/history/$deliveryId'
@@ -685,6 +705,7 @@ interface RiderAuthedRouteChildren {
   RiderAuthedHistoryIndexRoute: typeof RiderAuthedHistoryIndexRoute
   RiderAuthedPointsIndexRoute: typeof RiderAuthedPointsIndexRoute
   RiderAuthedRequestsIndexRoute: typeof RiderAuthedRequestsIndexRoute
+  RiderAuthedDeliveryDeliveryIdCompleteRoute: typeof RiderAuthedDeliveryDeliveryIdCompleteRoute
   RiderAuthedHistoryDeliveryIdIndexRoute: typeof RiderAuthedHistoryDeliveryIdIndexRoute
   RiderAuthedRequestsDeliveryIdIndexRoute: typeof RiderAuthedRequestsDeliveryIdIndexRoute
 }
@@ -695,6 +716,8 @@ const RiderAuthedRouteChildren: RiderAuthedRouteChildren = {
   RiderAuthedHistoryIndexRoute: RiderAuthedHistoryIndexRoute,
   RiderAuthedPointsIndexRoute: RiderAuthedPointsIndexRoute,
   RiderAuthedRequestsIndexRoute: RiderAuthedRequestsIndexRoute,
+  RiderAuthedDeliveryDeliveryIdCompleteRoute:
+    RiderAuthedDeliveryDeliveryIdCompleteRoute,
   RiderAuthedHistoryDeliveryIdIndexRoute:
     RiderAuthedHistoryDeliveryIdIndexRoute,
   RiderAuthedRequestsDeliveryIdIndexRoute:

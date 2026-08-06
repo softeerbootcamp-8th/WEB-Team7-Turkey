@@ -1,7 +1,6 @@
 package com.turkey.quick.rider.service;
 
 import com.turkey.quick.common.exception.BusinessException;
-import com.turkey.quick.location.repository.RiderGeoRepository;
 import com.turkey.quick.order.domain.Address;
 import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.FareType;
@@ -12,6 +11,7 @@ import com.turkey.quick.order.dto.FareBreakdownResponse;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
 import com.turkey.quick.order.service.DeliveryService;
+import com.turkey.quick.order.service.DeliveryTimeoutService;
 import com.turkey.quick.rider.auth.AuthenticatedRider;
 import com.turkey.quick.rider.domain.DeliveryRequestSort;
 import com.turkey.quick.rider.domain.OperatingStatus;
@@ -31,7 +31,6 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.geo.Point;
 import org.springframework.http.HttpStatus;
@@ -42,7 +41,6 @@ import org.springframework.transaction.annotation.Transactional;
  * 라이더 콜(배차 대기 배송요청) 목록 조회(#55). 수락·상세·넘기기(#56/#57)는 이 서비스가 아니라
  * 각 이슈에서 추가한다.
  */
-@Slf4j
 @RequiredArgsConstructor
 @Service
 public class RiderDeliveryRequestService {
@@ -51,9 +49,11 @@ public class RiderDeliveryRequestService {
 
     private final DeliveryOrderRepository deliveryOrderRepository;
     private final OrderFareSnapshotRepository orderFareSnapshotRepository;
-    private final RiderGeoRepository riderGeoRepository;
     private final RiderProfileRepository riderProfileRepository;
     private final DeliveryService deliveryService;
+
+    /** #42: 만료된 주문을 수락 시도 시점에 정리하기 위해 주입한다. */
+    private final DeliveryTimeoutService deliveryTimeoutService;
 
     /**
      * AVAILABLE 라이더가 수락할 수 있는 배차 대기(WAITING) 배송요청 목록을 조회한다.
@@ -63,45 +63,57 @@ public class RiderDeliveryRequestService {
      *   <li>라이더가 AVAILABLE 상태인지, {@code radiusMeters}가 양수인지, {@code sortParam}이
      *       DISTANCE/FARE/REQUESTED_AT 중 하나인지 검사한다. 위반하면 예외를 던진다
      *       (라이더 상태 위반은 403, 나머지는 400으로 변환된다).</li>
-     *   <li>WAITING 상태인 배송요청을 전부 조회한다. 없으면 빈 목록을 바로 반환한다.</li>
+     *   <li>{@code latitude}·{@code longitude}가 둘 다 있으면(#367) bounding box 쿼리
+     *       ({@link DeliveryOrderRepository#findWaitingOrdersWithinBoundingBox})로
+     *       {@code radiusMeters}를 감싸는 사각형 범위의 WAITING 주문만 가져온다
+     *       ({@code idx_delivery_waiting_location} 인덱스 사용). 하나라도 없으면(요청에 좌표를
+     *       안 실었으면) WAITING 전부를 가져온다(#55 계약 확정 — 위치 없음은 에러가 아니다).</li>
+     *   <li>없으면 빈 목록을 바로 반환한다.</li>
      *   <li>배송요청마다 "예상 운임 스냅샷"(주문 생성 시점에 계산·저장된 ESTIMATE 운임,
      *       {@link OrderFareSnapshot})을 한 번에 조회해 orderId로 매핑해 둔다 — 배송요청 개수만큼
      *       따로 조회하지 않기 위해서다(N+1 방지). 스냅샷이 없는 배송요청이 있으면 데이터 정합성
      *       오류로 보고 예외를 던진다(정상 생성된 주문은 스냅샷이 항상 함께 있어야 한다).</li>
-     *   <li>라이더의 최신 위치를 Redis({@code riders:geo})에서 조회한다. 위치는 없을 수도 있다
-     *       (라이더가 아직 위치를 전송한 적이 없거나, 위치 전송 기능 자체가 아직 없는 경우).</li>
      *   <li>배송요청마다 응답 한 줄(summary, {@link RiderDeliveryRequestSummaryResponse})로
-     *       변환한다. 라이더 위치를 알면 라이더→픽업지 거리를 계산해 채우고, 모르면 거리 필드는
+     *       변환한다. 라이더 좌표가 있으면 라이더→픽업지 거리를 계산해 채우고, 없으면 거리 필드는
      *       {@code null}로 남긴다.</li>
-     *   <li>라이더 위치를 알면 {@code radiusMeters} 반경 밖의 배송요청은 결과에서 뺀다. 위치를
-     *       모르면 거리로 거를 수 없으므로 반경 필터 없이 전체를 반환한다(위치 미확보를 에러로
-     *       취급하지 않는다 — #55 계약 확정).</li>
+     *   <li>라이더 좌표가 있으면 {@code radiusMeters} 반경(원) 밖의 배송요청은 결과에서 뺀다 —
+     *       bounding box(사각형)가 원보다 넓어(4/π ≈ 1.27배) 생긴 모서리 후보를 여기서 다시
+     *       걸러낸다. 좌표가 없으면 거리로 거를 수 없으므로 반경 필터 없이 전체를 반환한다.</li>
      *   <li>{@code sortParam}에 따라 정렬한다: DISTANCE(가까운 순) · FARE(예상 정산액 높은 순) ·
-     *       REQUESTED_AT(오래 기다린 순). 단 DISTANCE를 요청했는데 라이더 위치를 몰라 거리를 계산할
+     *       REQUESTED_AT(오래 기다린 순). 단 DISTANCE를 요청했는데 좌표가 없어 거리를 계산할
      *       수 없으면 REQUESTED_AT으로 대체한다.</li>
      * </ol>
      *
      * @param rider 세션 인증을 통과해 이미 식별된 현재 라이더
-     * @param radiusMeters 검색 반경(m). 라이더 위치를 알 때만 실제로 적용된다.
+     * @param latitude 라이더 현재 위도. {@code longitude}와 둘 다 있어야 위치 필터가 적용된다.
+     * @param longitude 라이더 현재 경도. {@code latitude}와 둘 다 있어야 위치 필터가 적용된다.
+     * @param radiusMeters 검색 반경(m). 좌표가 있을 때만 실제로 적용된다.
      * @param sortParam {@code "DISTANCE"} · {@code "FARE"} · {@code "REQUESTED_AT"} 중 하나
      *                 (대소문자 구분). 그 외 값은 {@link IllegalArgumentException}.
      * @return 반경 내 WAITING 배송요청 목록(정렬 적용됨). 대상이 없으면 빈 리스트.
      */
     @Transactional(readOnly = true)
     public List<RiderDeliveryRequestSummaryResponse> getDeliveryRequests(
-            AuthenticatedRider rider, int radiusMeters, String sortParam) {
+            AuthenticatedRider rider, BigDecimal latitude, BigDecimal longitude,
+            int radiusMeters, String sortParam) {
 
         requireAvailable(rider);
         requirePositiveRadius(radiusMeters);
         DeliveryRequestSort sort = DeliveryRequestSort.from(sortParam);
 
-        List<DeliveryOrder> waitingOrders = deliveryOrderRepository.findByStatus(OrderStatus.WAITING);
+        boolean hasPosition = latitude != null && longitude != null;
+
+        List<DeliveryOrder> waitingOrders = hasPosition
+                ? findWithinBoundingBox(latitude, longitude, radiusMeters)
+                : deliveryOrderRepository.findByStatus(OrderStatus.WAITING);
         if (waitingOrders.isEmpty()) {
             return List.of();
         }
 
         Map<Long, OrderFareSnapshot> estimateByOrderId = loadEstimateSnapshots(waitingOrders);
-        Optional<Point> riderPosition = riderGeoRepository.findPosition(rider.memberId());
+        Optional<Point> riderPosition = hasPosition
+                ? Optional.of(new Point(longitude.doubleValue(), latitude.doubleValue()))
+                : Optional.empty();
 
         List<RiderDeliveryRequestSummaryResponse> summaries = waitingOrders.stream()
                 .map(order -> toSummary(order, estimateSnapshotOf(order, estimateByOrderId), riderPosition))
@@ -110,6 +122,12 @@ public class RiderDeliveryRequestService {
 
         summaries.sort(comparatorFor(sort, riderPosition.isPresent()));
         return summaries;
+    }
+
+    private List<DeliveryOrder> findWithinBoundingBox(BigDecimal latitude, BigDecimal longitude, int radiusMeters) {
+        DeliveryService.BoundingBox box = deliveryService.boundingBox(latitude, longitude, radiusMeters);
+        return deliveryOrderRepository.findWaitingOrdersWithinBoundingBox(
+                box.latMin(), box.latMax(), box.lngMin(), box.lngMax());
     }
 
     /**
@@ -156,7 +174,7 @@ public class RiderDeliveryRequestService {
                 toAddressResponseWithoutDetail(order.getDestination()),
                 order.getStraightDistanceMeters(),
                 estimatedMinutes,
-                toFareBreakdownResponse(estimate),
+                FareBreakdownResponse.from(estimate),
                 estimate.getTotalFare(),
                 order.getRequestedAt());
     }
@@ -168,6 +186,10 @@ public class RiderDeliveryRequestService {
      * <ol>
      *   <li>라이더가 AVAILABLE 상태인지 검사한다(위반 시 403) — 세션 정보 기준 1차 검사일 뿐,
      *       최종 판정은 아래 조건부 UPDATE가 한다(세션과 DB 사이에 시차가 있을 수 있어서다).</li>
+     *   <li><b>만료 정리(#42)</b>: 이 주문이 배차 대기 타임아웃을 이미 넘겼는데 능동 스캐너가 아직
+     *       훑지 않았다면, 여기서 먼저 취소·환급을 마친다({@link DeliveryTimeoutService#cancelIfExpired}).
+     *       그러면 아래 조건부 UPDATE가 자연히 0행이 되어 "이미 취소됨" 사유로 409가 나간다 — 스캐너의
+     *       최대 폴링 간격만큼 라이더가 만료된 주문을 여전히 수락할 수 있는 창을 없앤다.</li>
      *   <li><b>주문 조건부 UPDATE</b>: {@code UPDATE delivery_order SET status=ASSIGNED, ... WHERE
      *       order_id=:deliveryId AND status='WAITING'}. 영향 행이 0이면 이 요청이 배차 경쟁에서
      *       졌거나(다른 라이더가 먼저 확정) 주문이 취소됐거나 존재하지 않는다는 뜻이다 — 주문을
@@ -193,6 +215,7 @@ public class RiderDeliveryRequestService {
     @Transactional
     public RiderDeliveryRequestAcceptResponse acceptDeliveryRequest(AuthenticatedRider rider, Long deliveryId) {
         requireAvailable(rider);
+        deliveryTimeoutService.cancelIfExpired(deliveryId);
 
         LocalDateTime assignedAt = LocalDateTime.now(ZoneOffset.UTC);
         int orderUpdated;
@@ -216,15 +239,10 @@ public class RiderDeliveryRequestService {
                     "라이더가 이미 다른 배송을 수행 중이라 배차를 확정할 수 없습니다.");
         }
 
-        // 배차 확정 = 즉시 BUSY이므로 다음 위치 전송(#83)을 기다리지 않고 바로 후보에서 뺀다 —
-        // 그 사이 창에 다른 고객의 배차 요청이 이 라이더를 후보로 잡는 걸 막기 위해서다. Redis
-        // 실패는 DB 트랜잭션(이미 커밋 확정된 배차)을 되돌릴 이유가 아니므로 로깅만 한다.
-        try {
-            riderGeoRepository.remove(rider.memberId());
-        } catch (RuntimeException e) {
-            log.warn("event=GEO_CANDIDATE_SYNC_FAILED riderId={} reason=ACCEPT_DELIVERY", rider.memberId(), e);
-        }
-
+        // 예전에는 배차 확정 직후 라이더를 GEO 배차 후보({@code riders:geo})에서 뺐지만, 라이더-측
+        // GEO 사용처를 전부 제거하면서(#342, 디스커션 #338) 그 정리도 사라졌다 — 라이더를 GEO 에
+        // 넣는 곳 자체가 없으므로 뺄 것도 없다. 배차 후보 자격은 라이더 operating_status(BUSY 로
+        // 방금 전이됨)로만 판정된다.
         DeliveryOrder assigned = deliveryOrderRepository.findById(deliveryId)
                 .orElseThrow(() -> new IllegalStateException(
                         "방금 배차 확정한 주문을 다시 조회할 수 없습니다. orderId=" + deliveryId));
@@ -259,16 +277,6 @@ public class RiderDeliveryRequestService {
     private AddressResponse toAddressResponseWithoutDetail(Address address) {
         return new AddressResponse(address.getRoadAddress(), null, address.getPostalCode(),
                 address.getLatitude(), address.getLongitude());
-    }
-
-    private FareBreakdownResponse toFareBreakdownResponse(OrderFareSnapshot snapshot) {
-        return new FareBreakdownResponse(
-                snapshot.getPolicyVersion(),
-                snapshot.getCalculationDistanceMeters(),
-                snapshot.getBaseFare(),
-                snapshot.getDistanceFare(),
-                snapshot.getItemSurcharge(),
-                snapshot.getTotalFare());
     }
 
     private void requireAvailable(AuthenticatedRider rider) {

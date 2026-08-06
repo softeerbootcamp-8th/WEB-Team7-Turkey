@@ -1,113 +1,291 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { createFileRoute, useRouter } from '@tanstack/react-router'
+import {
+  getGetRiderOperatingStatusQueryOptions,
+} from '@/api/generated/rider-operating-status/rider-operating-status'
+import {
+  useAcceptDeliveryRequest,
+  useGetDeliveryRequest,
+} from '@/api/generated/rider-request/rider-request'
+import { getGetRiderSessionQueryKey } from '@/api/generated/rider-session/rider-session'
+import { RequestRouteMap } from './-components/RequestRouteMap'
+import {
+  classifyAcceptFailure,
+  formatDistance,
+  formatItemType,
+  formatMinutes,
+  formatMoney,
+  formatRequestedAt,
+  getAcceptErrorMessage,
+  getDetailErrorMessage,
+} from './-requestDetail'
 
 export const Route = createFileRoute('/rider/_authed/requests/$deliveryId/')({
   component: RiderRequestDetail,
 })
 
 function RiderRequestDetail() {
+  const { deliveryId: deliveryIdParam } = Route.useParams()
+  const router = useRouter()
+  const queryClient = useQueryClient()
+  const [acceptError, setAcceptError] = useState<string | null>(null)
+  const [competitionLost, setCompetitionLost] = useState(false)
+  const [checkingResult, setCheckingResult] = useState(false)
+
+  const deliveryId = Number(deliveryIdParam)
+  const isValidDeliveryId = Number.isSafeInteger(deliveryId) && deliveryId > 0
+  const requestQuery = useGetDeliveryRequest(deliveryId, {
+    query: { enabled: isValidDeliveryId, retry: false },
+  })
+  const acceptMutation = useAcceptDeliveryRequest()
+
+  const request = requestQuery.data?.data
+  const isAccepting = acceptMutation.isPending || checkingResult
+
+  function goToList() {
+    void router.navigate({ to: '/rider/requests' })
+  }
+
+  async function goToDelivery() {
+    queryClient.removeQueries({ queryKey: getGetRiderSessionQueryKey() })
+    await router.navigate({ to: '/rider/delivery' })
+  }
+
+  function acceptRequest() {
+    if (!isValidDeliveryId || isAccepting || competitionLost) {
+      return
+    }
+
+    setAcceptError(null)
+    acceptMutation.mutate(
+      { deliveryId },
+      {
+        onSuccess: () => void goToDelivery(),
+        onError: async (error) => {
+          const failureKind = classifyAcceptFailure(error)
+
+          if (failureKind === 'competition') {
+            setCompetitionLost(true)
+            return
+          }
+          if (failureKind === 'failure') {
+            setAcceptError(getAcceptErrorMessage(error))
+            return
+          }
+
+          setCheckingResult(true)
+          try {
+            const operatingStatus = await queryClient.fetchQuery({
+              ...getGetRiderOperatingStatusQueryOptions(),
+              staleTime: 0,
+            })
+
+            if (operatingStatus.data?.operatingStatus === 'BUSY') {
+              await goToDelivery()
+              return
+            }
+            setAcceptError('배차 결과를 확인했지만 진행 중인 배송이 없습니다. 다시 시도해 주세요.')
+          } catch {
+            setAcceptError('배차 결과를 확인할 수 없습니다. 잠시 후 진행 배송 화면에서 확인해 주세요.')
+          } finally {
+            setCheckingResult(false)
+          }
+        },
+      },
+    )
+  }
+
+  if (!isValidDeliveryId) {
+    return (
+      <DetailMessage
+        title="잘못된 콜 번호입니다."
+        description="목록에서 다시 콜을 선택해 주세요."
+        onBack={goToList}
+      />
+    )
+  }
+
+  if (requestQuery.isLoading) {
+    return (
+      <main aria-label="배송요청 상세" className="mx-auto flex min-h-screen w-full max-w-[604px] items-center justify-center bg-surface px-5">
+        <div aria-live="polite" className="flex flex-col items-center gap-3 text-center">
+          <span className="material-symbols-outlined animate-spin text-4xl text-tertiary">progress_activity</span>
+          <p className="text-body-md text-secondary">콜 상세 정보를 불러오고 있어요.</p>
+        </div>
+      </main>
+    )
+  }
+
+  if (requestQuery.isError || !request) {
+    return (
+      <DetailMessage
+        title={requestQuery.isError ? getDetailErrorMessage(requestQuery.error) : '콜 상세 정보가 없습니다.'}
+        description="목록으로 돌아가 다른 콜을 확인해 주세요."
+        onBack={goToList}
+        onRetry={() => void requestQuery.refetch()}
+      />
+    )
+  }
+
+  const requestedAt = formatRequestedAt(request.requestedAt)
+  const pickupAddress = request.pickup?.roadAddress || '픽업 주소 정보 없음'
+  const destinationAddress = request.destination?.roadAddress || '도착 주소 정보 없음'
+  const fare = request.estimatedFare
+
   return (
-    <main
-      aria-label="배송요청 상세"
-      className="relative flex flex-col w-full max-w-[414px] h-screen mx-auto bg-white overflow-hidden shadow-xl"
-    >
-      {/* BEGIN: Map Area & Header */}
-      <div className="relative h-[45%] bg-surface-container-high">
-        {/* TODO: 지도 연결 */}
-        {/* Back Button */}
-        <button className="absolute top-4 left-4 z-10 w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-md">
-          <svg className="h-6 w-6 text-gray-800" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path d="M10 19l-7-7m0 0l7-7m-7 7h18" strokeLinecap="round" strokeLinejoin="round"></path>
-          </svg>
+    <main aria-label="배송요청 상세" className="mx-auto flex min-h-screen w-full max-w-[604px] flex-col bg-surface font-sans text-on-surface shadow-sm">
+      <section aria-label="픽업 및 도착 위치" className="relative h-[38vh] min-h-[260px] max-h-[380px] bg-surface-container-high">
+        <RequestRouteMap pickup={request.pickup} destination={request.destination} />
+        <button
+          type="button"
+          aria-label="콜 목록으로 돌아가기"
+          onClick={goToList}
+          className="absolute left-4 top-4 z-10 flex h-12 w-12 items-center justify-center rounded-full bg-surface-container-lowest text-on-surface shadow-md"
+        >
+          <span className="material-symbols-outlined">arrow_back</span>
         </button>
-      </div>
-      {/* END: Map Area & Header */}
-      {/* BEGIN: Bottom Sheet Order Details */}
-      <div className="flex-1 bg-white rounded-t-[24px] -mt-5 z-20 relative flex flex-col shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-        {/* Drag Handle Placeholder */}
-        <div className="flex justify-center pt-3 pb-4">
-          <div className="w-12 h-1.5 bg-gray-300 rounded-full"></div>
+      </section>
+
+      <section className="relative z-10 -mt-5 flex flex-1 flex-col rounded-t-3xl bg-surface-container-lowest shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
+        <div className="flex justify-center pb-3 pt-3" aria-hidden="true">
+          <span className="h-1.5 w-12 rounded-full bg-outline-variant" />
         </div>
-        <div className="flex-1 overflow-y-auto pb-20 px-5">
-          {/* Header: Quick Biz Info */}
-          <div className="flex items-center space-x-2 mb-6 text-sm text-gray-600">
-            <span className="text-teal-500 font-bold bg-teal-50 px-1.5 py-0.5 rounded">퀵</span>
-            <span className="font-medium">비즈</span>
-            <svg className="h-4 w-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-              <path clipRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" fillRule="evenodd"></path>
-            </svg>
+
+        <div className="flex-1 px-5 pb-6">
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="rounded-md bg-tertiary-container px-2 py-1 text-label-sm font-bold text-on-tertiary-container">배차 콜</span>
+              <span className="text-label-md font-semibold text-secondary">#{request.deliveryId ?? deliveryId}</span>
+            </div>
+            {requestedAt && <time className="text-label-sm text-secondary">요청 {requestedAt}</time>}
           </div>
-          {/* Locations Route List */}
-          <div className="relative pl-6 border-l-2 border-dashed border-gray-200 mb-6 space-y-6">
-            {/* Pickup Location */}
+
+          <div className="relative mb-5 ml-1 space-y-7 border-l-2 border-dashed border-outline-variant pl-7">
             <div className="relative">
-              {/* Pickup Dot */}
-              <div className="absolute -left-[29px] top-1.5 w-3 h-3 bg-[#4A74E8] rounded-full border-2 border-white shadow-sm"></div>
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900 leading-tight">서울 강남구 역삼1동</h3>
-                  <p className="text-gray-500 text-sm mt-1">동방미인</p>
-                </div>
-                <div className="text-right">
-                  <span className="text-[#4A74E8] font-bold">픽업 7.6km</span>
-                </div>
-              </div>
+              <span className="absolute -left-[35px] top-1 h-3 w-3 rounded-full border-2 border-white bg-[#3b82f6] shadow-sm" aria-hidden="true" />
+              <p className="text-label-sm font-bold text-[#3b82f6]">픽업</p>
+              <p className="mt-1 break-words text-title-md font-bold">{pickupAddress}</p>
             </div>
-            {/* Delivery Location */}
             <div className="relative">
-              {/* Delivery Dot */}
-              <div className="absolute -left-[29px] top-1.5 w-3 h-3 bg-[#7D4CDb] rounded-full border-2 border-white shadow-sm"></div>
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900 leading-tight">서울 용산구 한남동</h3>
-                  <p className="text-gray-500 text-sm mt-1">한남더힐아파트</p>
-                </div>
-                <div className="text-right">
-                  <span className="text-[#7D4CDb] font-bold block">배송 4.1km</span>
-                  <span className="text-gray-500 text-xs mt-1 block">14:04까지 배송</span>
-                </div>
-              </div>
+              <span className="absolute -left-[35px] top-1 h-3 w-3 rounded-full border-2 border-white bg-[#ef4444] shadow-sm" aria-hidden="true" />
+              <p className="text-label-sm font-bold text-[#ef4444]">도착</p>
+              <p className="mt-1 break-words text-title-md font-bold">{destinationAddress}</p>
             </div>
           </div>
-          {/* Item Information Box */}
-          <div className="bg-gray-50 rounded-[8px] p-4 mb-4 flex items-center text-sm">
-            <span className="text-gray-500 w-20">물품 정보</span>
-            <span className="font-bold text-gray-900 mr-2">소형</span>
-            <span className="text-gray-600">세 변의 합 100cm · 5kg 이하</span>
-          </div>
-          {/* Earnings Information Box */}
-          <div className="bg-gray-50 rounded-[8px] p-5">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold text-gray-900">최종 수익</h2>
-              <div className="flex items-center space-x-1">
-                <span className="text-2xl font-bold text-gray-900">6,730</span>
-                <div className="w-6 h-6 bg-yellow-400 rounded-full flex items-center justify-center text-white font-bold text-sm">P</div>
-              </div>
+
+          <dl className="mb-4 grid grid-cols-3 gap-2 rounded-2xl bg-surface-container-low p-4 text-center">
+            <InfoItem label="물품" value={formatItemType(request.itemType)} />
+            <InfoItem label="이동 거리" value={formatDistance(request.straightDistanceMeters)} />
+            <InfoItem label="예상 시간" value={formatMinutes(request.estimatedMinutes)} />
+          </dl>
+
+          <section aria-labelledby="settlement-title" className="rounded-2xl border border-outline-variant bg-surface-container-lowest p-5">
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <h2 id="settlement-title" className="text-title-md font-bold">예상 정산액</h2>
+              <strong className="text-headline-sm text-tertiary">{formatMoney(request.expectedSettlementAmount)}</strong>
             </div>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between text-gray-600">
-                <span className="">배송비</span>
-                <span className="">6,230P</span>
-              </div>
-              <div className="flex justify-between text-gray-600">
-                <span className="">프로모션</span>
-                <span className="">500P</span>
-              </div>
-            </div>
-          </div>
+            <dl className="space-y-2 text-body-md text-secondary">
+              <FareRow label="기본 운임" amount={fare?.baseFare} />
+              <FareRow label="거리 운임" amount={fare?.distanceFare} />
+              <FareRow label="물품 할증" amount={fare?.itemSurcharge} />
+              <FareRow label="예상 총 운임" amount={fare?.totalFare} emphasized />
+            </dl>
+          </section>
+
+          {acceptError && (
+            <p role="alert" className="mt-4 rounded-xl bg-error-container px-4 py-3 text-body-md font-semibold text-on-error-container">
+              {acceptError}
+            </p>
+          )}
         </div>
-        {/* BEGIN: Fixed Bottom Action Buttons */}
-        <div className="absolute bottom-0 left-0 right-0 flex h-16">
-          <button className="w-1/3 bg-gray-500 hover:bg-gray-600 text-white font-bold text-lg transition-colors">
+
+        <nav aria-label="콜 상세 동작" className="sticky bottom-0 z-20 grid w-full grid-cols-3 border-t border-outline-variant bg-surface-container-lowest p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <button
+            type="button"
+            onClick={goToList}
+            disabled={isAccepting}
+            className="h-14 rounded-l-xl bg-surface-container-high text-label-lg font-bold text-secondary disabled:opacity-50"
+          >
             넘기기
           </button>
-          <button className="w-2/3 bg-[#FEE500] hover:bg-yellow-400 text-black font-bold text-xl transition-colors relative flex items-center justify-center">
-            수락하기
-            {/* Simulated slider circle from the image */}
+          <button
+            type="button"
+            onClick={acceptRequest}
+            disabled={isAccepting || competitionLost}
+            className="col-span-2 h-14 rounded-r-xl bg-primary-container text-label-lg font-bold text-on-primary-container transition-colors hover:bg-primary-fixed disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {checkingResult ? '배차 확인 중…' : acceptMutation.isPending ? '수락 처리 중…' : '수락하기'}
           </button>
+        </nav>
+      </section>
+
+      {competitionLost && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-5" role="dialog" aria-modal="true" aria-labelledby="competition-title">
+          <div className="w-full max-w-sm rounded-3xl bg-surface-container-lowest p-6 text-center shadow-xl">
+            <span className="material-symbols-outlined text-4xl text-secondary">person_check</span>
+            <h2 id="competition-title" className="mt-3 text-title-lg font-bold">이미 배차된 콜입니다.</h2>
+            <p className="mt-2 text-body-md text-secondary">다른 라이더가 먼저 수락했어요. 목록에서 새 콜을 확인해 주세요.</p>
+            <button
+              type="button"
+              onClick={goToList}
+              className="mt-6 h-12 w-full rounded-xl bg-primary-container text-label-lg font-bold text-on-primary-container"
+            >
+              콜 목록으로 돌아가기
+            </button>
+          </div>
         </div>
-        {/* END: Fixed Bottom Action Buttons */}
+      )}
+    </main>
+  )
+}
+
+function InfoItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-label-sm text-secondary">{label}</dt>
+      <dd className="mt-1 break-words text-body-md font-bold text-on-surface">{value}</dd>
+    </div>
+  )
+}
+
+function FareRow({ label, amount, emphasized = false }: { label: string; amount: number | undefined; emphasized?: boolean }) {
+  return (
+    <div className={`flex justify-between gap-4 ${emphasized ? 'border-t border-outline-variant pt-2 font-bold text-on-surface' : ''}`}>
+      <dt>{label}</dt>
+      <dd>{formatMoney(amount)}</dd>
+    </div>
+  )
+}
+
+function DetailMessage({
+  title,
+  description,
+  onBack,
+  onRetry,
+}: {
+  title: string
+  description: string
+  onBack: () => void
+  onRetry?: () => void
+}) {
+  return (
+    <main aria-label="배송요청 상세" className="mx-auto flex min-h-screen w-full max-w-[604px] items-center justify-center bg-surface px-5">
+      <div role="alert" className="flex w-full max-w-sm flex-col items-center rounded-3xl bg-error-container px-6 py-10 text-center text-on-error-container">
+        <span className="material-symbols-outlined text-4xl">error</span>
+        <h1 className="mt-3 text-title-lg font-bold">{title}</h1>
+        <p className="mt-2 text-body-md">{description}</p>
+        <div className="mt-6 flex w-full gap-2">
+          <button type="button" onClick={onBack} className="h-12 flex-1 rounded-xl border border-on-error-container text-label-md font-bold">
+            목록으로
+          </button>
+          {onRetry && (
+            <button type="button" onClick={onRetry} className="h-12 flex-1 rounded-xl bg-on-error-container text-label-md font-bold text-on-error">
+              다시 시도
+            </button>
+          )}
+        </div>
       </div>
-      {/* END: Bottom Sheet Order Details */}
     </main>
   )
 }

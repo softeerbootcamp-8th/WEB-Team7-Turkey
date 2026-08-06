@@ -3,7 +3,6 @@ package com.turkey.quick.location.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.turkey.quick.common.response.ApiResponse;
-import com.turkey.quick.location.repository.RiderGeoRepository;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
 import com.turkey.quick.member.repository.MemberRepository;
@@ -11,9 +10,9 @@ import com.turkey.quick.rider.domain.OperatingStatus;
 import com.turkey.quick.rider.domain.RiderProfile;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +23,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -31,6 +31,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 라이더 위치 갱신이 운행 상태에 따라 허용·거부되는지 실제 HTTP로 확인한다(#290·#291).
+ *
+ * <p><b>위치 전송은 BUSY 전용이다</b>(디스커션 #338, #342) — AVAILABLE·UNAVAILABLE 은 409 로 거부된다.
+ * 예전에는 AVAILABLE 라이더를 GEO 배차 후보로 등록했지만, 라이더-측 GEO 사용처를 제거하면서 그
+ * 검증도 사라졌다.
  *
  * <p>relay 대상(구독 중인 고객)이 있는지는 여기서 확인하지 않는다 — 이 컨트롤러가 하는 일은
  * 운행 상태 검증뿐이고, 구독자가 없어도 조용히 성공(200)한다는 것 자체가 {@code SseRelay}의
@@ -59,7 +63,7 @@ class RiderLocationUpdateE2ETest extends IntegrationTestSupport {
     private PlatformTransactionManager transactionManager;
 
     @Autowired
-    private RiderGeoRepository riderGeoRepository;
+    private StringRedisTemplate redisTemplate;
 
     /** Member 저장과 RiderProfile(@MapsId) 저장을 한 트랜잭션으로 묶는다(RiderDeliveryRequestE2ETest와 같은 이유). */
     private Member saveRider(String loginId, String phoneNumber, OperatingStatus targetStatus) {
@@ -85,9 +89,9 @@ class RiderLocationUpdateE2ETest extends IntegrationTestSupport {
         return setCookie.split(";")[0];
     }
 
-    private Map<String, Object> locationRequest(long deliveryId) {
+    private Map<String, Object> locationRequest() {
+        // 배송 식별자를 싣지 않는다 — 서버가 세션의 라이더로 수행 중 배송을 판정한다(#317).
         return Map.of(
-                "deliveryId", deliveryId,
                 "latitude", "37.4979",
                 "longitude", "127.0276",
                 "measuredAt", Instant.now().toString());
@@ -103,26 +107,28 @@ class RiderLocationUpdateE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("AVAILABLE 라이더가 위치를 보내면 200을 반환한다")
-    void availableRiderCanSendLocation() {
+    @DisplayName("AVAILABLE 라이더가 위치를 보내면 409를 반환한다(BUSY 전용)")
+    void availableRiderCannotSendLocation() {
+        // 위치 전송은 BUSY 전용이 됐다(#338, #342). AVAILABLE 라이더는 배경 위치를 보내지 않고
+        // 콜 목록 검색 순간의 좌표만 검색 요청에 싣는다.
         saveRider("e2e_location_available", "01011110001", OperatingStatus.AVAILABLE);
         String cookie = login("e2e_location_available");
 
         var response = rest.exchange(LOCATION_ENDPOINT, HttpMethod.POST,
-                withCookie(locationRequest(1L), cookie), ApiResponse.class);
+                withCookie(locationRequest(), cookie), ApiResponse.class);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody().success()).isTrue();
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody().message()).isEqualTo("배송 수행 중(BUSY)이 아닙니다.");
     }
 
     @Test
-    @DisplayName("BUSY 라이더도 위치를 보낼 수 있다")
+    @DisplayName("BUSY 라이더는 위치를 보낼 수 있다")
     void busyRiderCanSendLocation() {
         saveRider("e2e_location_busy", "01011110002", OperatingStatus.BUSY);
         String cookie = login("e2e_location_busy");
 
         var response = rest.exchange(LOCATION_ENDPOINT, HttpMethod.POST,
-                withCookie(locationRequest(2L), cookie), ApiResponse.class);
+                withCookie(locationRequest(), cookie), ApiResponse.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
@@ -134,41 +140,34 @@ class RiderLocationUpdateE2ETest extends IntegrationTestSupport {
         String cookie = login("e2e_location_unavailable");
 
         var response = rest.exchange(LOCATION_ENDPOINT, HttpMethod.POST,
-                withCookie(locationRequest(3L), cookie), ApiResponse.class);
+                withCookie(locationRequest(), cookie), ApiResponse.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
-        assertThat(response.getBody().message()).isEqualTo("운행 중이 아닙니다.");
+        assertThat(response.getBody().message()).isEqualTo("배송 수행 중(BUSY)이 아닙니다.");
     }
 
     @Test
-    @DisplayName("AVAILABLE 라이더가 위치를 보내면 GEO 배차 후보로 등록된다(#83)")
-    void availableRiderIsRegisteredAsGeoCandidate() {
-        Member member = saveRider("e2e_location_geo_available", "01011110005", OperatingStatus.AVAILABLE);
-        String cookie = login("e2e_location_geo_available");
+    @DisplayName("위치를 보내면 최신 위치가 Redis 에 남는다(#317)")
+    void latestLocationIsStoredInRedis() {
+        // 읽는 API 는 아직 없지만(#317 범위) 저장 자체가 스케일 아웃 준비의 절반이라, 실제로
+        // 키가 생기고 TTL 이 걸리는지는 HTTP 경로에서 한 번 확인해 둔다.
+        Member member = saveRider("e2e_location_latest", "01011110007", OperatingStatus.BUSY);
+        String cookie = login("e2e_location_latest");
 
-        rest.exchange(LOCATION_ENDPOINT, HttpMethod.POST, withCookie(locationRequest(5L), cookie), ApiResponse.class);
+        rest.exchange(LOCATION_ENDPOINT, HttpMethod.POST, withCookie(locationRequest(), cookie), ApiResponse.class);
 
-        assertThat(riderGeoRepository.findPosition(member.getId())).isPresent();
-    }
-
-    @Test
-    @DisplayName("BUSY 라이더가 위치를 보내면 GEO 배차 후보에서 빠진다(#83)")
-    void busyRiderIsRemovedFromGeoCandidates() {
-        Member member = saveRider("e2e_location_geo_busy", "01011110006", OperatingStatus.BUSY);
-        riderGeoRepository.registerOrUpdate(member.getId(), new BigDecimal("37.5000000"), new BigDecimal("127.0000000"));
-        assertThat(riderGeoRepository.findPosition(member.getId())).isPresent();
-        String cookie = login("e2e_location_geo_busy");
-
-        rest.exchange(LOCATION_ENDPOINT, HttpMethod.POST, withCookie(locationRequest(6L), cookie), ApiResponse.class);
-
-        assertThat(riderGeoRepository.findPosition(member.getId())).isEmpty();
+        String key = "rider:location:%d".formatted(member.getId());
+        assertThat(redisTemplate.opsForValue().get(key))
+                .as("측정 시각이 맨 앞에 오는 형식")
+                .startsWith("20");
+        assertThat(redisTemplate.getExpire(key, TimeUnit.SECONDS)).isPositive();
     }
 
     @Test
     @DisplayName("세션 쿠키 없이 위치를 보내면 401을 반환한다")
     void rejectsWithoutSessionCookie() {
         var response = rest.exchange(LOCATION_ENDPOINT, HttpMethod.POST,
-                withCookie(locationRequest(4L), null), ApiResponse.class);
+                withCookie(locationRequest(), null), ApiResponse.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }

@@ -39,9 +39,16 @@ public class CustomerWebMvcConfig implements WebMvcConfigurer {
                 .addPathPatterns(
                         "/api/customer/session",                                 // #27
                         "/api/customer/deliveries",                              // #37 (정확 경로)
+                        "/api/customer/deliveries/*",                            // #46 (상세 조회)
+                        "/api/customer/deliveries/*/cancel",                     // #47
                         "/api/customer/deliveries/*/tracking",                   // #79
                         "/api/customer/deliveries/*/tracking/stream",            // #77
+                        "/api/customer/deliveries/*/location",                   // #311(폴링 arm)
                         "/api/customer/points/**"
-                );
+                )
+                // "/api/customer/deliveries/*" 의 '*' 는 세그먼트 하나를 가리므로 "quote" 도
+                // 매칭된다(#46 에서 추가하며 놓쳤던 부분, CustomerDeliveryCreateE2ETest 회귀로 발견).
+                // quote 는 비로그인 API 로 남아야 하므로 명시적으로 제외한다.
+                .excludePathPatterns("/api/customer/deliveries/quote");
     }
 }

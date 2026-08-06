@@ -18,6 +18,8 @@ import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.order.repository.FarePolicyRepository;
 import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
+import com.turkey.quick.payment.domain.PointWallet;
+import com.turkey.quick.payment.repository.PointWalletRepository;
 import com.turkey.quick.rider.auth.AuthenticatedRider;
 import com.turkey.quick.rider.domain.OperatingStatus;
 import com.turkey.quick.rider.domain.RiderProfile;
@@ -28,34 +30,35 @@ import com.turkey.quick.rider.repository.RiderProfileRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * 실제 MySQL(JPA 매핑·조회)과 실제 Redis(GEO) 에 붙여서 검증한다.
- * RIDE-LOC-001(라이더 위치 쓰기)이 아직 진행 중이라, 이 테스트는 그 결과물을 기다리지 않고
- * {@code riders:geo} 에 직접 GEOADD 하여 "쓰기는 이미 되어 있다"고 가정한 상태를 재현한다.
+ * 실제 MySQL(JPA 매핑·조회)에 붙여서 콜 목록·상세·수락을 검증한다.
+ *
+ * <p>라이더-측 GEO 사용처를 제거하면서(#342, 디스커션 #338) 콜 목록은 한동안 라이더 좌표를 읽지
+ * 못했다 — 거리·반경 필터가 항상 위치 없음으로 degrade 했었다. #367부터 좌표를 요청 파라미터로
+ * 받아 {@code idx_delivery_waiting_location} bounding box 쿼리로 실제 반경 필터링을 한다.
+ * 좌표를 안 주면 여전히 이전과 같은 degrade 경로다.
  */
 @SpringBootTest(properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")
 class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport {
-
-    private static final String RIDER_GEO_KEY = "riders:geo";
 
     @Autowired
     private RiderDeliveryRequestService riderDeliveryRequestService;
@@ -76,17 +79,19 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
     private RiderProfileRepository riderProfileRepository;
 
     @Autowired
-    private StringRedisTemplate redisTemplate;
+    private PlatformTransactionManager transactionManager;
 
     @Autowired
-    private PlatformTransactionManager transactionManager;
+    private PointWalletRepository pointWalletRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     private Member rider;
     private FarePolicy farePolicy;
 
     @BeforeEach
     void setUp() {
-        redisTemplate.delete(RIDER_GEO_KEY);
         // #56부터는 rider_profile 행이 실제로 있어야 accept() 의 조건부 UPDATE(operating_status='AVAILABLE')가
         // 의미를 갖는다. saveRiderProfile(available=true) 로 Member+RiderProfile 을 함께 만든다.
         RiderProfile riderProfile = saveRiderProfile("integration_rider01", "01099998888", true);
@@ -95,11 +100,6 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         rider = memberRepository.findById(riderProfile.getMemberId()).orElseThrow();
         farePolicy = farePolicyRepository.save(FarePolicy.create(
                 "v1", 3000L, 100, 130L, 30000, LocalDateTime.now().minusDays(1)));
-    }
-
-    @AfterEach
-    void tearDown() {
-        redisTemplate.delete(RIDER_GEO_KEY);
     }
 
     private AuthenticatedRider authenticatedRider(OperatingStatus status) {
@@ -139,6 +139,46 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         return saved;
     }
 
+    /** OrderFareSnapshot.create(..., 3000L, 130L, 0L) 의 합 — 아래 픽스처와 테스트 기대값이 함께 참조한다. */
+    private static final long WALLET_FIXTURE_FARE = 3_130L;
+
+    /**
+     * #42 만료 정리 검증용 — 환급이 지갑을 필요로 하므로, 지갑까지 갖춘 주문을 만든다.
+     *
+     * <p>이 헬퍼는 {@code DeliveryService.createDelivery} 를 거치지 않고 주문을 직접 만들기 때문에
+     * 실제 차감이 일어나지 않는다. 그래서 지갑을 {@code balance} 에 미리 {@link #WALLET_FIXTURE_FARE}
+     * 만큼 차감된 상태({@code balance - WALLET_FIXTURE_FARE})로 만들어 둔다 — "이미 이 주문 요금을
+     * 지불한 상태"를 흉내내는 것이다. 환급 후 잔액이 정확히 {@code balance} 로 돌아오는지가 검증 대상이다.
+     */
+    private DeliveryOrder saveWaitingOrderWithWallet(BigDecimal pickupLat, BigDecimal pickupLon, long balance) {
+        return new TransactionTemplate(transactionManager).execute(status -> {
+            String uniqueSuffix = String.valueOf(System.nanoTime() % 100_000_000L);
+            Member customer = memberRepository.save(
+                    Member.create("integration_wallet_customer_" + uniqueSuffix, "hash", "고객",
+                            "010" + uniqueSuffix, MemberRole.CUSTOMER));
+            PointWallet wallet = PointWallet.create(customer);
+            wallet.credit(balance);
+            wallet.debit(WALLET_FIXTURE_FARE);
+            pointWalletRepository.save(wallet);
+
+            DeliveryOrder order = DeliveryOrder.request(customer, "req-" + System.nanoTime(),
+                    ItemType.SMALL_PARCEL, 1000,
+                    Address.of("픽업지 도로명", "상세", "12345", pickupLat, pickupLon),
+                    Address.of("도착지 도로명", "상세", "54321",
+                            new BigDecimal("37.6000000"), new BigDecimal("127.1000000")),
+                    Contact.of("보내는사람", "01011112222"), Contact.of("받는사람", "01033334444"));
+            DeliveryOrder saved = deliveryOrderRepository.save(order);
+            orderFareSnapshotRepository.save(
+                    OrderFareSnapshot.create(saved, farePolicy, FareType.ESTIMATE, "v1", 1000, 3000L, 130L, 0L));
+            return saved;
+        });
+    }
+
+    private void backdateRequestedAt(Long orderId, LocalDateTime requestedAt) {
+        jdbcTemplate.update("UPDATE delivery_order SET requested_at = ? WHERE order_id = ?",
+                requestedAt, orderId);
+    }
+
     @Test
     @DisplayName("WAITING 주문만 반환하고, 이미 배차된(ASSIGNED) 주문은 제외한다")
     void shouldReturnOnlyWaitingOrders() {
@@ -150,7 +190,7 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         deliveryOrderRepository.save(assignedTarget);
 
         List<RiderDeliveryRequestSummaryResponse> result = riderDeliveryRequestService.getDeliveryRequests(
-                authenticatedRider(OperatingStatus.AVAILABLE), 100_000, "REQUESTED_AT");
+                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "REQUESTED_AT");
 
         assertThat(result).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
                 .contains(waiting.getId())
@@ -158,36 +198,55 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
     }
 
     @Test
-    @DisplayName("Redis GEO 에 라이더 위치가 있으면 실제 거리로 반경을 거르고 채운다")
-    void shouldFilterAndFillDistanceUsingRealRedisGeo() {
-        redisTemplate.opsForGeo().add(RIDER_GEO_KEY, new org.springframework.data.geo.Point(127.0000000, 37.5000000),
-                rider.getId().toString());
-
-        DeliveryOrder near = saveWaitingOrder(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"));
-        DeliveryOrder far = saveWaitingOrder(new BigDecimal("37.9000000"), new BigDecimal("127.9000000"));
-
-        List<RiderDeliveryRequestSummaryResponse> result = riderDeliveryRequestService.getDeliveryRequests(
-                authenticatedRider(OperatingStatus.AVAILABLE), 3000, "DISTANCE");
-
-        assertThat(result).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
-                .contains(near.getId())
-                .doesNotContain(far.getId());
-        RiderDeliveryRequestSummaryResponse nearSummary = result.stream()
-                .filter(r -> r.deliveryId().equals(near.getId())).findFirst().orElseThrow();
-        assertThat(nearSummary.distanceToPickupMeters()).isNotNull().isLessThan(3000);
-    }
-
-    @Test
-    @DisplayName("Redis GEO 에 라이더 위치가 없으면 반경으로 거르지 않고 거리 필드는 null이다")
-    void shouldDegradeGracefullyWhenNoRedisPosition() {
+    @DisplayName("좌표를 안 주면 반경으로 거르지 않고 거리 필드는 null이다(#55/#367 degrade)")
+    void shouldDegradeGracefullyWithoutRiderPosition() {
+        // 좁은 반경(100m)을 줘도 먼 주문이 그대로 반환된다 — 좌표를 안 줬으므로 반경 필터가
+        // 적용되지 않기 때문이다.
         DeliveryOrder order = saveWaitingOrder(new BigDecimal("37.9000000"), new BigDecimal("127.9000000"));
 
         List<RiderDeliveryRequestSummaryResponse> result = riderDeliveryRequestService.getDeliveryRequests(
-                authenticatedRider(OperatingStatus.AVAILABLE), 100, "DISTANCE");
+                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100, "DISTANCE");
 
         assertThat(result).extracting(RiderDeliveryRequestSummaryResponse::deliveryId).contains(order.getId());
         assertThat(result.stream().filter(r -> r.deliveryId().equals(order.getId())).findFirst().orElseThrow()
                 .distanceToPickupMeters()).isNull();
+    }
+
+    @Test
+    @DisplayName("좌표를 주면 bounding box 인덱스로 반경 내 주문만 반환하고 거리 필드를 채운다(#367)")
+    void shouldFilterByBoundingBoxWhenPositionGiven() {
+        BigDecimal riderLat = new BigDecimal("37.5000000");
+        BigDecimal riderLng = new BigDecimal("127.0000000");
+        // 라이더 위치에서 약 150m — 반경(3km) 안
+        DeliveryOrder near = saveWaitingOrder(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"));
+        // 라이더 위치에서 수십 km — 반경(3km) 훨씬 밖(사각형 범위 자체에도 안 걸림)
+        DeliveryOrder far = saveWaitingOrder(new BigDecimal("37.9000000"), new BigDecimal("127.9000000"));
+
+        List<RiderDeliveryRequestSummaryResponse> result = riderDeliveryRequestService.getDeliveryRequests(
+                authenticatedRider(OperatingStatus.AVAILABLE), riderLat, riderLng, 3000, "DISTANCE");
+
+        assertThat(result).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
+                .contains(near.getId())
+                .doesNotContain(far.getId());
+        assertThat(result.stream().filter(r -> r.deliveryId().equals(near.getId())).findFirst().orElseThrow()
+                .distanceToPickupMeters()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("사각형(bounding box) 범위엔 들어오지만 실제 반경(원) 밖인 주문은 제외한다(#367)")
+    void shouldExcludeBoundingBoxCornerOutsideActualRadius() {
+        BigDecimal riderLat = new BigDecimal("37.5000000");
+        BigDecimal riderLng = new BigDecimal("127.0000000");
+        int radiusMeters = 1000;
+        // 반경 1km를 감싸는 사각형의 대각선 모서리 방향 — 사각형 안에는 들어오지만 원(1km) 밖이다
+        // (사각형이 원보다 4/π≈1.27배 넓어서 생기는 모서리 후보, #367 처리 흐름 ④의 실제 예시).
+        DeliveryOrder corner = saveWaitingOrder(new BigDecimal("37.5088000"), new BigDecimal("127.0112000"));
+
+        List<RiderDeliveryRequestSummaryResponse> result = riderDeliveryRequestService.getDeliveryRequests(
+                authenticatedRider(OperatingStatus.AVAILABLE), riderLat, riderLng, radiusMeters, "DISTANCE");
+
+        assertThat(result).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
+                .doesNotContain(corner.getId());
     }
 
     @Test
@@ -196,7 +255,7 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         DeliveryOrder order = saveWaitingOrder(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"));
 
         List<RiderDeliveryRequestSummaryResponse> result = riderDeliveryRequestService.getDeliveryRequests(
-                authenticatedRider(OperatingStatus.AVAILABLE), 100_000, "REQUESTED_AT");
+                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "REQUESTED_AT");
 
         RiderDeliveryRequestSummaryResponse summary = result.stream()
                 .filter(r -> r.deliveryId().equals(order.getId())).findFirst().orElseThrow();
@@ -375,5 +434,27 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         assertThat(assignedCount).isEqualTo(1);
         assertThat(riderProfileRepository.findById(rider.getId()).orElseThrow().getOperatingStatus())
                 .isEqualTo(OperatingStatus.BUSY);
+    }
+
+    @Test
+    @DisplayName("[#42] 배차 대기 타임아웃을 넘긴 주문은 수락 시도만으로 취소·환급되고 409를 받는다")
+    void shouldCancelAndRefundExpiredOrderOnAcceptAttempt() {
+        DeliveryOrder order = saveWaitingOrderWithWallet(
+                new BigDecimal("37.5010000"), new BigDecimal("127.0010000"), 50_000L);
+        backdateRequestedAt(order.getId(), LocalDateTime.now(ZoneOffset.UTC).minusMinutes(10));
+
+        assertThatThrownBy(() -> riderDeliveryRequestService.acceptDeliveryRequest(
+                authenticatedRider(OperatingStatus.AVAILABLE), order.getId()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("취소")
+                .satisfies(e -> assertThat(((BusinessException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT));
+
+        DeliveryOrder persisted = deliveryOrderRepository.findById(order.getId()).orElseThrow();
+        assertThat(persisted.getStatus()).isEqualTo(OrderStatus.CANCELED);
+        // 스캐너가 아직 안 돌았어도, 수락 시도 자체가 만료 정리를 트리거해 전액 환급까지 끝나 있어야 한다
+        assertThat(pointWalletRepository.findByMemberId(order.getCustomer().getId()).orElseThrow().getBalance())
+                .isEqualTo(50_000L);
+        RiderProfile persistedProfile = riderProfileRepository.findById(rider.getId()).orElseThrow();
+        assertThat(persistedProfile.getOperatingStatus()).isEqualTo(OperatingStatus.AVAILABLE);
     }
 }

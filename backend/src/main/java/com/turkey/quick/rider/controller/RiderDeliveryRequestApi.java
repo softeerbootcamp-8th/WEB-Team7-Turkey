@@ -10,6 +10,9 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+import java.math.BigDecimal;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -36,15 +39,26 @@ import org.springframework.web.bind.annotation.RequestParam;
 @RequestMapping("/api/rider/requests")
 public interface RiderDeliveryRequestApi {
 
-    @Operation(summary = "배차 대기 콜 목록",
+    @Operation(
+            operationId = "getRiderDeliveryRequests",
+            summary = "배차 대기 콜 목록",
             description = "AVAILABLE 인 라이더에게 수락 가능한 WAITING 요청을 반환한다. "
-                    + "라이더 최신 위치(Redis GEO) 기준 반경으로 거르며, 위치가 없으면 거리 필드는 null 이다. "
+                    + "라이더 좌표(latitude/longitude)를 요청 파라미터로 받아 그 반경 내 주문만 "
+                    + "bounding box 인덱스로 거른다(#367). 좌표를 안 보내면 위치 필터 없이 전체를 "
+                    + "반환하고, 거리 필드는 null, DISTANCE 정렬은 REQUESTED_AT 으로 대체한다 "
+                    + "(#55 계약 확정 — 위치 없음은 에러가 아니다). "
                     + "(#55) 라이더 식별을 위한 인증 파라미터가 이 계약에 빠져 있었어 추가함 — "
                     + "다른 세 메서드(상세/수락/넘기기)는 각자 이슈에서 채운다.")
     @GetMapping
     ApiResponse<List<RiderDeliveryRequestSummaryResponse>> getDeliveryRequests(
             @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
             AuthenticatedRider rider,
+
+            @Parameter(description = "라이더 현재 위도(선택, 없으면 위치 무시하고 전체 반환)", example = "37.5006")
+            @RequestParam(required = false) @DecimalMin("-90") @DecimalMax("90") BigDecimal latitude,
+
+            @Parameter(description = "라이더 현재 경도(선택, 없으면 위치 무시하고 전체 반환)", example = "127.0366")
+            @RequestParam(required = false) @DecimalMin("-180") @DecimalMax("180") BigDecimal longitude,
 
             @Parameter(description = "검색 반경(m)", example = "3000")
             @RequestParam(defaultValue = "3000") int radiusMeters,

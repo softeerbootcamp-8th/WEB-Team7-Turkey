@@ -56,6 +56,12 @@ dependencies {
     // 로컬·배포 모두 MySQL 을 사용한다(로컬은 Docker 컨테이너, docs/05-local-dev.md 참고).
     runtimeOnly 'com.mysql:mysql-connector-j'
 
+    // 배송 완료 인증 사진을 S3 로 올린다(#61 후속). AmazonS3.putObject() 용도.
+    // 버전 고정: 이 SDK의 BOM(dependency-management)을 따로 안 불러왔으므로 버전 없이는
+    // Gradle이 해석하지 못한다.
+    // Source: https://mvnrepository.com/artifact/com.amazonaws/aws-java-sdk-s3
+    implementation 'com.amazonaws:aws-java-sdk-s3:1.12.797'
+
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
 

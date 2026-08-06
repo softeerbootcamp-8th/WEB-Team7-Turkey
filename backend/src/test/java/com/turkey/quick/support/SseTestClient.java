@@ -119,6 +119,25 @@ public final class SseTestClient implements AutoCloseable {
         return data[0];
     }
 
+    /**
+     * 이름 없는 이벤트({@code data:} 만 있는 프레임)의 본문을 돌려준다.
+     *
+     * <p>위치 중계는 이벤트 이름을 붙이지 않는다 — 브라우저 {@code EventSource} 의 기본
+     * {@code message} 이벤트로 도착해야 프론트 {@code useTrackingStream.onmessage} 가 받는다.
+     * 그래서 {@link #awaitEvent} 로는 위치 프레임을 기다릴 수 없다.
+     */
+    public String awaitData(Duration timeout) {
+        String[] data = {null};
+        awaitLine(line -> {
+            if (line.startsWith("data:")) {
+                data[0] = line.substring("data:".length()).trim();
+                return true;
+            }
+            return false;
+        }, timeout, "data 프레임");
+        return data[0];
+    }
+
     /** 조건에 맞는 줄이 올 때까지 기다린다. heartbeat 주석({@code :hb}) 확인에도 쓴다. */
     public void awaitLine(Predicate<String> matcher, Duration timeout, String description) {
         long deadline = System.nanoTime() + timeout.toNanos();

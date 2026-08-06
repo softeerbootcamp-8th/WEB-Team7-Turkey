@@ -15,6 +15,7 @@ import com.turkey.quick.order.domain.OrderFareSnapshot;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.AddressRequest;
 import com.turkey.quick.order.dto.ContactRequest;
+import com.turkey.quick.order.dto.DeliveryCancelResponse;
 import com.turkey.quick.order.dto.DeliveryCreateRequest;
 import com.turkey.quick.order.dto.DeliveryCreateResponse;
 import com.turkey.quick.order.dto.FareQuoteRequest;
@@ -23,6 +24,7 @@ import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.order.repository.FarePolicyRepository;
 import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
 import com.turkey.quick.payment.service.CustomerPaymentService;
+import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -31,12 +33,14 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -66,6 +70,10 @@ class DeliveryServiceTest {
 
     @Mock
     private CustomerPaymentService customerPaymentService;
+
+    /** #42 지연 만료 호출용. 이 테스트가 보는 분기와 무관하므로 별도 스텁 없이 존재만 시킨다. */
+    @Mock
+    private DeliveryTimeoutService deliveryTimeoutService;
 
     //  픽스 데이터를 상수로 분리
     private static final AddressRequest YANGJAE_STATION = new AddressRequest(
@@ -107,6 +115,70 @@ class DeliveryServiceTest {
             assertThat(haversineDiff)
                     .as("하버사인 오차가 피타고라스 오차보다 작아야 함")
                     .isLessThan(pythagorasDiff);
+        }
+    }
+
+    @Nested
+    @DisplayName("bounding box 좌표 범위 계산(#367, 라이더 콜 목록 위치 검색)")
+    class BoundingBoxTest {
+
+        private static final int RADIUS_METERS = 3000;
+
+        @Test
+        @DisplayName("좌표가 없으면 거부한다")
+        void shouldRejectNullCoordinates() {
+            assertThatThrownBy(() -> deliveryService.boundingBox(null, SINSA_STATION.longitude(), RADIUS_METERS))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> deliveryService.boundingBox(SINSA_STATION.latitude(), null, RADIUS_METERS))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("남북(위도) 경계까지의 실제 거리는 반경(m)과 거의 같다")
+        void latBoundaryShouldMatchRadius() {
+            BigDecimal lat = SINSA_STATION.latitude();
+            BigDecimal lng = SINSA_STATION.longitude();
+
+            DeliveryService.BoundingBox box = deliveryService.boundingBox(lat, lng, RADIUS_METERS);
+
+            double northMeters = deliveryService.distance(lat, lng, box.latMax(), lng)
+                    .multiply(BigDecimal.valueOf(1000)).doubleValue();
+            double southMeters = deliveryService.distance(lat, lng, box.latMin(), lng)
+                    .multiply(BigDecimal.valueOf(1000)).doubleValue();
+
+            assertThat(northMeters).isCloseTo(RADIUS_METERS, Offset.offset(1.0));
+            assertThat(southMeters).isCloseTo(RADIUS_METERS, Offset.offset(1.0));
+        }
+
+        @Test
+        @DisplayName("동서(경도) 경계까지의 실제 거리도 반경(m)에 가깝다(위도 보정 근사)")
+        void lngBoundaryShouldBeCloseToRadius() {
+            BigDecimal lat = SINSA_STATION.latitude();
+            BigDecimal lng = SINSA_STATION.longitude();
+
+            DeliveryService.BoundingBox box = deliveryService.boundingBox(lat, lng, RADIUS_METERS);
+
+            double eastMeters = deliveryService.distance(lat, lng, lat, box.lngMax())
+                    .multiply(BigDecimal.valueOf(1000)).doubleValue();
+            double westMeters = deliveryService.distance(lat, lng, lat, box.lngMin())
+                    .multiply(BigDecimal.valueOf(1000)).doubleValue();
+
+            assertThat(eastMeters).isCloseTo(RADIUS_METERS, Offset.offset(50.0));
+            assertThat(westMeters).isCloseTo(RADIUS_METERS, Offset.offset(50.0));
+        }
+
+        @Test
+        @DisplayName("사각형은 원보다 넓다 — 모서리는 반경보다 멀다")
+        void cornerShouldBeFartherThanRadius() {
+            BigDecimal lat = SINSA_STATION.latitude();
+            BigDecimal lng = SINSA_STATION.longitude();
+
+            DeliveryService.BoundingBox box = deliveryService.boundingBox(lat, lng, RADIUS_METERS);
+
+            double cornerMeters = deliveryService.distance(lat, lng, box.latMax(), box.lngMax())
+                    .multiply(BigDecimal.valueOf(1000)).doubleValue();
+
+            assertThat(cornerMeters).isGreaterThan(RADIUS_METERS);
         }
     }
 
@@ -245,6 +317,126 @@ class DeliveryServiceTest {
             verify(deliveryOrderRepository, never()).saveAndFlush(any());
             verifyNoInteractions(customerPaymentService);
             verifyNoInteractions(farePolicyRepository);
+        }
+    }
+
+    /**
+     * 배송요청 취소(#47).
+     *
+     * <p>이 층에서 증명할 것은 서비스의 분기 판단이다 — 소유권·상태별로 어떤 경로를 타는지,
+     * 조건부 UPDATE 결과에 따라 환급을 호출하는지 안 하는지. 실제 DB 원자성·동시성(배차 확정과
+     * 취소가 동시에 오는 경우)은 {@code DeliveryOrderServiceCancelIntegrationTest} 몫이다.
+     */
+    @Nested
+    @DisplayName("배송요청 취소(#47)")
+    class CancelDeliveryTest {
+
+        private static final Long CANCEL_CUSTOMER_ID = 9L;
+        private static final Long CANCEL_DELIVERY_ID = 42L;
+
+        private DeliveryOrder waitingOrder() {
+            Member customer = Member.create("cust02", "hash", "고객", "01099998888", MemberRole.CUSTOMER);
+            DeliveryOrder order = DeliveryOrder.request(customer, "cancel-key-1", ItemType.SMALL_PARCEL, 1000,
+                    Address.of("픽업", "상세", "12345",
+                            new BigDecimal("37.5000000"), new BigDecimal("127.0000000")),
+                    Address.of("도착", "상세", "54321",
+                            new BigDecimal("37.6000000"), new BigDecimal("127.1000000")),
+                    Contact.of("보내는사람", "01011112222"), Contact.of("받는사람", "01033334444"));
+            ReflectionTestUtils.setField(order, "id", CANCEL_DELIVERY_ID);
+            return order;
+        }
+
+        private OrderFareSnapshot estimateSnapshot(DeliveryOrder order, long totalFare) {
+            return OrderFareSnapshot.create(order, createMockFarePolicy(), FareType.ESTIMATE,
+                    "1.0", 1000, totalFare, 0L, 0L);
+        }
+
+        @Test
+        @DisplayName("존재하지 않거나 타인의 주문이면 404이고 아무 것도 하지 않는다")
+        void rejectsWhenNotFoundOrNotOwned() {
+            given(deliveryOrderRepository.findByIdAndCustomer_Id(CANCEL_DELIVERY_ID, CANCEL_CUSTOMER_ID))
+                    .willReturn(Optional.empty());
+
+            Throwable thrown = catchThrowable(
+                    () -> deliveryService.cancelDelivery(CANCEL_DELIVERY_ID, CANCEL_CUSTOMER_ID, "사유"));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class);
+            assertThat(((BusinessException) thrown).getStatus()).isEqualTo(HttpStatus.NOT_FOUND);
+            verify(deliveryOrderRepository, never()).cancelIfWaiting(any(), any(), any());
+            verifyNoInteractions(customerPaymentService);
+        }
+
+        @Test
+        @DisplayName("이미 취소된 주문은 그 결과를 그대로 돌려주고 다시 취소·환급하지 않는다")
+        void isIdempotentWhenAlreadyCanceled() {
+            DeliveryOrder order = waitingOrder();
+            order.cancel("먼저 취소됨");
+            given(deliveryOrderRepository.findByIdAndCustomer_Id(CANCEL_DELIVERY_ID, CANCEL_CUSTOMER_ID))
+                    .willReturn(Optional.of(order));
+
+            DeliveryCancelResponse response =
+                    deliveryService.cancelDelivery(CANCEL_DELIVERY_ID, CANCEL_CUSTOMER_ID, "다시취소");
+
+            assertThat(response.status()).isEqualTo(OrderStatus.CANCELED);
+            assertThat(response.canceledAt()).isEqualTo(order.getCanceledAt());
+            verify(deliveryOrderRepository, never()).cancelIfWaiting(any(), any(), any());
+            verifyNoInteractions(customerPaymentService);
+        }
+
+        @Test
+        @DisplayName("WAITING 주문을 취소하면 상태 전이 후 예상 운임만큼 환급한다")
+        void cancelsWaitingOrderAndRefundsEstimatedFare() {
+            DeliveryOrder order = waitingOrder();
+            given(deliveryOrderRepository.findByIdAndCustomer_Id(CANCEL_DELIVERY_ID, CANCEL_CUSTOMER_ID))
+                    .willReturn(Optional.of(order));
+            given(deliveryOrderRepository.cancelIfWaiting(eq(CANCEL_DELIVERY_ID), any(), eq("변심")))
+                    .willReturn(1);
+            given(orderFareSnapshotRepository.findByOrder_IdAndFareType(CANCEL_DELIVERY_ID, FareType.ESTIMATE))
+                    .willReturn(Optional.of(estimateSnapshot(order, 4_500L)));
+            DeliveryOrder orderRef = waitingOrder();
+            given(deliveryOrderRepository.getReferenceById(CANCEL_DELIVERY_ID)).willReturn(orderRef);
+
+            DeliveryCancelResponse response =
+                    deliveryService.cancelDelivery(CANCEL_DELIVERY_ID, CANCEL_CUSTOMER_ID, "변심");
+
+            assertThat(response.deliveryId()).isEqualTo(CANCEL_DELIVERY_ID);
+            assertThat(response.status()).isEqualTo(OrderStatus.CANCELED);
+            verify(customerPaymentService).refundForCancel(CANCEL_CUSTOMER_ID, orderRef, 4_500L);
+        }
+
+        @Test
+        @DisplayName("조건부 UPDATE가 0행이면(이미 배차되었거나 완료됨) 409이고 환급하지 않는다")
+        void rejectsWithConflictWhenNotWaiting() {
+            DeliveryOrder order = waitingOrder();
+            given(deliveryOrderRepository.findByIdAndCustomer_Id(CANCEL_DELIVERY_ID, CANCEL_CUSTOMER_ID))
+                    .willReturn(Optional.of(order));
+            given(deliveryOrderRepository.cancelIfWaiting(eq(CANCEL_DELIVERY_ID), any(), any()))
+                    .willReturn(0);
+
+            Throwable thrown = catchThrowable(
+                    () -> deliveryService.cancelDelivery(CANCEL_DELIVERY_ID, CANCEL_CUSTOMER_ID, null));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class);
+            assertThat(((BusinessException) thrown).getStatus()).isEqualTo(HttpStatus.CONFLICT);
+            verifyNoInteractions(customerPaymentService);
+        }
+
+        @Test
+        @DisplayName("운임 스냅샷이 없으면 데이터 정합성 오류(500)다")
+        void rejectsWhenFareSnapshotMissing() {
+            DeliveryOrder order = waitingOrder();
+            given(deliveryOrderRepository.findByIdAndCustomer_Id(CANCEL_DELIVERY_ID, CANCEL_CUSTOMER_ID))
+                    .willReturn(Optional.of(order));
+            given(deliveryOrderRepository.cancelIfWaiting(eq(CANCEL_DELIVERY_ID), any(), any()))
+                    .willReturn(1);
+            given(orderFareSnapshotRepository.findByOrder_IdAndFareType(CANCEL_DELIVERY_ID, FareType.ESTIMATE))
+                    .willReturn(Optional.empty());
+
+            Throwable thrown = catchThrowable(
+                    () -> deliveryService.cancelDelivery(CANCEL_DELIVERY_ID, CANCEL_CUSTOMER_ID, null));
+
+            assertThat(thrown).isInstanceOf(BusinessException.class);
+            assertThat(((BusinessException) thrown).getStatus()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
 

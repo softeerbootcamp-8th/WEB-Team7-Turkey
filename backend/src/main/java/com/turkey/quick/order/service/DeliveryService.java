@@ -12,7 +12,9 @@ import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.FareType;
 import com.turkey.quick.order.domain.ItemTypeSurcharge;
 import com.turkey.quick.order.domain.OrderFareSnapshot;
+import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.AddressRequest;
+import com.turkey.quick.order.dto.DeliveryCancelResponse;
 import com.turkey.quick.order.dto.DeliveryCreateRequest;
 import com.turkey.quick.order.dto.DeliveryCreateResponse;
 import com.turkey.quick.order.dto.FareBreakdownResponse;
@@ -32,6 +34,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Optional;
 
 @RequiredArgsConstructor
@@ -59,6 +63,9 @@ public class DeliveryService {
      * 엔터티({@code PointTransaction.deliveryOrder} 등)까지이고 서비스는 참조하지 않는다.
      */
     private final CustomerPaymentService customerPaymentService;
+
+    /** 지연 만료(#42) 호출용. 별도 빈이라야 {@code expireIfStale} 의 {@code REQUIRES_NEW} 프록시를 탄다. */
+    private final DeliveryTimeoutService deliveryTimeoutService;
 
     /**
      * 요금 견적. 활성 정책(fare_policy)과 좌표만으로 계산하며 주문·스냅샷은 만들지 않는다.
@@ -153,6 +160,11 @@ public class DeliveryService {
      */
     @Transactional
     public DeliveryCreateResponse createDelivery(DeliveryCreateRequest request, Long customerId) {
+        // ⓪ 지연 만료(#42): 기존 진행 중 주문이 타임아웃을 이미 넘긴 WAITING 이면, 능동 스캐너를
+        //    기다리지 않고 여기서 먼저 취소·환급한다. 별도 트랜잭션(REQUIRES_NEW)이라 이 취소는
+        //    아래에서 새 주문 생성이 실패해도 되돌아가지 않는다 — 이미 옳은 정리이기 때문이다.
+        deliveryTimeoutService.expireIfStale(customerId);
+
         // ① 멱등: 같은 요청키의 주문이 이미 있으면 그 결과를 그대로 돌려준다(순차 재전송).
         //    포인트도 다시 차감하지 않는다 — 아래 저장 경로를 아예 타지 않기 때문이다.
         Optional<DeliveryOrder> alreadyCreated =
@@ -209,6 +221,64 @@ public class DeliveryService {
     }
 
     /**
+     * 배송요청 취소(#47, CUS-DELIVERY-005). 배차 전(WAITING) 주문만 취소할 수 있다.
+     *
+     * <p><b>동작 순서</b>
+     * <ol>
+     *   <li>소유권 확인({@code findByIdAndCustomer_Id}) — 없거나 타인 것이면 404(#46 과 같은
+     *       이유로 사유를 구분하지 않는다 — 존재 여부를 노출하지 않는다).</li>
+     *   <li>이미 CANCELED 면 그 결과를 그대로 돌려주고 끝낸다 — 중복 취소·중복 환급을 막는 멱등
+     *       처리다(#34 {@code cancelPointCharge} 와 같은 판단).</li>
+     *   <li>그 외 상태면 조건부 UPDATE({@link DeliveryOrderRepository#cancelIfWaiting}, ADR-006
+     *       패턴 — #42/#56 이 이미 쓰는 메서드를 그대로 재사용한다)로 WAITING → CANCELED 전이를
+     *       시도한다. 배차 확정(#56)과 동시에 들어와도 조건부 UPDATE 가 하나만 통과시킨다.</li>
+     *   <li>0 행이면(그 사이 배차 확정됐거나 이미 종료된 상태) 409.</li>
+     *   <li>1 행이면 예상 운임(ESTIMATE) 스냅샷 금액만큼 환급한다
+     *       ({@link CustomerPaymentService#refundForCancel}).</li>
+     * </ol>
+     *
+     * <p>취소 직후 응답은 <b>재조회하지 않고</b> 방금 만든 값(canceledAt)으로 직접 구성한다 — 같은
+     * 세션에서 재조회하면 Hibernate 1차 캐시가 갱신 전 인스턴스를 그대로 돌려주는 문제를
+     * {@code DeliveryDetailQueryService} 를 만들며 실측으로 확인했다(#46).
+     *
+     * @param deliveryId 취소할 배송요청
+     * @param customerId 세션에서 얻은 고객 식별자
+     * @param reason     취소 사유(선택, 없으면 null)
+     * @return 취소 결과(성공 시 CANCELED, 이미 취소돼 있었으면 그 시각 그대로)
+     * @throws BusinessException     404(없음·타인 것) / 409(배차 확정됐거나 이미 완료돼 취소 불가) /
+     *                               500(운임 스냅샷 없음 — 데이터 불변식 위반)
+     */
+    @Transactional
+    public DeliveryCancelResponse cancelDelivery(Long deliveryId, Long customerId, String reason) {
+        DeliveryOrder order = deliveryOrderRepository.findByIdAndCustomer_Id(deliveryId, customerId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "배송요청을 찾을 수 없습니다."));
+
+        if (order.getStatus() == OrderStatus.CANCELED) {
+            return new DeliveryCancelResponse(order.getId(), order.getStatus(), order.getCanceledAt());
+        }
+
+        LocalDateTime canceledAt = LocalDateTime.now(ZoneOffset.UTC);
+        int updated = deliveryOrderRepository.cancelIfWaiting(deliveryId, canceledAt, reason);
+        if (updated == 0) {
+            throw new BusinessException(HttpStatus.CONFLICT,
+                    "이미 배차되었거나 완료되어 취소할 수 없습니다. deliveryId=" + deliveryId);
+        }
+
+        OrderFareSnapshot estimate = orderFareSnapshotRepository
+                .findByOrder_IdAndFareType(deliveryId, FareType.ESTIMATE)
+                .orElseThrow(() -> new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR,
+                        "배송요청에 예상 운임 스냅샷이 없습니다. deliveryId=" + deliveryId));
+
+        long balanceAfter = customerPaymentService.refundForCancel(
+                customerId, deliveryOrderRepository.getReferenceById(deliveryId), estimate.getTotalFare());
+
+        log.info("[배송요청-취소] deliveryId={}, customerId={}, refundAmount={}, balanceAfter={}",
+                deliveryId, customerId, estimate.getTotalFare(), balanceAfter);
+
+        return new DeliveryCancelResponse(deliveryId, OrderStatus.CANCELED, canceledAt);
+    }
+
+    /**
      * 화면이 안내한 금액과 서버 재계산 금액을 대조한다(#37 예외 처리).
      *
      * <p><b>다르면 주문을 만들지 않는다</b>(사람 확인). 5,000원을 보고 결제 버튼을 눌렀는데
@@ -243,10 +313,7 @@ public class DeliveryService {
                 .orElseThrow(() -> new IllegalStateException(
                         "주문에 예상 운임 스냅샷이 없습니다. deliveryId=" + order.getId()));
 
-        return toResponse(order, new FareBreakdownResponse(
-                snapshot.getPolicyVersion(), snapshot.getCalculationDistanceMeters(),
-                snapshot.getBaseFare(), snapshot.getDistanceFare(), snapshot.getItemSurcharge(),
-                snapshot.getTotalFare()));
+        return toResponse(order, FareBreakdownResponse.from(snapshot));
     }
 
     private DeliveryCreateResponse toResponse(DeliveryOrder order, FareBreakdownResponse fare) {
@@ -334,6 +401,40 @@ public class DeliveryService {
 
         return BigDecimal.valueOf(distanceKm).setScale(8, RoundingMode.HALF_UP);
     }
+
+    /**
+     * 반경(m)을 감싸는 사각형(bounding box) 좌표 범위를 계산한다(#367, 라이더 콜 목록 위치 검색).
+     * 위도 1도가 감싸는 거리는 {@link #EARTH_RADIUS}(지구 반지름, km) 기준 라디안 환산으로
+     * 구하고, 경도는 위도에 따라 보정한다(고위도일수록 경도 1도의 실제 거리가 짧아지므로
+     * {@code cos(latitude)}로 나눈다) — {@link #distance} 와 같은 구면 기하 전제를 쓴다
+     * (하드코딩된 위도별 상수를 쓰던 {@link #pureStraightDistance} 와 달리, 위도에 무관하게
+     * 정확하다).
+     *
+     * <p>사각형은 원보다 넓다(4/π ≈ 1.27배) — 이 범위로 뽑힌 후보에는 실제 반경 밖인 것이
+     * 섞여 있을 수 있다. 호출자가 {@link #distance} 로 다시 걸러야 한다(2단계 필터링).
+     */
+    public BoundingBox boundingBox(BigDecimal latitude, BigDecimal longitude, int radiusMeters) {
+        if (latitude == null || longitude == null) {
+            throw new IllegalArgumentException("좌표 값은 필수여야 합니다.");
+        }
+
+        double radiusKm = radiusMeters / 1000.0;
+        double latDeltaDeg = Math.toDegrees(radiusKm / EARTH_RADIUS);
+        double lngDeltaDeg = Math.toDegrees(
+                radiusKm / (EARTH_RADIUS * Math.cos(Math.toRadians(latitude.doubleValue()))));
+
+        BigDecimal latDelta = BigDecimal.valueOf(latDeltaDeg);
+        BigDecimal lngDelta = BigDecimal.valueOf(lngDeltaDeg);
+
+        return new BoundingBox(
+                latitude.subtract(latDelta),
+                latitude.add(latDelta),
+                longitude.subtract(lngDelta),
+                longitude.add(lngDelta));
+    }
+
+    /** {@link #boundingBox} 결과값 — bounding box 쿼리에 그대로 넘길 좌표 범위(#367). */
+    public record BoundingBox(BigDecimal latMin, BigDecimal latMax, BigDecimal lngMin, BigDecimal lngMax) {}
 
 
     @Deprecated

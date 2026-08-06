@@ -4,6 +4,7 @@ import com.turkey.quick.common.response.ApiResponse;
 import com.turkey.quick.customer.auth.AuthenticatedCustomer;
 import com.turkey.quick.customer.auth.CustomerSessionInterceptor;
 import com.turkey.quick.order.domain.OrderStatus;
+import com.turkey.quick.order.dto.ActiveDeliveryResponse;
 import com.turkey.quick.order.dto.DeliveryCancelRequest;
 import com.turkey.quick.order.dto.DeliveryCancelResponse;
 import com.turkey.quick.order.dto.DeliveryCreateRequest;
@@ -20,6 +21,7 @@ import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -144,23 +146,65 @@ public interface CustomerDeliveryApi {
             @Valid @RequestBody DeliveryCreateRequest request);
 
     @Operation(summary = "배송요청 목록",
-            description = "로그인한 고객의 이용기록을 최신순으로 조회한다. status 를 주면 해당 상태만 거른다.")
+            description = "로그인한 고객의 이용기록을 요청 시각 최신순으로 조회한다. "
+                    + "status 를 주면 해당 상태만 거른다. MVP 는 기간 필터를 제공하지 않는다.")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200", description = "조회 성공(결과 없으면 빈 목록)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400", description = "잘못된 페이지 정보(page<0 또는 size<1)")
+    })
     @GetMapping
     ApiResponse<DeliveryListResponse> getDeliveries(
             @Parameter(description = "배송 상태 필터(미지정 시 전체)")
             @RequestParam(required = false) OrderStatus status,
 
             @Parameter(description = "페이지(0부터)")
-            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
 
             @Parameter(description = "페이지 크기")
-            @RequestParam(defaultValue = "20") int size);
+            @RequestParam(defaultValue = "20") @Min(1) int size,
 
-    @Operation(summary = "배송요청 상세", description = "주문 시점 스냅샷(주소·연락처·운임)과 상태 타임라인을 조회한다.")
+            @Parameter(hidden = true)
+            @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
+            AuthenticatedCustomer customer);
+
+    @Operation(operationId = "getCustomerActiveDelivery",
+            summary = "진행 중 배송 요약 조회",
+            description = "로그인한 고객의 진행 중(WAITING~DELIVERING) 배송을 요약해 조회한다. "
+                    + "고객당 진행 중 배송은 최대 1건이므로 결과는 0건 또는 1건이다. "
+                    + "진행 중 배송이 없으면 응답 data 가 null 이다(빈 결과, 오류 아님). "
+                    + "홈 화면 요약용이라 요금은 담지 않는다 — 상태·출발지·도착지·요청 시각만 준다. "
+                    + "정적 경로라 /{deliveryId} 보다 먼저 매칭된다.")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200", description = "조회 성공(진행 중 배송이 없으면 data=null)"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401", description = "미로그인 또는 세션 만료")
+    })
+    @GetMapping("/active")
+    ApiResponse<ActiveDeliveryResponse> getActiveDelivery(
+            @Parameter(hidden = true)
+            @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
+            AuthenticatedCustomer customer);
+
+    @Operation(summary = "배송요청 상세",
+            description = "주문 시점 스냅샷(주소·연락처·운임)과 상태 타임라인을 조회한다. "
+                    + "추적 스냅샷과 달리 상태를 가리지 않는다 — 배차 전(WAITING)·완료·취소 주문도 조회된다.")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200", description = "조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404", description = "배송요청이 없거나 본인 것이 아님")
+    })
     @GetMapping("/{deliveryId}")
     ApiResponse<DeliveryDetailResponse> getDelivery(
             @Parameter(description = "배송요청 식별자", example = "1234")
-            @PathVariable Long deliveryId);
+            @PathVariable Long deliveryId,
+
+            @Parameter(hidden = true)
+            @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
+            AuthenticatedCustomer customer);
 
     /**
      * 실패 응답이 SSE 스트림({@code GET .../tracking/stream})과 정확히 같은 판정을 쓴다 — 즉
@@ -192,18 +236,27 @@ public interface CustomerDeliveryApi {
             @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
             AuthenticatedCustomer customer);
 
-    @Operation(summary = "배송요청 취소",
-            description = "배차 전(WAITING)에만 허용한다. ASSIGNED 이상은 MVP 범위 밖이라 거부된다.")
+    @Operation(operationId = "cancelCustomerDelivery",
+            summary = "배송요청 취소",
+            description = "배차 전(WAITING)에만 허용한다. ASSIGNED 이상·완료는 MVP 범위 밖이라 거부된다. "
+                    + "이미 취소된 주문에 다시 요청하면 그 결과를 그대로 돌려주고 중복 환급하지 않는다(멱등). "
+                    + "취소와 포인트 환급(CUS-PAY-003)은 하나의 트랜잭션으로 처리된다.")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "200", description = "취소 성공"),
+                    responseCode = "200", description = "취소 성공(이미 취소된 경우 포함, 멱등)"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "409", description = "이미 배차되었거나 취소할 수 없는 상태")
+                    responseCode = "404", description = "배송요청이 없거나 본인 것이 아님"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "409", description = "이미 배차되었거나 완료되어 취소할 수 없는 상태")
     })
     @PatchMapping("/{deliveryId}/cancel")
     ApiResponse<DeliveryCancelResponse> cancelDelivery(
             @Parameter(description = "배송요청 식별자", example = "1024")
             @PathVariable Long deliveryId,
 
-            @Valid @RequestBody DeliveryCancelRequest request);
+            @Valid @RequestBody DeliveryCancelRequest request,
+
+            @Parameter(hidden = true)
+            @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
+            AuthenticatedCustomer customer);
 }

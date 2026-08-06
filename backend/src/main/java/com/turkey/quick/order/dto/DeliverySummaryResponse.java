@@ -1,5 +1,6 @@
 package com.turkey.quick.order.dto;
 
+import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.ItemType;
 import com.turkey.quick.order.domain.OrderStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -36,4 +37,16 @@ public record DeliverySummaryResponse(
         @Schema(description = "완료 시각(UTC). 완료 전이면 null.", example = "2026-07-28T02:47:00")
         LocalDateTime completedAt
 ) {
+    /** @param totalFare 호출자가 미리 골라 넘긴 운임(완료면 FINAL, 아니면 ESTIMATE) 합계. */
+    public static DeliverySummaryResponse from(DeliveryOrder order, Long totalFare) {
+        return new DeliverySummaryResponse(
+                order.getId(),
+                order.getStatus(),
+                order.getItemType(),
+                order.getPickup().getRoadAddress(),
+                order.getDestination().getRoadAddress(),
+                totalFare,
+                order.getRequestedAt(),
+                order.getCompletedAt());
+    }
 }

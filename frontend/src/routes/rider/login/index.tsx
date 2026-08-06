@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-router'
 import { useRiderLogin } from '@/api/generated/rider-login/rider-login'
-import { resolveGuestGuard, RIDER_STATUS_ROUTE, type SessionInfo } from '@/shared/auth/guard'
+import { resolveGuestGuard, type SessionInfo } from '@/shared/auth/guard'
 import { validateRedirectSearch } from '@/shared/auth/redirectSearch'
 import { cacheAuthenticatedRider, ensureSessionInfo } from '@/shared/auth/session'
 import {
@@ -51,14 +51,12 @@ function RiderLogin() {
         cacheAuthenticatedRider(queryClient, response.data)
 
         if (search.redirect) {
-          router.history.push(search.redirect)
+          // 로그인 화면이 뒤로가기 히스토리에 남지 않도록 원래 목적지로 교체한다.
+          router.history.replace(search.redirect)
           return
         }
 
-        const target = response.data.operatingStatus
-          ? RIDER_STATUS_ROUTE[response.data.operatingStatus]
-          : '/rider'
-        void router.navigate({ to: target })
+        void router.navigate({ to: '/rider', replace: true })
       },
       onError: (error) => {
         setFormError(getRiderLoginErrorMessage(error))

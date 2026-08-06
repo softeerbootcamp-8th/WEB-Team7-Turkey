@@ -172,33 +172,6 @@ Redis GEO 또는 공간 인덱스를 활용해 가까운 라이더를 거리순�
 
 <br>
 
-## 🏗️ 시스템 아키텍처
-
-<!-- 이미지 추가 후 주석을 제거합니다. -->
-
-<!-- ![시스템 아키텍처](./docs/images/system-architecture.png) -->
-
-```text
-Customer Web
-Rider Web
-    ↓
-Nginx
-    ↓
-Spring Boot Application
-├─ Delivery
-├─ Matching
-├─ Rider Location
-├─ Notification
-├─ Payment
-└─ Settlement
-    ↓
-MySQL
-Redis
-Object Storage
-External Map API
-```
-
-<br>
 
 ## 🛠️ 기술 스택
 
@@ -221,10 +194,7 @@ External Map API
 * Redis
 * Flyway
 * JUnit 5
-* AssertJ
-* Testcontainers
 * Server-Sent Events
-* WebSocket
 
 > 프로젝트 요구사항에 따라 Spring Security는 사용하지 않고 인증과 인가에 필요한 기능을 직접 구현합니다.
 
@@ -233,7 +203,6 @@ External Map API
 * AWS EC2
 * AWS S3
 * Docker
-* Nginx
 * GitHub Actions
 
 ### Monitoring

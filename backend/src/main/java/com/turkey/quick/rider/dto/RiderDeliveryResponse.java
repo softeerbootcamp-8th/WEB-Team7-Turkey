@@ -1,5 +1,6 @@
 package com.turkey.quick.rider.dto;
 
+import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.ItemType;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.AddressResponse;
@@ -47,10 +48,32 @@ public record RiderDeliveryResponse(
         @Schema(description = "예상 정산액(원)", example = "6400")
         Long expectedSettlementAmount,
 
+        @Schema(description = "현재 배송 상태에서 수행 가능한 다음 행동")
+        RiderDeliveryNextAction nextAction,
+
         @Schema(description = "상태 전이 타임라인(도달한 단계만)")
         List<DeliveryStatusStepResponse> steps,
 
         @Schema(description = "배차 시각(UTC)", example = "2026-07-28T02:12:00")
         LocalDateTime assignedAt
 ) {
+    public static RiderDeliveryResponse from(DeliveryOrder order, Long expectedSettlementAmount) {
+        return new RiderDeliveryResponse(
+                order.getId(),
+                order.getStatus(),
+                order.getItemType(),
+                new AddressResponse(order.getPickup().getRoadAddress(), order.getPickup().getDetailAddress(),
+                        order.getPickup().getPostalCode(), order.getPickup().getLatitude(),
+                        order.getPickup().getLongitude()),
+                new AddressResponse(order.getDestination().getRoadAddress(), order.getDestination().getDetailAddress(),
+                        order.getDestination().getPostalCode(), order.getDestination().getLatitude(),
+                        order.getDestination().getLongitude()),
+                new ContactResponse(order.getSender().getName(), order.getSender().getPhoneNumber()),
+                new ContactResponse(order.getRecipient().getName(), order.getRecipient().getPhoneNumber()),
+                order.getStraightDistanceMeters(),
+                expectedSettlementAmount,
+                RiderDeliveryNextAction.from(order.getStatus()),
+                DeliveryStatusStepResponse.timelineOf(order),
+                order.getAssignedAt());
+    }
 }

@@ -19,11 +19,11 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("라이더 최신 위치 GEO 조회·반영(#83)")
-class RiderGeoRepositoryTest {
+@DisplayName("주문 픽업지 GEO 조회·반영(#339)")
+class OrderGeoRepositoryTest {
 
-    private static final String KEY = "riders:geo";
-    private static final Long RIDER_ID = 7L;
+    private static final String KEY = "order:geo";
+    private static final Long ORDER_ID = 7L;
 
     @Mock
     private StringRedisTemplate redisTemplate;
@@ -34,8 +34,8 @@ class RiderGeoRepositoryTest {
     @Mock
     private ZSetOperations<String, String> zSetOperations;
 
-    private RiderGeoRepository repository() {
-        return new RiderGeoRepository(redisTemplate);
+    private OrderGeoRepository repository() {
+        return new OrderGeoRepository(redisTemplate);
     }
 
     @Test
@@ -43,10 +43,10 @@ class RiderGeoRepositoryTest {
     void registerOrUpdateAddsPoint() {
         given(redisTemplate.opsForGeo()).willReturn(geoOperations);
 
-        repository().registerOrUpdate(RIDER_ID, new BigDecimal("37.5000000"), new BigDecimal("127.0000000"));
+        repository().registerOrUpdate(ORDER_ID, new BigDecimal("37.5000000"), new BigDecimal("127.0000000"));
 
         verify(geoOperations).add(eq(KEY),
-                eq(new Point(127.0, 37.5)), eq(RIDER_ID.toString()));
+                eq(new Point(127.0, 37.5)), eq(ORDER_ID.toString()));
     }
 
     @Test
@@ -54,18 +54,18 @@ class RiderGeoRepositoryTest {
     void removeDeletesMember() {
         given(redisTemplate.opsForZSet()).willReturn(zSetOperations);
 
-        repository().remove(RIDER_ID);
+        repository().remove(ORDER_ID);
 
-        verify(zSetOperations).remove(KEY, RIDER_ID.toString());
+        verify(zSetOperations).remove(KEY, ORDER_ID.toString());
     }
 
     @Test
     @DisplayName("위치가 없으면 조회 결과는 비어 있다")
     void findPositionReturnsEmptyWhenMissing() {
         given(redisTemplate.opsForGeo()).willReturn(geoOperations);
-        given(geoOperations.position(KEY, RIDER_ID.toString())).willReturn(List.of());
+        given(geoOperations.position(KEY, ORDER_ID.toString())).willReturn(List.of());
 
-        Optional<Point> position = repository().findPosition(RIDER_ID);
+        Optional<Point> position = repository().findPosition(ORDER_ID);
 
         assertThat(position).isEmpty();
     }

@@ -52,10 +52,11 @@ function CustomerLogin() {
         cacheAuthenticatedCustomer(queryClient, response.data)
 
         if (search.redirect) {
-          router.history.push(search.redirect)
+          // 로그인 화면이 뒤로가기 히스토리에 남지 않도록 원래 목적지로 교체한다.
+          router.history.replace(search.redirect)
           return
         }
-        void router.navigate({ to: '/customer' })
+        void router.navigate({ to: '/customer', replace: true })
       },
       onError: (error) => {
         setFormError(getCustomerLoginErrorMessage(error))

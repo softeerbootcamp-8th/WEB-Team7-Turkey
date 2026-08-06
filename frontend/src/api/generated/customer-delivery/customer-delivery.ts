@@ -25,6 +25,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  ApiResponseActiveDeliveryResponse,
   ApiResponseDeliveryCancelResponse,
   ApiResponseDeliveryCreateResponse,
   ApiResponseDeliveryDetailResponse,
@@ -46,7 +47,7 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 
 /**
- * 로그인한 고객의 이용기록을 최신순으로 조회한다. status 를 주면 해당 상태만 거른다.
+ * 로그인한 고객의 이용기록을 요청 시각 최신순으로 조회한다. status 를 주면 해당 상태만 거른다. MVP 는 기간 필터를 제공하지 않는다.
  * @summary 배송요청 목록
  */
 export const getDeliveries = (
@@ -72,7 +73,7 @@ export const getGetDeliveriesQueryKey = (params?: GetDeliveriesParams,) => {
     }
 
     
-export const getGetDeliveriesQueryOptions = <TData = Awaited<ReturnType<typeof getDeliveries>>, TError = ErrorType<unknown>>(params?: GetDeliveriesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveries>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+export const getGetDeliveriesQueryOptions = <TData = Awaited<ReturnType<typeof getDeliveries>>, TError = ErrorType<ApiResponseDeliveryListResponse>>(params?: GetDeliveriesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveries>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -91,10 +92,10 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type GetDeliveriesQueryResult = NonNullable<Awaited<ReturnType<typeof getDeliveries>>>
-export type GetDeliveriesQueryError = ErrorType<unknown>
+export type GetDeliveriesQueryError = ErrorType<ApiResponseDeliveryListResponse>
 
 
-export function useGetDeliveries<TData = Awaited<ReturnType<typeof getDeliveries>>, TError = ErrorType<unknown>>(
+export function useGetDeliveries<TData = Awaited<ReturnType<typeof getDeliveries>>, TError = ErrorType<ApiResponseDeliveryListResponse>>(
  params: undefined |  GetDeliveriesParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveries>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getDeliveries>>,
@@ -104,7 +105,7 @@ export function useGetDeliveries<TData = Awaited<ReturnType<typeof getDeliveries
       >, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetDeliveries<TData = Awaited<ReturnType<typeof getDeliveries>>, TError = ErrorType<unknown>>(
+export function useGetDeliveries<TData = Awaited<ReturnType<typeof getDeliveries>>, TError = ErrorType<ApiResponseDeliveryListResponse>>(
  params?: GetDeliveriesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveries>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getDeliveries>>,
@@ -114,7 +115,7 @@ export function useGetDeliveries<TData = Awaited<ReturnType<typeof getDeliveries
       >, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetDeliveries<TData = Awaited<ReturnType<typeof getDeliveries>>, TError = ErrorType<unknown>>(
+export function useGetDeliveries<TData = Awaited<ReturnType<typeof getDeliveries>>, TError = ErrorType<ApiResponseDeliveryListResponse>>(
  params?: GetDeliveriesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveries>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -122,7 +123,7 @@ export function useGetDeliveries<TData = Awaited<ReturnType<typeof getDeliveries
  * @summary 배송요청 목록
  */
 
-export function useGetDeliveries<TData = Awaited<ReturnType<typeof getDeliveries>>, TError = ErrorType<unknown>>(
+export function useGetDeliveries<TData = Awaited<ReturnType<typeof getDeliveries>>, TError = ErrorType<ApiResponseDeliveryListResponse>>(
  params?: GetDeliveriesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveries>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient 
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -140,10 +141,10 @@ export function useGetDeliveries<TData = Awaited<ReturnType<typeof getDeliveries
 
 
 /**
- * 배송요청을 WAITING 으로 생성하고 예상 운임(ESTIMATE) 스냅샷을 함께 남긴다. 고객은 진행 중(WAITING~DELIVERING) 요청을 1건만 가질 수 있다. 같은 requestKey 로 재전송하면 새로 만들지 않고 기존 결과를 돌려준다.
+ * 배송요청을 WAITING 으로 생성하고 예상 운임(ESTIMATE) 스냅샷을 남긴 뒤 그 요금만큼 포인트를 차감한다(REQ-ORD-002 + CUS-PAY-002). 셋은 하나의 트랜잭션이라 어느 하나가 실패하면 전부 롤백된다 — 주문만 생기거나 포인트만 빠져나가는 상태는 만들어지지 않는다. 요금은 좌표로 서버가 다시 계산하며, 요청의 estimatedFare 는 대조용이다. 화면이 안내한 금액과 서버 계산이 다르면 주문을 만들지 않고 409 로 알린다 — 사용자가 동의하지 않은 금액을 결제하지 않기 위해서다. 고객은 진행 중(WAITING~DELIVERING) 요청을 1건만 가질 수 있다. 같은 requestKey 로 재전송하면 새로 만들지 않고 기존 결과를 돌려주며 포인트도 다시 차감하지 않는다.
  * @summary 배송요청 생성
  */
-export const createDelivery = (
+export const createCustomerDelivery = (
     deliveryCreateRequest: BodyType<DeliveryCreateRequest>,
  options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
 ) => {
@@ -159,11 +160,11 @@ export const createDelivery = (
   
 
 
-export const getCreateDeliveryMutationOptions = <TError = ErrorType<ApiResponseDeliveryCreateResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDelivery>>, TError,{data: BodyType<DeliveryCreateRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
-): UseMutationOptions<Awaited<ReturnType<typeof createDelivery>>, TError,{data: BodyType<DeliveryCreateRequest>}, TContext> => {
+export const getCreateCustomerDeliveryMutationOptions = <TError = ErrorType<ApiResponseDeliveryCreateResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCustomerDelivery>>, TError,{data: BodyType<DeliveryCreateRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCustomerDelivery>>, TError,{data: BodyType<DeliveryCreateRequest>}, TContext> => {
 
-const mutationKey = ['createDelivery'];
+const mutationKey = ['createCustomerDelivery'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
@@ -173,10 +174,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createDelivery>>, {data: BodyType<DeliveryCreateRequest>}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCustomerDelivery>>, {data: BodyType<DeliveryCreateRequest>}> = (props) => {
           const {data} = props ?? {};
 
-          return  createDelivery(data,requestOptions)
+          return  createCustomerDelivery(data,requestOptions)
         }
 
         
@@ -184,27 +185,120 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
   return  { mutationFn, ...mutationOptions }}
 
-    export type CreateDeliveryMutationResult = NonNullable<Awaited<ReturnType<typeof createDelivery>>>
-    export type CreateDeliveryMutationBody = BodyType<DeliveryCreateRequest>
-    export type CreateDeliveryMutationError = ErrorType<ApiResponseDeliveryCreateResponse>
+    export type CreateCustomerDeliveryMutationResult = NonNullable<Awaited<ReturnType<typeof createCustomerDelivery>>>
+    export type CreateCustomerDeliveryMutationBody = BodyType<DeliveryCreateRequest>
+    export type CreateCustomerDeliveryMutationError = ErrorType<ApiResponseDeliveryCreateResponse>
 
     /**
  * @summary 배송요청 생성
  */
-export const useCreateDelivery = <TError = ErrorType<ApiResponseDeliveryCreateResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDelivery>>, TError,{data: BodyType<DeliveryCreateRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
+export const useCreateCustomerDelivery = <TError = ErrorType<ApiResponseDeliveryCreateResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCustomerDelivery>>, TError,{data: BodyType<DeliveryCreateRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof createDelivery>>,
+        Awaited<ReturnType<typeof createCustomerDelivery>>,
         TError,
         {data: BodyType<DeliveryCreateRequest>},
         TContext
       > => {
 
-      const mutationOptions = getCreateDeliveryMutationOptions(options);
+      const mutationOptions = getCreateCustomerDeliveryMutationOptions(options);
 
       return useMutation(mutationOptions, queryClient);
     }
     /**
+ * 로그인한 고객의 진행 중(WAITING~DELIVERING) 배송을 요약해 조회한다. 고객당 진행 중 배송은 최대 1건이므로 결과는 0건 또는 1건이다. 진행 중 배송이 없으면 응답 data 가 null 이다(빈 결과, 오류 아님). 홈 화면 요약용이라 요금은 담지 않는다 — 상태·출발지·도착지·요청 시각만 준다. 정적 경로라 /{deliveryId} 보다 먼저 매칭된다.
+ * @summary 진행 중 배송 요약 조회
+ */
+export const getCustomerActiveDelivery = (
+    
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+      
+      
+      return customInstance<ApiResponseActiveDeliveryResponse>(
+      {url: `/api/customer/deliveries/active`, method: 'GET', signal
+    },
+      options);
+    }
+  
+
+
+
+export const getGetCustomerActiveDeliveryQueryKey = () => {
+    return [
+    `/api/customer/deliveries/active`
+    ] as const;
+    }
+
+    
+export const getGetCustomerActiveDeliveryQueryOptions = <TData = Awaited<ReturnType<typeof getCustomerActiveDelivery>>, TError = ErrorType<ApiResponseActiveDeliveryResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCustomerActiveDelivery>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCustomerActiveDeliveryQueryKey();
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCustomerActiveDelivery>>> = ({ signal }) => getCustomerActiveDelivery(requestOptions, signal);
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCustomerActiveDelivery>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetCustomerActiveDeliveryQueryResult = NonNullable<Awaited<ReturnType<typeof getCustomerActiveDelivery>>>
+export type GetCustomerActiveDeliveryQueryError = ErrorType<ApiResponseActiveDeliveryResponse>
+
+
+export function useGetCustomerActiveDelivery<TData = Awaited<ReturnType<typeof getCustomerActiveDelivery>>, TError = ErrorType<ApiResponseActiveDeliveryResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCustomerActiveDelivery>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCustomerActiveDelivery>>,
+          TError,
+          Awaited<ReturnType<typeof getCustomerActiveDelivery>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCustomerActiveDelivery<TData = Awaited<ReturnType<typeof getCustomerActiveDelivery>>, TError = ErrorType<ApiResponseActiveDeliveryResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCustomerActiveDelivery>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCustomerActiveDelivery>>,
+          TError,
+          Awaited<ReturnType<typeof getCustomerActiveDelivery>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCustomerActiveDelivery<TData = Awaited<ReturnType<typeof getCustomerActiveDelivery>>, TError = ErrorType<ApiResponseActiveDeliveryResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCustomerActiveDelivery>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 진행 중 배송 요약 조회
+ */
+
+export function useGetCustomerActiveDelivery<TData = Awaited<ReturnType<typeof getCustomerActiveDelivery>>, TError = ErrorType<ApiResponseActiveDeliveryResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCustomerActiveDelivery>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient 
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetCustomerActiveDeliveryQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+/**
  * 주문을 만들지 않고 금액만 계산한다. 산정 기준 거리는 좌표로 서버가 구한다.
  * @summary 요금 견적
  */
@@ -270,7 +364,7 @@ export const useQuoteFare = <TError = ErrorType<unknown>,
       return useMutation(mutationOptions, queryClient);
     }
     /**
- * 주문 시점 스냅샷(주소·연락처·운임)과 상태 타임라인을 조회한다.
+ * 주문 시점 스냅샷(주소·연락처·운임)과 상태 타임라인을 조회한다. 추적 스냅샷과 달리 상태를 가리지 않는다 — 배차 전(WAITING)·완료·취소 주문도 조회된다.
  * @summary 배송요청 상세
  */
 export const getDelivery = (
@@ -295,7 +389,7 @@ export const getGetDeliveryQueryKey = (deliveryId?: number,) => {
     }
 
     
-export const getGetDeliveryQueryOptions = <TData = Awaited<ReturnType<typeof getDelivery>>, TError = ErrorType<unknown>>(deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDelivery>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+export const getGetDeliveryQueryOptions = <TData = Awaited<ReturnType<typeof getDelivery>>, TError = ErrorType<ApiResponseDeliveryDetailResponse>>(deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDelivery>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -314,10 +408,10 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type GetDeliveryQueryResult = NonNullable<Awaited<ReturnType<typeof getDelivery>>>
-export type GetDeliveryQueryError = ErrorType<unknown>
+export type GetDeliveryQueryError = ErrorType<ApiResponseDeliveryDetailResponse>
 
 
-export function useGetDelivery<TData = Awaited<ReturnType<typeof getDelivery>>, TError = ErrorType<unknown>>(
+export function useGetDelivery<TData = Awaited<ReturnType<typeof getDelivery>>, TError = ErrorType<ApiResponseDeliveryDetailResponse>>(
  deliveryId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDelivery>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getDelivery>>,
@@ -327,7 +421,7 @@ export function useGetDelivery<TData = Awaited<ReturnType<typeof getDelivery>>, 
       >, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetDelivery<TData = Awaited<ReturnType<typeof getDelivery>>, TError = ErrorType<unknown>>(
+export function useGetDelivery<TData = Awaited<ReturnType<typeof getDelivery>>, TError = ErrorType<ApiResponseDeliveryDetailResponse>>(
  deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDelivery>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getDelivery>>,
@@ -337,7 +431,7 @@ export function useGetDelivery<TData = Awaited<ReturnType<typeof getDelivery>>, 
       >, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetDelivery<TData = Awaited<ReturnType<typeof getDelivery>>, TError = ErrorType<unknown>>(
+export function useGetDelivery<TData = Awaited<ReturnType<typeof getDelivery>>, TError = ErrorType<ApiResponseDeliveryDetailResponse>>(
  deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDelivery>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -345,7 +439,7 @@ export function useGetDelivery<TData = Awaited<ReturnType<typeof getDelivery>>, 
  * @summary 배송요청 상세
  */
 
-export function useGetDelivery<TData = Awaited<ReturnType<typeof getDelivery>>, TError = ErrorType<unknown>>(
+export function useGetDelivery<TData = Awaited<ReturnType<typeof getDelivery>>, TError = ErrorType<ApiResponseDeliveryDetailResponse>>(
  deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDelivery>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient 
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -363,10 +457,10 @@ export function useGetDelivery<TData = Awaited<ReturnType<typeof getDelivery>>, 
 
 
 /**
- * 배차 전(WAITING)에만 허용한다. ASSIGNED 이상은 MVP 범위 밖이라 거부된다.
+ * 배차 전(WAITING)에만 허용한다. ASSIGNED 이상·완료는 MVP 범위 밖이라 거부된다. 이미 취소된 주문에 다시 요청하면 그 결과를 그대로 돌려주고 중복 환급하지 않는다(멱등). 취소와 포인트 환급(CUS-PAY-003)은 하나의 트랜잭션으로 처리된다.
  * @summary 배송요청 취소
  */
-export const cancelDelivery = (
+export const cancelCustomerDelivery = (
     deliveryId: number,
     deliveryCancelRequest: BodyType<DeliveryCancelRequest>,
  options?: SecondParameter<typeof customInstance>,) => {
@@ -382,11 +476,11 @@ export const cancelDelivery = (
   
 
 
-export const getCancelDeliveryMutationOptions = <TError = ErrorType<ApiResponseDeliveryCancelResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelDelivery>>, TError,{deliveryId: number;data: BodyType<DeliveryCancelRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
-): UseMutationOptions<Awaited<ReturnType<typeof cancelDelivery>>, TError,{deliveryId: number;data: BodyType<DeliveryCancelRequest>}, TContext> => {
+export const getCancelCustomerDeliveryMutationOptions = <TError = ErrorType<ApiResponseDeliveryCancelResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelCustomerDelivery>>, TError,{deliveryId: number;data: BodyType<DeliveryCancelRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelCustomerDelivery>>, TError,{deliveryId: number;data: BodyType<DeliveryCancelRequest>}, TContext> => {
 
-const mutationKey = ['cancelDelivery'];
+const mutationKey = ['cancelCustomerDelivery'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
@@ -396,10 +490,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelDelivery>>, {deliveryId: number;data: BodyType<DeliveryCancelRequest>}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelCustomerDelivery>>, {deliveryId: number;data: BodyType<DeliveryCancelRequest>}> = (props) => {
           const {deliveryId,data} = props ?? {};
 
-          return  cancelDelivery(deliveryId,data,requestOptions)
+          return  cancelCustomerDelivery(deliveryId,data,requestOptions)
         }
 
         
@@ -407,28 +501,28 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
   return  { mutationFn, ...mutationOptions }}
 
-    export type CancelDeliveryMutationResult = NonNullable<Awaited<ReturnType<typeof cancelDelivery>>>
-    export type CancelDeliveryMutationBody = BodyType<DeliveryCancelRequest>
-    export type CancelDeliveryMutationError = ErrorType<ApiResponseDeliveryCancelResponse>
+    export type CancelCustomerDeliveryMutationResult = NonNullable<Awaited<ReturnType<typeof cancelCustomerDelivery>>>
+    export type CancelCustomerDeliveryMutationBody = BodyType<DeliveryCancelRequest>
+    export type CancelCustomerDeliveryMutationError = ErrorType<ApiResponseDeliveryCancelResponse>
 
     /**
  * @summary 배송요청 취소
  */
-export const useCancelDelivery = <TError = ErrorType<ApiResponseDeliveryCancelResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelDelivery>>, TError,{deliveryId: number;data: BodyType<DeliveryCancelRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
+export const useCancelCustomerDelivery = <TError = ErrorType<ApiResponseDeliveryCancelResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelCustomerDelivery>>, TError,{deliveryId: number;data: BodyType<DeliveryCancelRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof cancelDelivery>>,
+        Awaited<ReturnType<typeof cancelCustomerDelivery>>,
         TError,
         {deliveryId: number;data: BodyType<DeliveryCancelRequest>},
         TContext
       > => {
 
-      const mutationOptions = getCancelDeliveryMutationOptions(options);
+      const mutationOptions = getCancelCustomerDeliveryMutationOptions(options);
 
       return useMutation(mutationOptions, queryClient);
     }
     /**
- * 추적 화면 진입 시 한 번 그릴 상태·타임라인·라이더 정보를 조회한다. 이후 위치·상태 갱신은 location 도메인의 SSE 스트림이 밀어 준다(폴링하지 않는다(변동가능)).
+ * 추적 화면 진입 시 한 번 그릴 상태·타임라인·라이더 정보를 조회한다. 이후 위치·상태 갱신은 location 도메인의 SSE 스트림이 밀어 준다(폴링하지 않는다(변동가능)). 실패 판정은 스트림과 동일하다: 404(없거나 타인 주문), 409(WAITING·COMPLETED·CANCELED).
  * @summary 배송 추적 스냅샷
  */
 export const getDeliveryTracking = (
@@ -453,7 +547,7 @@ export const getGetDeliveryTrackingQueryKey = (deliveryId?: number,) => {
     }
 
     
-export const getGetDeliveryTrackingQueryOptions = <TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<unknown>>(deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryTracking>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+export const getGetDeliveryTrackingQueryOptions = <TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<ApiResponseDeliveryTrackingResponse>>(deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryTracking>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -472,10 +566,10 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type GetDeliveryTrackingQueryResult = NonNullable<Awaited<ReturnType<typeof getDeliveryTracking>>>
-export type GetDeliveryTrackingQueryError = ErrorType<unknown>
+export type GetDeliveryTrackingQueryError = ErrorType<ApiResponseDeliveryTrackingResponse>
 
 
-export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<unknown>>(
+export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<ApiResponseDeliveryTrackingResponse>>(
  deliveryId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryTracking>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getDeliveryTracking>>,
@@ -485,7 +579,7 @@ export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeli
       >, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<unknown>>(
+export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<ApiResponseDeliveryTrackingResponse>>(
  deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryTracking>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getDeliveryTracking>>,
@@ -495,7 +589,7 @@ export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeli
       >, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<unknown>>(
+export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<ApiResponseDeliveryTrackingResponse>>(
  deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryTracking>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -503,7 +597,7 @@ export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeli
  * @summary 배송 추적 스냅샷
  */
 
-export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<unknown>>(
+export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<ApiResponseDeliveryTrackingResponse>>(
  deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryTracking>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient 
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {

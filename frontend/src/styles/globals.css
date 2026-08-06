@@ -153,18 +153,46 @@ body {
 }
 
 .customer-home__hero {
+    position: relative;
     width: 100%;
     max-width: 280px;
     height: 192px;
     margin-bottom: 32px;
     border-radius: var(--radius-large);
-    background-color: var(--color-surface-container-highest);
+    background-color: var(--color-primary);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--color-on-surface-variant);
-    font-size: 14px;
     overflow: hidden;
+    box-shadow: var(--shadow-sm);
+}
+
+/* 중앙 흰 원 + 택배 박스 아이콘 */
+.customer-home__hero-icon {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 112px;
+    height: 112px;
+    border-radius: var(--radius-full);
+    background-color: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
+    box-shadow: var(--shadow-md);
+}
+
+.customer-home__hero-badge {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    padding: 4px 12px;
+    border-radius: var(--radius-full);
+    background-color: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    box-shadow: var(--shadow-sm);
 }
 
 .customer-home__actions {
@@ -172,6 +200,128 @@ body {
     display: flex;
     flex-direction: column;
     gap: 12px;
+}
+
+.customer-home__hint {
+    margin: 0;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--color-on-surface-variant);
+}
+
+.customer-home__hint--error {
+    color: var(--color-error);
+}
+
+/* 진행 중 배송 요약 카드(#208). 누르면 추적 화면으로 이동한다. */
+.customer-home__summary {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    padding: 20px;
+    text-align: left;
+    border: 1px solid var(--color-surface-container);
+    border-radius: var(--radius-large);
+    background-color: var(--color-surface-container-lowest);
+    color: var(--color-on-surface);
+    text-decoration: none;
+    cursor: pointer;
+    transition: background-color .15s;
+}
+
+.customer-home__summary:hover {
+    background-color: var(--color-surface-container);
+}
+
+.customer-home__summary-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.customer-home__summary-time {
+    flex-shrink: 0;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--color-on-surface-variant);
+    text-align: right;
+    white-space: nowrap;
+}
+
+.customer-home__summary-status {
+    align-self: flex-start;
+    padding: 4px 12px;
+    border-radius: var(--radius-full);
+    background-color: var(--color-primary);
+    color: var(--color-on-primary);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 18px;
+}
+
+.customer-home__summary-route {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 15px;
+    line-height: 22px;
+    font-weight: 600;
+}
+
+.customer-home__summary-point {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.customer-home__summary-label {
+    flex-shrink: 0;
+    width: 30px;
+    padding-top: 1px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--color-on-surface-variant);
+}
+
+.customer-home__summary-addr {
+    flex: 1;
+    min-width: 0;
+    /* 주소를 자르지 않고 전부 보여 준다 — 길면 줄바꿈한다. */
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: keep-all;
+}
+
+/* 물품 종류는 주소(출발/도착)와 헷갈리지 않게 아이콘 달린 칩으로 구분한다. */
+.customer-home__summary-item {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 2px;
+    padding: 5px 11px;
+    border-radius: var(--radius-full);
+    background-color: var(--color-surface-container-high);
+    color: var(--color-on-surface-variant);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 16px;
+}
+
+.customer-home__summary-item svg {
+    color: var(--color-on-surface-variant);
+}
+
+.customer-home__summary-cta {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 2px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-primary);
 }
 
 .btn {

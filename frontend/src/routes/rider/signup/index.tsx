@@ -135,7 +135,8 @@ function RiderSignup() {
   const signupMutation = useRiderSignup({
     mutation: {
       onSuccess: () => {
-        void router.navigate({ to: '/rider/login' })
+        // 완료된 회원가입 폼으로 되돌아가지 않도록 로그인 화면으로 교체한다.
+        void router.navigate({ to: '/rider/login', replace: true })
       },
       onError: (error) => {
         const result = classifyRiderSignupError(error)
