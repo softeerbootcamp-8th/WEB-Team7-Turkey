@@ -163,12 +163,12 @@ function RiderRequestDetail() {
 
           <div className="relative mb-5 ml-1 space-y-7 border-l-2 border-dashed border-outline-variant pl-7">
             <div className="relative">
-              <span className="absolute -left-[34px] top-1 h-3 w-3 rounded-full border-2 border-white bg-tertiary shadow-sm" aria-hidden="true" />
+              <span className="absolute -left-[35px] top-1 h-3 w-3 rounded-full border-2 border-white bg-tertiary shadow-sm" aria-hidden="true" />
               <p className="text-label-sm font-bold text-tertiary">픽업</p>
               <p className="mt-1 break-words text-title-md font-bold">{pickupAddress}</p>
             </div>
             <div className="relative">
-              <span className="absolute -left-[34px] top-1 h-3 w-3 rounded-full border-2 border-white bg-primary shadow-sm" aria-hidden="true" />
+              <span className="absolute -left-[35px] top-1 h-3 w-3 rounded-full border-2 border-white bg-primary shadow-sm" aria-hidden="true" />
               <p className="text-label-sm font-bold text-primary">도착</p>
               <p className="mt-1 break-words text-title-md font-bold">{destinationAddress}</p>
             </div>
