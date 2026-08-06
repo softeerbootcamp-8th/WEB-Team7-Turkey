@@ -110,7 +110,7 @@ function RiderDelivery() {
         <section aria-label="배송 장소" className="overflow-hidden rounded-xl border border-surface-container bg-surface-container-lowest">
           <DeliveryAddressRow
             label="픽업"
-            icon="storefront"
+            color="#3b82f6"
             address={delivery.pickup}
             contactName={delivery.sender?.name}
             phoneNumber={delivery.sender?.phoneNumber}
@@ -119,7 +119,7 @@ function RiderDelivery() {
           <div className="mx-md border-t border-dashed border-surface-container" />
           <DeliveryAddressRow
             label="도착"
-            icon="home"
+            color="#ef4444"
             address={delivery.destination}
             contactName={delivery.recipient?.name}
             phoneNumber={delivery.recipient?.phoneNumber}
@@ -190,14 +190,14 @@ function RiderDelivery() {
 
 function DeliveryAddressRow({
   label,
-  icon,
+  color,
   address,
   contactName,
   phoneNumber,
   active,
 }: {
   label: string
-  icon: string
+  color: string
   address?: AddressResponse
   contactName?: string
   phoneNumber?: string
@@ -205,7 +205,13 @@ function DeliveryAddressRow({
 }) {
   return (
     <div className="flex gap-3 p-md">
-      <span className={`material-symbols-outlined mt-0.5 ${active ? 'text-primary' : 'text-secondary'}`} aria-hidden="true">{icon}</span>
+      <span
+        className="material-symbols-outlined mt-0.5"
+        style={{ color, fontVariationSettings: "'FILL' 1" }}
+        aria-hidden="true"
+      >
+        location_on
+      </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="font-label-sm text-label-sm text-secondary">{label}</span>
