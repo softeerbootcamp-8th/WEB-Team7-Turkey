@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 
 import com.turkey.quick.order.domain.Address;
 import com.turkey.quick.order.domain.DeliveryOrder;
+import com.turkey.quick.order.domain.ItemType;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.ActiveDeliveryResponse;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
@@ -47,6 +48,7 @@ class ActiveDeliveryQueryServiceTest {
         DeliveryOrder order = mock(DeliveryOrder.class);
         given(order.getId()).willReturn(1024L);
         given(order.getStatus()).willReturn(OrderStatus.ASSIGNED);
+        given(order.getItemType()).willReturn(ItemType.DOCUMENT);
         given(order.getPickup()).willReturn(pickup);
         given(order.getDestination()).willReturn(destination);
         given(order.getRequestedAt()).willReturn(requestedAt);
@@ -57,6 +59,7 @@ class ActiveDeliveryQueryServiceTest {
         assertThat(response).isNotNull();
         assertThat(response.deliveryId()).isEqualTo(1024L);
         assertThat(response.status()).isEqualTo(OrderStatus.ASSIGNED);
+        assertThat(response.itemType()).isEqualTo(ItemType.DOCUMENT);
         assertThat(response.pickupRoadAddress()).isEqualTo("서울 강남구 테헤란로 152");
         assertThat(response.destinationRoadAddress()).isEqualTo("서울 송파구 올림픽로 300");
         assertThat(response.requestedAt()).isEqualTo(requestedAt);

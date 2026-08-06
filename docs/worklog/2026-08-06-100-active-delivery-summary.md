@@ -22,8 +22,9 @@
 |---|---|---|---|
 | GET | `/api/customer/deliveries/active` | 진행 중(WAITING~DELIVERING) 배송 요약 조회 | 401(미로그인). 없으면 200 + data=null |
 
-응답 DTO `ActiveDeliveryResponse`: deliveryId, status, pickupRoadAddress, destinationRoadAddress,
-requestedAt. 진행 중 배송이 없으면 `ApiResponse.ok(null)`(data=null, success=true).
+응답 DTO `ActiveDeliveryResponse`: deliveryId, status, itemType, pickupRoadAddress,
+destinationRoadAddress, requestedAt. 진행 중 배송이 없으면 `ApiResponse.ok(null)`(data=null, success=true).
+(`itemType` 은 최초 구현 이후 추가했다 — 아래 「후속 변경」.)
 
 ### 화면
 
@@ -96,6 +97,18 @@ requestedAt. 진행 중 배송이 없으면 `ApiResponse.ok(null)`(data=null, su
 ### 검증하지 못한 것
 
 - 실제 브라우저 화면 확인은 #208(프론트) 몫이라 이 PR 에서는 하지 않았다.
+
+## 후속 변경
+
+### itemType 추가 (2026-08-06)
+
+- **무엇을**: `ActiveDeliveryResponse` 에 `itemType`(물품 종류) 필드를 더했다. `DeliveryOrder`
+  에 이미 있는 값이라 서비스·조회 변경 없이 DTO `from` 에서 `order.getItemType()` 만 매핑한다.
+- **왜**: 홈 요약 카드에 물품 종류를 표시하려는 요구(사람 확인, 2026-08-06). 접수 시각(`requestedAt`)도
+  함께 표시하려 했으나 그건 이미 응답에 있어 백엔드 변경이 없어 이 PR 범위 밖(프론트에서만 추가).
+- **호환성**: 필드 추가만 했다(제거·의미 변경 없음). 프론트는 재생성 시 옵셔널 필드로 들어와 기존
+  소비 코드가 깨지지 않는다.
+- **테스트**: 단위·E2E 에 `itemType` 단언을 추가(각각 DOCUMENT).
 
 ## 새로 생긴 미결 사항
 

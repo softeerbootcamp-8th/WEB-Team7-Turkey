@@ -1,6 +1,7 @@
 package com.turkey.quick.order.dto;
 
 import com.turkey.quick.order.domain.DeliveryOrder;
+import com.turkey.quick.order.domain.ItemType;
 import com.turkey.quick.order.domain.OrderStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDateTime;
@@ -23,6 +24,9 @@ public record ActiveDeliveryResponse(
         @Schema(description = "배송 상태(WAITING~DELIVERING)")
         OrderStatus status,
 
+        @Schema(description = "물품 종류")
+        ItemType itemType,
+
         @Schema(description = "픽업지 도로명 주소", example = "서울 강남구 테헤란로 152")
         String pickupRoadAddress,
 
@@ -36,6 +40,7 @@ public record ActiveDeliveryResponse(
         return new ActiveDeliveryResponse(
                 order.getId(),
                 order.getStatus(),
+                order.getItemType(),
                 order.getPickup().getRoadAddress(),
                 order.getDestination().getRoadAddress(),
                 order.getRequestedAt());

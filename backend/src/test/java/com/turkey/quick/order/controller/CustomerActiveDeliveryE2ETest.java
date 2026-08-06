@@ -201,6 +201,7 @@ class CustomerActiveDeliveryE2ETest extends IntegrationTestSupport {
         assertThat(response.getBody().data())
                 .asInstanceOf(InstanceOfAssertFactories.MAP)
                 .containsEntry("status", "WAITING")
+                .containsEntry("itemType", "DOCUMENT")
                 .containsEntry("pickupRoadAddress", PICKUP.get("roadAddress"))
                 .containsEntry("destinationRoadAddress", DESTINATION.get("roadAddress"))
                 .hasEntrySatisfying("deliveryId", id -> assertThat(id).isNotNull());
