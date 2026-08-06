@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import {
@@ -32,6 +33,76 @@ function RiderRequestDetail() {
   const [acceptError, setAcceptError] = useState<string | null>(null)
   const [competitionLost, setCompetitionLost] = useState(false)
   const [checkingResult, setCheckingResult] = useState(false)
+
+  // 손잡이를 드래그해 정보 시트를 내리고 지도를 넓게 볼 수 있게 한다. 놓으면 접힘/펼침 중
+  // 가까운 쪽으로 스냅한다. 지도는 펼침 크기로 고정 렌더하고, 이 값(px)은 "보이는 지도 높이"
+  // = 시트의 top 위치다 — 시트가 그 아래를 덮으므로 값이 커질수록 지도가 더 드러난다.
+  const [viewportHeight, setViewportHeight] = useState(() =>
+    typeof window === 'undefined' ? 800 : window.innerHeight,
+  )
+  const [mapExpanded, setMapExpanded] = useState(false)
+  const [dragHeight, setDragHeight] = useState<number | null>(null)
+  const dragStartRef = useRef<{ startY: number; startHeight: number } | null>(null)
+  const didDragRef = useRef(false)
+
+  useEffect(() => {
+    const onResize = () => setViewportHeight(window.innerHeight)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  const collapsedMapHeight = Math.round(viewportHeight * 0.38)
+  const expandedMapHeight = Math.round(viewportHeight * 0.72)
+  const clampMapHeight = (value: number) =>
+    Math.min(Math.max(value, collapsedMapHeight), expandedMapHeight)
+  const mapHeight = dragHeight ?? (mapExpanded ? expandedMapHeight : collapsedMapHeight)
+
+  function onHandlePointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
+    event.currentTarget.setPointerCapture(event.pointerId)
+    dragStartRef.current = { startY: event.clientY, startHeight: mapHeight }
+    didDragRef.current = false
+    setDragHeight(mapHeight)
+  }
+
+  function onHandlePointerMove(event: ReactPointerEvent<HTMLButtonElement>) {
+    const start = dragStartRef.current
+    if (!start) {
+      return
+    }
+    const delta = event.clientY - start.startY
+    if (Math.abs(delta) > 5) {
+      didDragRef.current = true
+    }
+    setDragHeight(clampMapHeight(start.startHeight + delta))
+  }
+
+  function onHandlePointerEnd(event: ReactPointerEvent<HTMLButtonElement>) {
+    const start = dragStartRef.current
+    if (!start) {
+      return
+    }
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    } catch {
+      // 이미 캡처가 해제된 경우는 무시한다.
+    }
+    if (didDragRef.current) {
+      const finalHeight = clampMapHeight(start.startHeight + (event.clientY - start.startY))
+      setMapExpanded(finalHeight >= (collapsedMapHeight + expandedMapHeight) / 2)
+    } else {
+      // 드래그 없이 탭하면 토글.
+      setMapExpanded((prev) => !prev)
+    }
+    setDragHeight(null)
+    dragStartRef.current = null
+  }
+
+  function onHandleKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      setMapExpanded((prev) => !prev)
+    }
+  }
 
   const deliveryId = Number(deliveryIdParam)
   const isValidDeliveryId = Number.isSafeInteger(deliveryId) && deliveryId > 0
@@ -134,9 +205,19 @@ function RiderRequestDetail() {
   const fare = request.estimatedFare
 
   return (
-    <main aria-label="배송요청 상세" className="mx-auto flex min-h-screen w-full max-w-[604px] flex-col bg-surface font-sans text-on-surface shadow-sm">
-      <section aria-label="픽업 및 도착 위치" className="relative h-[38vh] min-h-[260px] max-h-[380px] bg-surface-container-high">
-        <RequestRouteMap pickup={request.pickup} destination={request.destination} />
+    <main aria-label="배송요청 상세" className="relative mx-auto h-[100dvh] w-full max-w-[604px] overflow-hidden bg-surface font-sans text-on-surface shadow-sm">
+      {/* 지도는 펼침 크기로 고정 렌더하고, 정보 시트가 그 위를 덮는다. 시트를 내리면 이미
+          그려진 지도가 드러날 뿐이라 축척은 그대로고 리사이즈·relayout 이 없다. */}
+      <section
+        aria-label="픽업 및 도착 위치"
+        className="relative bg-surface-container-high"
+        style={{ height: expandedMapHeight }}
+      >
+        <RequestRouteMap
+          pickup={request.pickup}
+          destination={request.destination}
+          bottomInsetPx={expandedMapHeight - collapsedMapHeight}
+        />
         <button
           type="button"
           aria-label="콜 목록으로 돌아가기"
@@ -147,12 +228,24 @@ function RiderRequestDetail() {
         </button>
       </section>
 
-      <section className="relative z-10 -mt-5 flex flex-1 flex-col rounded-t-3xl bg-surface-container-lowest shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
-        <div className="flex justify-center pb-3 pt-3" aria-hidden="true">
-          <span className="h-1.5 w-12 rounded-full bg-outline-variant" />
-        </div>
+      <section
+        className={`absolute inset-x-0 bottom-0 z-10 -mt-5 flex min-h-0 flex-col rounded-t-3xl bg-surface-container-lowest shadow-[0_-4px_12px_rgba(0,0,0,0.06)] ${dragHeight === null ? 'transition-[top] duration-200 ease-out' : ''}`}
+        style={{ top: mapHeight }}
+      >
+        <button
+          type="button"
+          aria-label={mapExpanded ? '정보 시트 다시 펼치기' : '정보 시트 내리고 지도 넓게 보기'}
+          onPointerDown={onHandlePointerDown}
+          onPointerMove={onHandlePointerMove}
+          onPointerUp={onHandlePointerEnd}
+          onPointerCancel={onHandlePointerEnd}
+          onKeyDown={onHandleKeyDown}
+          className="flex w-full shrink-0 cursor-grab touch-none justify-center pb-3 pt-3 active:cursor-grabbing"
+        >
+          <span className="h-1.5 w-12 rounded-full bg-outline-variant" aria-hidden="true" />
+        </button>
 
-        <div className="flex-1 px-5 pb-6">
+        <div className="flex-1 overflow-y-auto px-5 pb-6">
           <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <span className="rounded-md bg-tertiary-container px-2 py-1 text-label-sm font-bold text-on-tertiary-container">배차 콜</span>
