@@ -17,17 +17,26 @@ public class MainActivity extends BridgeActivity {
             @Override
             public void handleOnBackPressed() {
                 WebView webView = getBridge().getWebView();
-                if (!isAppRoot(webView.getUrl()) && webView.canGoBack()) {
-                    webView.goBack();
-                    return;
-                }
-
-                // 웹 히스토리의 시작점에서는 Android의 기본 동작대로 앱을 닫는다.
-                setEnabled(false);
-                getOnBackPressedDispatcher().onBackPressed();
-                setEnabled(true);
+                webView.evaluateJavascript(
+                        "Boolean(window.__turkeyCloseOverlay?.())",
+                        result -> {
+                            if ("true".equals(result)) {
+                                return;
+                            }
+                            handleWebBack(webView);
+                        });
             }
         });
+    }
+
+    private void handleWebBack(WebView webView) {
+        if (!isAppRoot(webView.getUrl()) && webView.canGoBack()) {
+            webView.goBack();
+            return;
+        }
+
+        // 웹 히스토리의 시작점에서는 Android의 기본 동작대로 앱을 닫는다.
+        finish();
     }
 
     /** 인증 전 기록이 남아 있어도 앱의 최상위 화면에서는 뒤로가기로 종료한다. */
