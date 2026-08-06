@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { useCustomerLogout } from '@/api/generated/customer-logout/customer-logout'
 import { useRiderLogout } from '@/api/generated/rider-logout/rider-logout'
 import { clearStoredSessionRole } from '@/shared/auth/sessionRole'
@@ -144,6 +144,17 @@ function AccountSettings() {
         )}
 
         <section aria-label="계정 관리" className="flex flex-col">
+          {/* 배송 내역은 고객 전용 화면(customer/_authed)이라 고객일 때만 노출한다.
+              라이더가 눌러도 customer 가드가 막지만, 애초에 보이지 않는 게 맞다. */}
+          {!isRider && (
+            <Link
+              to="/customer/deliveries"
+              className="flex min-h-14 items-center justify-between rounded-2xl px-5 text-left text-title-md font-semibold text-on-surface transition-colors hover:bg-surface-container-low"
+            >
+              <span>배송 내역</span>
+              <span className="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+            </Link>
+          )}
           <button
             type="button"
             onClick={() => setConfirming(true)}
