@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ChevronRight, Settings, Truck } from 'lucide-react'
+import { ChevronRight, Package, Settings, Truck } from 'lucide-react'
 import { useGetCustomerActiveDelivery } from '@/api/generated/customer-delivery/customer-delivery'
 import type { ActiveDeliveryResponseItemType } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
 import { getCustomerDeliveryStatusLabel } from '@/shared/delivery/status'
@@ -82,8 +82,13 @@ function CustomerHome() {
                 className="customer-home__summary"
                 aria-label="진행 중 배송 추적 화면으로 이동"
               >
-                <span className="customer-home__summary-status">
-                  {getCustomerDeliveryStatusLabel(active!.status)}
+                <span className="customer-home__summary-header">
+                  <span className="customer-home__summary-status">
+                    {getCustomerDeliveryStatusLabel(active!.status)}
+                  </span>
+                  <span className="customer-home__summary-time">
+                    접수 {formatDeliveryRequestedAt(active!.requestedAt)}
+                  </span>
                 </span>
                 <span className="customer-home__summary-route">
                   <span className="customer-home__summary-point">
@@ -95,12 +100,12 @@ function CustomerHome() {
                     <span className="customer-home__summary-addr">{active!.destinationRoadAddress ?? '도착지 미확인'}</span>
                   </span>
                 </span>
-                <span className="customer-home__summary-meta">
-                  {getItemTypeLabel(active!.itemType) && (
-                    <span>{getItemTypeLabel(active!.itemType)}</span>
-                  )}
-                  <span>접수 {formatDeliveryRequestedAt(active!.requestedAt)}</span>
-                </span>
+                {getItemTypeLabel(active!.itemType) && (
+                  <span className="customer-home__summary-item">
+                    <Package size={14} aria-hidden="true" />
+                    {getItemTypeLabel(active!.itemType)}
+                  </span>
+                )}
                 <span className="customer-home__summary-cta">
                   실시간 배송 상태 보기
                   <ChevronRight size={18} />
