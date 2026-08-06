@@ -4,6 +4,7 @@ import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.TrackableDelivery;
 import jakarta.persistence.LockModeType;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -79,11 +80,27 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
     Page<DeliveryOrder> findByCustomer_IdAndStatus(Long customerId, OrderStatus status, Pageable pageable);
 
     /**
+     * 라이더 본인의 운행 기록 목록(#70). 자신에게 배정되어 완료된 배송만 최신순으로 페이지 조회한다.
+     * {@code assignedRider.memberId} 는 {@code existsByAssignedRider_MemberIdAndStatusIn} 과 같은
+     * 파생 경로다(FK {@code assigned_rider_id} = RiderProfile PK). 정렬 기준은 호출자가 {@link Pageable}
+     * 로 넘긴다(고객 목록과 대칭). 배차 이후 취소는 MVP 범위 밖이라 라이더 기록에는 COMPLETED 만 남는다.
+     */
+    Page<DeliveryOrder> findByAssignedRider_MemberIdAndStatus(Long riderId, OrderStatus status, Pageable pageable);
+
+    /**
      * 배송요청 상세 조회(#46)용. {@link #findTrackableByIdAndCustomerId} 와 같은 이유로 고객 조건을
      * 쿼리에 둔다(없음/타인 것을 같은 404 로 응답). 상세는 상태를 가리지 않고(취소·완료 포함) 전체
      * 필드가 필요해 투영이 아니라 엔터티를 그대로 반환한다.
      */
     Optional<DeliveryOrder> findByIdAndCustomer_Id(Long id, Long customerId);
+
+    /**
+     * 라이더 본인의 운행 기록 상세 조회(#71)용. 목록({@link #findByAssignedRider_MemberIdAndStatus})과
+     * 대칭으로 배정 조건을 쿼리에 두고(없음/타인 것을 같은 404 로 응답), 상태까지 조건에 넣어
+     * COMPLETED 만 통과시킨다. 운행 기록은 완료 배송의 기록이므로, 진행 중 주문 id 를 넣어도 404 다 —
+     * 이 조건이 곧 확정 운임(FINAL 스냅샷)·정산 내역이 반드시 존재한다는 불변식을 보장한다.
+     */
+    Optional<DeliveryOrder> findByIdAndAssignedRider_MemberIdAndStatus(Long id, Long riderId, OrderStatus status);
 
     /**
      * 라이더가 지금 수행 중인 배송을 상태까지 함께 조회한다. 화면 진입 시 한 번 부르는 경로용이다
@@ -156,6 +173,33 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
     Optional<Long> findInProgressIdByActiveRiderId(@Param("riderId") Long riderId);
 
     List<DeliveryOrder> findByStatus(OrderStatus status);
+
+    /**
+     * 라이더 콜 목록 위치 검색(#367)의 bounding box 쿼리. status·픽업 위경도가 사각형 범위 안에
+     * 있는 WAITING 주문만 가져온다 — {@code idx_delivery_waiting_location(status,
+     * pickup_latitude, pickup_longitude)}를 강제로 탄다(V10에 있었지만 쓰는 쿼리가 없었다).
+     *
+     * <p><b>파생 메서드가 아니라 {@code FORCE INDEX} 네이티브 쿼리인 이유</b>(PR #378 리뷰,
+     * discussion #380 실측): WAITING이 테이블 전체의 100%에 가깝고 절대 건수가 일정 임계치
+     * (실측 약 2만 건)를 넘으면, 옵티마이저가 이 인덱스 대신 {@code idx_delivery_status_requested}
+     * 로 갈아타면서 응답 시간이 77배까지 뛰는 현상이 실측으로 확인됐다(비커버링 인덱스라 걸러진
+     * 행마다 원본을 다시 읽어야 해서다). COMPLETED·CANCELED가 영구히 누적되는 이 테이블 특성상
+     * WAITING이 100%에 가까워질 일은 실제로는 거의 없지만, 강제 지정 자체가 정상 범위에서
+     * 성능 손해가 없음이 같이 확인돼(#380 4-2장) 예방 차원에서 항상 강제한다. JPQL은 DB 종속
+     * 힌트를 표현할 방법이 없어 네이티브 SQL이 필요하다.
+     *
+     * <p>사각형은 실제 반경(원)보다 넓다(4/π ≈ 1.27배) — 모서리에 걸리는 후보는 이 쿼리로
+     * 걸러지지 않는다. 호출자({@code RiderDeliveryRequestService})가 하버사인 거리로 다시
+     * 걸러 원 밖을 제외한다.
+     */
+    @Query(value = "SELECT * FROM delivery_order FORCE INDEX (idx_delivery_waiting_location) "
+            + "WHERE status = 'WAITING' "
+            + "AND pickup_latitude BETWEEN :latMin AND :latMax "
+            + "AND pickup_longitude BETWEEN :lngMin AND :lngMax",
+            nativeQuery = true)
+    List<DeliveryOrder> findWaitingOrdersWithinBoundingBox(
+            @Param("latMin") BigDecimal latMin, @Param("latMax") BigDecimal latMax,
+            @Param("lngMin") BigDecimal lngMin, @Param("lngMax") BigDecimal lngMax);
 
     /**
      * 배차 대기 시간 초과 자동 취소(#42)의 능동 스캐너용 조회. WAITING 이면서 {@code requestedAt}

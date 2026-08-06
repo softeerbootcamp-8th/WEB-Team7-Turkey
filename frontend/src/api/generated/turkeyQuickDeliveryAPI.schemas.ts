@@ -185,6 +185,12 @@ export interface ApiResponseRiderDeliveryCompleteResponse {
   success?: boolean;
 }
 
+export interface ApiResponseRiderDeliveryHistoryListResponse {
+  data?: RiderDeliveryHistoryListResponse;
+  message?: string;
+  success?: boolean;
+}
+
 export interface ApiResponseRiderDeliveryRequestAcceptResponse {
   data?: RiderDeliveryRequestAcceptResponse;
   message?: string;
@@ -545,7 +551,7 @@ export interface DeliveryDetailResponse {
   pickup?: AddressResponse;
   /** 배송 완료 인증 방식. 완료 전이면 null. */
   proofType?: DeliveryDetailResponseProofType;
-  /** 배송 완료 인증 참조값(사진 URL/키, 인증코드 등). 완료 전이면 null. */
+  /** 배송 완료 인증 참조값. proofType=PHOTO 면 저장소에서 해석한 실제 경로(로컬은 절대경로, S3는 객체 URL), 그 외 타입이면 등록값을 그대로 담는다. 완료 전이면 null. */
   proofValue?: string;
   recipient?: ContactResponse;
   /** 요청 시각(UTC) */
@@ -1106,6 +1112,72 @@ export interface RiderDeliveryCompleteResponse {
 }
 
 /**
+ * 물품 종류
+ */
+export type RiderDeliveryHistoryItemResponseItemType = typeof RiderDeliveryHistoryItemResponseItemType[keyof typeof RiderDeliveryHistoryItemResponseItemType];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RiderDeliveryHistoryItemResponseItemType = {
+  DOCUMENT: 'DOCUMENT',
+  SMALL_PARCEL: 'SMALL_PARCEL',
+  MEDIUM_PARCEL: 'MEDIUM_PARCEL',
+  LARGE_PARCEL: 'LARGE_PARCEL',
+  FOOD: 'FOOD',
+} as const;
+
+/**
+ * 배송 상태
+ */
+export type RiderDeliveryHistoryItemResponseStatus = typeof RiderDeliveryHistoryItemResponseStatus[keyof typeof RiderDeliveryHistoryItemResponseStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RiderDeliveryHistoryItemResponseStatus = {
+  WAITING: 'WAITING',
+  ASSIGNED: 'ASSIGNED',
+  MOVING_TO_PICKUP: 'MOVING_TO_PICKUP',
+  PICKED_UP: 'PICKED_UP',
+  DELIVERING: 'DELIVERING',
+  COMPLETED: 'COMPLETED',
+  CANCELED: 'CANCELED',
+} as const;
+
+/**
+ * 라이더 운행 기록 목록 항목
+ */
+export interface RiderDeliveryHistoryItemResponse {
+  /** 완료 시각(UTC) */
+  completedAt?: string;
+  /** 배송요청 식별자 */
+  deliveryId?: number;
+  /** 도착지 도로명 주소 */
+  destinationRoadAddress?: string;
+  /** 물품 종류 */
+  itemType?: RiderDeliveryHistoryItemResponseItemType;
+  /** 픽업지 도로명 주소 */
+  pickupRoadAddress?: string;
+  /** 배송 상태 */
+  status?: RiderDeliveryHistoryItemResponseStatus;
+  /** 픽업지-도착지 직선거리(m) */
+  straightDistanceMeters?: number;
+}
+
+/**
+ * 라이더 운행 기록 목록(페이지)
+ */
+export interface RiderDeliveryHistoryListResponse {
+  /** 목록 항목 */
+  items?: RiderDeliveryHistoryItemResponse[];
+  /** 현재 페이지(0부터) */
+  page?: number;
+  /** 페이지 크기 */
+  size?: number;
+  /** 전체 건수 */
+  totalElements?: number;
+}
+
+/**
  * 라이더 운행 상태(확정 시 BUSY)
  */
 export type RiderDeliveryRequestAcceptResponseOperatingStatus = typeof RiderDeliveryRequestAcceptResponseOperatingStatus[keyof typeof RiderDeliveryRequestAcceptResponseOperatingStatus];
@@ -1647,6 +1719,17 @@ export type CompleteRiderDeliveryBody = {
   file?: Blob;
 };
 
+export type GetDeliveryHistoriesParams = {
+/**
+ * 페이지(0부터)
+ */
+page?: number;
+/**
+ * 페이지 크기
+ */
+size?: number;
+};
+
 export type GetRiderSettlementsParams = {
 /**
  * 페이지(0부터)
@@ -1718,3 +1801,4 @@ export const GetDeliveryRequestsSort = {
   FARE: 'FARE',
   REQUESTED_AT: 'REQUESTED_AT',
 } as const;
+

@@ -346,7 +346,10 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
     `RedisCleaner`가 연결된 인스턴스의 `redis_version`을 확인해 이 상황을 테스트 실패로 만든다.
   - 남은 것: **실제 TTL 만료 동작**(키가 시간이 지나 사라지는 것)은 여전히 검증하지 않는다 — 대기 시간
     때문이다. 그리고 **CI는 아직 테스트를 돌리지 않는다**(`deploy.yml`이 `-x test`). CI에서 켜려면
-    MySQL·Redis 서비스 컨테이너가 필요하다
+    MySQL·Redis 서비스 컨테이너가 필요하다. **이 공백이 실제로 물렸다**(#70, 2026-08-04): #339의
+    rename 커밋(`1106b52`)이 `RiderGeoRepositoryTest`를 `OrderGeoRepositoryTest.java`로 파일명만 바꾸고
+    내용(클래스명·타입 참조·KEY)을 안 고쳐 **컴파일 안 되는 테스트가 dev에 병합**됐다 — CI가 테스트를
+    돌렸다면 막혔을 것이다. #70에서 최소 수정해 되살렸다
 - `GlobalExceptionHandler`에 `HttpMessageNotReadableException` 핸들러가 없고
   `ResponseEntityExceptionHandler`를 상속하지도 않음(#81 에서 발견) — 본문 JSON 파싱 실패 400이
   `ApiResponse` 형태가 아닌 스프링 기본 오류 본문으로 나갈 것으로 보임. 프론트가 의존하는 응답
@@ -422,7 +425,18 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   세 메서드에 라이더 식별 파라미터(`AuthenticatedRider`)가 빠져 있음(#55) — #56/#57 구현 시
   `getDeliveryRequests`와 같은 방식(`@RequestAttribute`)으로 추가 필요
 - 라이더 콜 목록(`GET /api/rider/requests`, #55)에 `radiusMeters` 상한이 없고 페이지네이션도
-  없음 — WAITING 주문이 크게 늘어나는 시점(다도시 동시 운영 등)에 성능 문제가 되면 계약을 다시 열어야 함
+  없음 — WAITING 주문이 크게 늘어나는 시점(다도시 동시 운영 등)에 성능 문제가 되면 계약을 다시 열어야 함.
+  **#367로 위치 검색 자체는 bounding box 인덱스(`idx_delivery_waiting_location`)를 타도록 바뀌었지만
+  ([#367 worklog](docs/worklog/2026-08-05-367-rider-call-list-location-search.md)), 상한·페이지네이션
+  미비는 그대로 남아 있다** — 좌표를 안 보내는 요청(#367에서 선택 파라미터로 확정, 사람 확인)은
+  여전히 WAITING 전체를 반환한다. #60(필터/정렬 확장)에서 페이지네이션 도입 시 이 문제를 함께 해소할지
+  판단 필요
+- **라이더 좌표를 요청 파라미터로 받는 계약 변경(#367)이 완료됨**(사람 확인, 2026-08-05) — #342가
+  없앤 `findPosition(self)`(옛 `riders:geo` 조회)의 대체 경로로, `latitude`/`longitude`를 선택 쿼리
+  파라미터로 추가했다. 둘 다 없으면 #55 원래 계약(위치 없음 → 반경 필터 스킵, 전체 반환)을 그대로
+  유지한다. 실측(EXPLAIN, 합성 데이터 21.8만 건)으로 `idx_delivery_waiting_location`이 실제로
+  선택되고 후보가 크게 줄어드는 것을 확인함(자세한 수치는 위 worklog 참고). 프론트가 GPS 좌표를
+  실제로 실어 보내는 연동은 이 백엔드 이슈 범위 밖 — 별도 프론트 이슈 필요
 - 충전 금액 정책이 잠정값(#32): `CustomerPaymentService` 의 1,000 / 1,000,000 / 1,000원 단위.
   화면 프리셋만 허용하는 화이트리스트로 좁히는 선택지도 있음
 - 충전 준비의 동시 재전송은 409 로 거부한다(#32, 실측 8건 중 2건). 순차 재전송은 기존 건을 돌려준다.
@@ -454,6 +468,12 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   여전히 `return null` 스텁이다(#69에서 `getPointTransactions`만 구현). 어느 화면·이슈가
   이 둘을 담당하는지 명시돼 있지 않다 — `getSettlements`는 아직 없는 `/api/rider/history`
   주간 요약용으로, `getWithdrawals`는 #103(출금 요청 상세)류와 겹치는 것으로 추정만 함
+- 라이더 운행 기록 상세(`GET /api/rider/history/{deliveryId}`, #71)는 목록(#70)과 달리 확정 운임+정산액을
+  함께 담는다(사람 확인, 2026-08-05) — "배송 기록=금액 없음, 정산=포인트 API" 원칙의 의도된 예외
+  (정산 확인 화면). 소유+COMPLETED 를 쿼리 조건에 넣어 없음·타인 것·미완료를 같은 404 로 응답한다.
+  프론트 `history/$deliveryId` 목업 연결(#217 계열)은 아직 미구현. 타임라인·요금 변환 공용 팩토리
+  (`DeliveryStatusStepResponse.timelineOf`, `FareBreakdownResponse.from`)를 신설했으나 기존 복제 3곳
+  통합은 범위 밖으로 남김
 - 포인트 지갑 없음의 응답 코드가 고객(400)과 라이더(500)로 갈린다(#67). 라이더는
   `BusinessException(INTERNAL_SERVER_ERROR)`로 `RiderPointApi` 문서와 맞췄지만, 고객
   (`CustomerPaymentService`)은 `IllegalStateException` → `GlobalExceptionHandler` → 400 이라

@@ -8,7 +8,6 @@ import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.domain.ProofType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -102,7 +101,7 @@ public record DeliveryDetailResponse(
                 new ContactResponse(order.getSender().getName(), order.getSender().getPhoneNumber()),
                 new ContactResponse(order.getRecipient().getName(), order.getRecipient().getPhoneNumber()),
                 fare,
-                steps(order),
+                DeliveryStatusStepResponse.timelineOf(order),
                 proof == null ? null : proof.getProofType(),
                 proofValue,
                 order.getRequestedAt(),
@@ -113,27 +112,4 @@ public record DeliveryDetailResponse(
                 rider == null ? null : rider.getPhoneNumber());
     }
 
-    /**
-     * 타임라인을 delivery_order 의 단계별 시각 컬럼에서 파생한다(order_status_history 는 아직
-     * 아무 코드도 쓰지 않는다 — DeliveryTrackingQueryService.steps 와 같은 이유).
-     * 추적 스냅샷과 달리 CANCELED 도 포함한다 — 상세는 취소된 주문도 보여줘야 하기 때문이다.
-     */
-    private static List<DeliveryStatusStepResponse> steps(DeliveryOrder order) {
-        List<DeliveryStatusStepResponse> result = new ArrayList<>();
-        addStep(result, OrderStatus.WAITING, order.getRequestedAt());
-        addStep(result, OrderStatus.ASSIGNED, order.getAssignedAt());
-        addStep(result, OrderStatus.MOVING_TO_PICKUP, order.getMovingToPickupAt());
-        addStep(result, OrderStatus.PICKED_UP, order.getPickedUpAt());
-        addStep(result, OrderStatus.DELIVERING, order.getDeliveringAt());
-        addStep(result, OrderStatus.COMPLETED, order.getCompletedAt());
-        addStep(result, OrderStatus.CANCELED, order.getCanceledAt());
-        return List.copyOf(result);
-    }
-
-    private static void addStep(List<DeliveryStatusStepResponse> steps, OrderStatus status,
-                                LocalDateTime occurredAt) {
-        if (occurredAt != null) {
-            steps.add(new DeliveryStatusStepResponse(status, occurredAt));
-        }
-    }
 }

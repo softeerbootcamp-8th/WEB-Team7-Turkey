@@ -8,5 +8,6 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(RiderLocationPlugin.class);
         super.onCreate(savedInstanceState);
+        getBridge().getWebView().setWebChromeClient(new NativeFileChooserWebChromeClient(getBridge()));
     }
 }

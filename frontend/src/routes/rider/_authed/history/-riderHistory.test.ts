@@ -1,6 +1,6 @@
 import { AxiosError, AxiosHeaders, type AxiosResponse } from 'axios'
 import { describe, expect, it } from 'vitest'
-import { formatHistoryTime, getHistoryErrorMessage, isSameHistoryDay, toRiderDeliveryHistory } from './-riderHistory'
+import { formatHistoryTime, getHistoryErrorMessage, toRiderDeliveryHistory } from './-riderHistory'
 
 function httpError(message?: string): AxiosError<{ message?: string }> {
   const response: AxiosResponse<{ message?: string }> = {
@@ -14,13 +14,17 @@ function httpError(message?: string): AxiosError<{ message?: string }> {
 }
 
 describe('배송 기록 표시값', () => {
-  it('정산 응답에서 포인트 값을 제외한 배송 기록만 만든다', () => {
+  it('운행 기록 응답에서 카드가 쓰는 필드를 옮기고 상태는 COMPLETED 로 고정한다', () => {
     expect(
       toRiderDeliveryHistory([
         {
           deliveryId: 12,
-          settledAt: '2026-08-03T05:30:00Z',
-          settlementAmount: 9000,
+          status: 'COMPLETED',
+          itemType: 'DOCUMENT',
+          pickupRoadAddress: '서울 강남구 테헤란로 152',
+          destinationRoadAddress: '서울 송파구 올림픽로 300',
+          straightDistanceMeters: 3200,
+          completedAt: '2026-08-03T05:30:00Z',
         },
       ]),
     ).toEqual([
@@ -28,12 +32,15 @@ describe('배송 기록 표시값', () => {
         deliveryId: 12,
         completedAt: '2026-08-03T05:30:00Z',
         status: 'COMPLETED',
+        itemType: 'DOCUMENT',
+        pickupRoadAddress: '서울 강남구 테헤란로 152',
+        destinationRoadAddress: '서울 송파구 올림픽로 300',
+        straightDistanceMeters: 3200,
       },
     ])
   })
 
-  it('한국 날짜를 기준으로 선택한 날짜의 기록을 구분한다', () => {
-    expect(isSameHistoryDay('2026-08-03T15:30:00Z', new Date('2026-08-04T01:00:00+09:00'))).toBe(true)
+  it('완료 시각을 한국 시간으로 표시하고 잘못된 값은 대체 문구로 바꾼다', () => {
     expect(formatHistoryTime('2026-08-03T05:30:00Z')).not.toBe('완료 시각 미제공')
     expect(formatHistoryTime('invalid')).toBe('완료 시각 미제공')
   })

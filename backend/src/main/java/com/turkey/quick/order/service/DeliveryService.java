@@ -313,10 +313,7 @@ public class DeliveryService {
                 .orElseThrow(() -> new IllegalStateException(
                         "주문에 예상 운임 스냅샷이 없습니다. deliveryId=" + order.getId()));
 
-        return toResponse(order, new FareBreakdownResponse(
-                snapshot.getPolicyVersion(), snapshot.getCalculationDistanceMeters(),
-                snapshot.getBaseFare(), snapshot.getDistanceFare(), snapshot.getItemSurcharge(),
-                snapshot.getTotalFare()));
+        return toResponse(order, FareBreakdownResponse.from(snapshot));
     }
 
     private DeliveryCreateResponse toResponse(DeliveryOrder order, FareBreakdownResponse fare) {
@@ -404,6 +401,40 @@ public class DeliveryService {
 
         return BigDecimal.valueOf(distanceKm).setScale(8, RoundingMode.HALF_UP);
     }
+
+    /**
+     * 반경(m)을 감싸는 사각형(bounding box) 좌표 범위를 계산한다(#367, 라이더 콜 목록 위치 검색).
+     * 위도 1도가 감싸는 거리는 {@link #EARTH_RADIUS}(지구 반지름, km) 기준 라디안 환산으로
+     * 구하고, 경도는 위도에 따라 보정한다(고위도일수록 경도 1도의 실제 거리가 짧아지므로
+     * {@code cos(latitude)}로 나눈다) — {@link #distance} 와 같은 구면 기하 전제를 쓴다
+     * (하드코딩된 위도별 상수를 쓰던 {@link #pureStraightDistance} 와 달리, 위도에 무관하게
+     * 정확하다).
+     *
+     * <p>사각형은 원보다 넓다(4/π ≈ 1.27배) — 이 범위로 뽑힌 후보에는 실제 반경 밖인 것이
+     * 섞여 있을 수 있다. 호출자가 {@link #distance} 로 다시 걸러야 한다(2단계 필터링).
+     */
+    public BoundingBox boundingBox(BigDecimal latitude, BigDecimal longitude, int radiusMeters) {
+        if (latitude == null || longitude == null) {
+            throw new IllegalArgumentException("좌표 값은 필수여야 합니다.");
+        }
+
+        double radiusKm = radiusMeters / 1000.0;
+        double latDeltaDeg = Math.toDegrees(radiusKm / EARTH_RADIUS);
+        double lngDeltaDeg = Math.toDegrees(
+                radiusKm / (EARTH_RADIUS * Math.cos(Math.toRadians(latitude.doubleValue()))));
+
+        BigDecimal latDelta = BigDecimal.valueOf(latDeltaDeg);
+        BigDecimal lngDelta = BigDecimal.valueOf(lngDeltaDeg);
+
+        return new BoundingBox(
+                latitude.subtract(latDelta),
+                latitude.add(latDelta),
+                longitude.subtract(lngDelta),
+                longitude.add(lngDelta));
+    }
+
+    /** {@link #boundingBox} 결과값 — bounding box 쿼리에 그대로 넘길 좌표 범위(#367). */
+    public record BoundingBox(BigDecimal latMin, BigDecimal latMax, BigDecimal lngMin, BigDecimal lngMax) {}
 
 
     @Deprecated

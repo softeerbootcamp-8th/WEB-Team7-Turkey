@@ -116,19 +116,28 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
     }
 
     private DeliveryOrder saveWaitingOrderWithFareSnapshot() {
-        FarePolicy policy = farePolicyRepository.save(
-                FarePolicy.create("v1", 3000L, 100, 130L, 30000, LocalDateTime.now().minusDays(1)));
+        return saveWaitingOrderAt(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"));
+    }
+
+    /**
+     * #367 bounding box 필터 검증용 — 픽업 좌표를 지정해 WAITING 주문을 만든다. 한 테스트에서
+     * 여러 번 호출될 수 있어(반경 안/밖 주문을 함께 만드는 테스트), {@code policy_version}은
+     * {@code uk_fare_policy_version} 유니크 제약을 피하려고 매번 새로 발급한다.
+     */
+    private DeliveryOrder saveWaitingOrderAt(BigDecimal pickupLat, BigDecimal pickupLng) {
         String uniqueSuffix = String.valueOf(System.nanoTime() % 100_000_000L);
+        FarePolicy policy = farePolicyRepository.save(
+                FarePolicy.create("v1-" + uniqueSuffix, 3000L, 100, 130L, 30000, LocalDateTime.now().minusDays(1)));
         Member customer = memberRepository.save(
                 Member.create("e2e_rider_requests_customer_" + uniqueSuffix, "hash", "고객", "010" + uniqueSuffix,
                         MemberRole.CUSTOMER));
         DeliveryOrder order = DeliveryOrder.request(customer, "req-e2e-" + System.nanoTime(), ItemType.SMALL_PARCEL, 1000,
-                Address.of("픽업지 도로명", "상세", "12345", new BigDecimal("37.5010000"), new BigDecimal("127.0010000")),
+                Address.of("픽업지 도로명", "상세", "12345", pickupLat, pickupLng),
                 Address.of("도착지 도로명", "상세", "54321", new BigDecimal("37.6000000"), new BigDecimal("127.1000000")),
                 Contact.of("보내는사람", "01011112222"), Contact.of("받는사람", "01033334444"));
         DeliveryOrder saved = deliveryOrderRepository.save(order);
         orderFareSnapshotRepository.save(
-                OrderFareSnapshot.create(saved, policy, FareType.ESTIMATE, "v1", 1000, 3000L, 130L, 0L));
+                OrderFareSnapshot.create(saved, policy, FareType.ESTIMATE, policy.getPolicyVersion(), 1000, 3000L, 130L, 0L));
         return saved;
     }
 
@@ -144,6 +153,37 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
         assertThat(response.getBody().success()).isTrue();
         List<?> data = (List<?>) response.getBody().data();
         assertThat(data).isNotEmpty();
+    }
+
+    @Test
+    void 라이더_좌표를_보내면_반경_내_주문만_반환한다() {
+        saveRider("e2e_rider_requests11", "p@ssw0rd", "01099998887", true);
+        DeliveryOrder near = saveWaitingOrderWithFareSnapshot();
+        DeliveryOrder far = saveWaitingOrderAt(new BigDecimal("37.9000000"), new BigDecimal("127.9000000"));
+        String cookie = loginAndGetSessionCookie("e2e_rider_requests11", "p@ssw0rd");
+
+        var response = rest.exchange(
+                ENDPOINT + "?latitude=37.5000000&longitude=127.0000000&radiusMeters=3000",
+                HttpMethod.GET, withCookie(cookie), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        List<Integer> deliveryIds = ((List<?>) response.getBody().data()).stream()
+                .map(o -> (Integer) ((Map<?, ?>) o).get("deliveryId"))
+                .toList();
+        assertThat(deliveryIds).contains(near.getId().intValue()).doesNotContain(far.getId().intValue());
+    }
+
+    @Test
+    void 라이더_좌표가_범위를_벗어나면_400을_반환한다() {
+        saveRider("e2e_rider_requests12", "p@ssw0rd", "01099998886", true);
+        String cookie = loginAndGetSessionCookie("e2e_rider_requests12", "p@ssw0rd");
+
+        var response = rest.exchange(
+                ENDPOINT + "?latitude=91&longitude=127.0000000",
+                HttpMethod.GET, withCookie(cookie), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().success()).isFalse();
     }
 
     @Test

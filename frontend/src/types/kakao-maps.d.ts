@@ -14,7 +14,20 @@ declare global {
       class Map {
         constructor(container: HTMLElement, options: { center: LatLng; level: number })
         setCenter(position: LatLng): void
+        setLevel(level: number): void
+        setBounds(
+          bounds: LatLngBounds,
+          paddingTop?: number,
+          paddingRight?: number,
+          paddingBottom?: number,
+          paddingLeft?: number,
+        ): void
         panTo(position: LatLng): void
+      }
+
+      class LatLngBounds {
+        constructor()
+        extend(latlng: LatLng): void
       }
 
       class Size {

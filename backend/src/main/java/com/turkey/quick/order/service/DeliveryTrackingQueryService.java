@@ -5,15 +5,10 @@ import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.FareType;
 import com.turkey.quick.order.domain.OrderFareSnapshot;
-import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.DeliveryStatusStepResponse;
 import com.turkey.quick.order.dto.DeliveryTrackingResponse;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Objects;
-import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -62,7 +57,7 @@ public class DeliveryTrackingQueryService {
         return new DeliveryTrackingResponse(
                 order.getId(),
                 order.getStatus(),
-                steps(order),
+                DeliveryStatusStepResponse.timelineOf(order),
                 rider.getName(),
                 rider.getPhoneNumber(),
                 // 산정 근거가 없어 항상 null 이다(사람 확인, 2026-07-31). 지도·경로 API 가 붙을 때 채운다.
@@ -84,31 +79,5 @@ public class DeliveryTrackingQueryService {
                 .map(OrderFareSnapshot::getTotalFare)
                 .orElseThrow(() -> new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR,
                         "배송요청에 예상 운임 정보가 없습니다. deliveryId=" + order.getId()));
-    }
-
-    /**
-     * 타임라인을 {@code delivery_order} 의 단계별 시각 컬럼에서 파생한다.
-     *
-     * <p><b>{@code order_status_history} 를 읽지 않는 이유</b>: 그 테이블은 엔터티만 있고 행을 쓰는
-     * 코드가 없어 런타임에 비어 있다(리포지토리도 없다). 작성기를 넣는 것은 상태 전이 API 이슈 몫이고,
-     * 시각 컬럼은 전이 메서드가 DDL CHECK 와 같은 조합으로 채우므로 지금 신뢰할 수 있는 유일한 출처다.
-     *
-     * <p>선언 순서가 곧 시간 순서다(전이가 한 방향으로만 일어난다). 도달하지 않은 단계는 담지 않는다.
-     */
-    static List<DeliveryStatusStepResponse> steps(DeliveryOrder order) {
-        return Stream.of(
-                        step(OrderStatus.WAITING, order.getRequestedAt()),
-                        step(OrderStatus.ASSIGNED, order.getAssignedAt()),
-                        step(OrderStatus.MOVING_TO_PICKUP, order.getMovingToPickupAt()),
-                        step(OrderStatus.PICKED_UP, order.getPickedUpAt()),
-                        step(OrderStatus.DELIVERING, order.getDeliveringAt()),
-                        step(OrderStatus.COMPLETED, order.getCompletedAt()),
-                        step(OrderStatus.CANCELED, order.getCanceledAt()))
-                .filter(Objects::nonNull)
-                .toList();
-    }
-
-    private static DeliveryStatusStepResponse step(OrderStatus status, LocalDateTime occurredAt) {
-        return occurredAt == null ? null : new DeliveryStatusStepResponse(status, occurredAt);
     }
 }
