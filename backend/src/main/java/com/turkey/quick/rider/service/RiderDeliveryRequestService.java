@@ -1,6 +1,7 @@
 package com.turkey.quick.rider.service;
 
 import com.turkey.quick.common.exception.BusinessException;
+import com.turkey.quick.location.sse.TrackingPublisher;
 import com.turkey.quick.order.domain.Address;
 import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.FareType;
@@ -54,6 +55,9 @@ public class RiderDeliveryRequestService {
 
     /** #42: 만료된 주문을 수락 시도 시점에 정리하기 위해 주입한다. */
     private final DeliveryTimeoutService deliveryTimeoutService;
+
+    /** #398: 배차 확정을 고객 추적 SSE로 실시간 전달하기 위해 주입한다. */
+    private final TrackingPublisher trackingPublisher;
 
     /**
      * AVAILABLE 라이더가 수락할 수 있는 배차 대기(WAITING) 배송요청 목록을 조회한다.
@@ -246,6 +250,8 @@ public class RiderDeliveryRequestService {
         DeliveryOrder assigned = deliveryOrderRepository.findById(deliveryId)
                 .orElseThrow(() -> new IllegalStateException(
                         "방금 배차 확정한 주문을 다시 조회할 수 없습니다. orderId=" + deliveryId));
+
+        trackingPublisher.publishStatus(deliveryId, assigned.getStatus(), assignedAt.toInstant(ZoneOffset.UTC));
 
         return new RiderDeliveryRequestAcceptResponse(
                 assigned.getId(), assigned.getStatus(), OperatingStatus.BUSY, assigned.getAssignedAt());

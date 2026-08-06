@@ -1,6 +1,7 @@
 package com.turkey.quick.rider.service;
 
 import com.turkey.quick.common.exception.BusinessException;
+import com.turkey.quick.location.sse.TrackingPublisher;
 import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.DeliveryProof;
 import com.turkey.quick.order.domain.FareType;
@@ -47,6 +48,9 @@ public class RiderDeliveryService {
     private final PointWalletRepository pointWalletRepository;
     private final PointTransactionRepository pointTransactionRepository;
     private final RiderDeliveryProofUploadService riderDeliveryProofUploadService;
+
+    /** #398: 배송 단계 전이·완료를 고객 추적 SSE로 실시간 전달하기 위해 주입한다. */
+    private final TrackingPublisher trackingPublisher;
 
     /** 새로고침·재로그인 뒤 현재 배송 단계 화면을 복구한다(#86). */
     @Transactional(readOnly = true)
@@ -141,6 +145,7 @@ public class RiderDeliveryService {
 
         log.info("event=RIDER_DELIVERY_STATUS_CHANGED riderId={} orderId={} previousStatus={} newStatus={}",
                 rider.memberId(), deliveryId, previousStatus, nextStatus);
+        trackingPublisher.publishStatus(deliveryId, nextStatus, transitionedAt.toInstant(ZoneOffset.UTC));
         return RiderDeliveryResponse.from(order, estimate.getTotalFare());
     }
 
@@ -203,6 +208,8 @@ public class RiderDeliveryService {
         deliveryProofRepository.save(proof);
         order.complete();
         riderProfile.release();
+        trackingPublisher.publishStatus(deliveryId, OrderStatus.COMPLETED,
+                order.getCompletedAt().toInstant(ZoneOffset.UTC));
 
         long settlementAmount = finalFare.getTotalFare();
         RiderSettlement settlement = riderSettlementRepository.save(
