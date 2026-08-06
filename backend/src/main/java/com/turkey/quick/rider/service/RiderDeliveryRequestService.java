@@ -64,7 +64,7 @@ public class RiderDeliveryRequestService {
      *       DISTANCE/FARE/REQUESTED_AT 중 하나인지 검사한다. 위반하면 예외를 던진다
      *       (라이더 상태 위반은 403, 나머지는 400으로 변환된다).</li>
      *   <li>{@code latitude}·{@code longitude}가 둘 다 있으면(#367) bounding box 쿼리
-     *       ({@link DeliveryOrderRepository#findByStatusAndPickup_LatitudeBetweenAndPickup_LongitudeBetween})로
+     *       ({@link DeliveryOrderRepository#findWaitingOrdersWithinBoundingBox})로
      *       {@code radiusMeters}를 감싸는 사각형 범위의 WAITING 주문만 가져온다
      *       ({@code idx_delivery_waiting_location} 인덱스 사용). 하나라도 없으면(요청에 좌표를
      *       안 실었으면) WAITING 전부를 가져온다(#55 계약 확정 — 위치 없음은 에러가 아니다).</li>
@@ -126,8 +126,8 @@ public class RiderDeliveryRequestService {
 
     private List<DeliveryOrder> findWithinBoundingBox(BigDecimal latitude, BigDecimal longitude, int radiusMeters) {
         DeliveryService.BoundingBox box = deliveryService.boundingBox(latitude, longitude, radiusMeters);
-        return deliveryOrderRepository.findByStatusAndPickup_LatitudeBetweenAndPickup_LongitudeBetween(
-                OrderStatus.WAITING, box.latMin(), box.latMax(), box.lngMin(), box.lngMax());
+        return deliveryOrderRepository.findWaitingOrdersWithinBoundingBox(
+                box.latMin(), box.latMax(), box.lngMin(), box.lngMax());
     }
 
     /**
