@@ -30,12 +30,6 @@ declare global {
         extend(latlng: LatLng): void
       }
 
-      class Marker {
-        constructor(options: { position: LatLng; map?: Map; image?: MarkerImage })
-        setPosition(position: LatLng): void
-        setMap(map: Map | null): void
-      }
-
       class Size {
         constructor(width: number, height: number)
       }
@@ -44,8 +38,19 @@ declare global {
         constructor(x: number, y: number)
       }
 
+      /**
+       * 기본 핀 대신 쓸 마커 이미지. `options.offset`은 이미지 안에서 실제 좌표에 닿는
+       * 지점(픽셀)이며, 지정하지 않으면 이미지 중앙이 좌표에 놓여 마커가 위로 뜬 것처럼 보인다.
+       */
       class MarkerImage {
         constructor(src: string, size: Size, options?: { offset?: Point })
+      }
+
+      class Marker {
+        constructor(options: { position: LatLng; map?: Map; image?: MarkerImage; title?: string })
+        setPosition(position: LatLng): void
+        setImage(image: MarkerImage): void
+        setMap(map: Map | null): void
       }
 
       class Polyline {
