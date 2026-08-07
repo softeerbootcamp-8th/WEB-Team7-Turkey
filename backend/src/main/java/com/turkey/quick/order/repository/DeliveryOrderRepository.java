@@ -33,6 +33,20 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
     Optional<DeliveryOrder> findByIdForUpdate(@Param("orderId") Long orderId);
 
     /**
+     * 조건부 UPDATE가 0행일 때 실패 사유를 구분하기 위한 재조회용(#405). 평범한 조회(일관된 읽기)는
+     * 이 트랜잭션이 시작할 때 고정된 스냅샷을 그대로 따르므로, 방금 다른 트랜잭션이 커밋한 최신
+     * 상태를 못 볼 수 있다 — 그래서 잠금 읽기(현재 읽기)로 스냅샷을 건너뛴다.
+     *
+     * <p>이 메서드를 부르는 호출부는 항상 직전에 조건부 UPDATE를 시도해 이 행을 이미 검사한
+     * 뒤라(REPEATABLE READ에서는 조건에 안 맞아도 검사한 행에 락이 남는다), 여기서 락 대기가
+     * 발생하지 않는다. {@link #findByIdForUpdate}와 달리 이후에 이 행을 다시 쓰지 않으므로
+     * 배타 락 대신 공유 락을 쓴다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_READ)
+    @Query("select o from DeliveryOrder o where o.id = :orderId")
+    Optional<DeliveryOrder> findByIdForShare(@Param("orderId") Long orderId);
+
+    /**
      * 고객 본인의 배송요청을 실시간 구독 판정에 필요한 값만 뽑아 조회한다(#77 흐름 ②).
      *
      * <p><b>고객 조건을 쿼리에 넣는 이유</b>: 주문을 먼저 읽고 애플리케이션에서 소유자를 비교하면
