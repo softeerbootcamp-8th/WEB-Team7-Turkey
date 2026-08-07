@@ -95,6 +95,28 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
     Optional<DeliveryOrder> findByIdAndCustomer_Id(Long id, Long customerId);
 
     /**
+     * 추적 스냅샷(#79)이 응답을 조립하는 데 필요한 것을 <b>한 번에</b> 읽는다(#421에서 추가).
+     *
+     * <p>배정 라이더와 그 회원까지 {@code join fetch} 하는 이유는 <b>호출자가 트랜잭션 밖에서 응답을
+     * 조립하기 때문이다.</b> #421 이 이 경로에 OSRM 호출(최대 1초)을 넣으면서
+     * {@code DeliveryTrackingQueryService.getTracking} 의 트랜잭션을 걷어냈다 — 외부 HTTP 호출이
+     * 끝날 때까지 DB 커넥션을 붙잡고 있으면 백업 폴링(1분 주기, #422) × 동시 추적 수만큼 커넥션이
+     * 잠긴다. 그 대신 엔터티가 곧바로 준영속이 되므로, 지연 로딩된 연관을 만지는 순간
+     * {@code LazyInitializationException} 이다(OSIV 가 꺼져 있다). 여기서 미리 채워 그 상황을 없앤다.
+     *
+     * <p>고객 조건이 없는 것은 이 조회 앞에 {@code DeliveryTrackingAccessService} 의 소유권·상태
+     * 판정이 반드시 오기 때문이다(그쪽이 404/409 를 담당한다).
+     */
+    @Query("""
+            select o
+            from DeliveryOrder o
+            join fetch o.assignedRider r
+            join fetch r.member
+            where o.id = :deliveryId
+            """)
+    Optional<DeliveryOrder> findWithAssignedRiderById(@Param("deliveryId") Long deliveryId);
+
+    /**
      * 라이더 본인의 운행 기록 상세 조회(#71)용. 목록({@link #findByAssignedRider_MemberIdAndStatus})과
      * 대칭으로 배정 조건을 쿼리에 두고(없음/타인 것을 같은 404 로 응답), 상태까지 조건에 넣어
      * COMPLETED 만 통과시킨다. 운행 기록은 완료 배송의 기록이므로, 진행 중 주문 id 를 넣어도 404 다 —

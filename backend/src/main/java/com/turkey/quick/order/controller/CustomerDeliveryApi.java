@@ -212,12 +212,17 @@ public interface CustomerDeliveryApi {
      * {@code EventSource} 가 상태코드·본문을 스크립트에 노출하지 않아, 스트림이 왜 실패했는지 알 수
      * 있는 통로가 이 REST 뿐이라는 것이다({@code docs/04-frontend-api-map.md} §7).
      *
-     * <p>{@code estimatedArrivalAt} 은 <b>현재 항상 null</b> 이다(산정 근거가 없다).
-     * {@code steps} 는 {@code delivery_order} 의 단계별 시각 컬럼에서 파생한다.
+     * <p>{@code steps} 는 {@code delivery_order} 의 단계별 시각 컬럼에서 파생한다.
+     *
+     * <p>{@code estimatedArrivalAt} 은 <b>라이더 최신 위치와 OSRM 이 둘 다 있을 때만</b> 채워진다(#421).
+     * 둘 중 하나라도 없으면 그 필드만 null 이고 나머지는 그대로 내려간다 — 경로 서버 장애가 추적 화면
+     * 자체를 못 여는 장애로 번지면 안 된다. 예상 경로 좌표는 싣지 않는다(사람 확인, 2026-08-07).
      */
     @Operation(summary = "배송 추적 스냅샷",
-            description = "추적 화면 진입 시 한 번 그릴 상태·타임라인·라이더 정보를 조회한다. "
-                    + "이후 위치·상태 갱신은 location 도메인의 SSE 스트림이 밀어 준다(폴링하지 않는다(변동가능)). "
+            description = "추적 화면 진입 시 한 번 그릴 상태·타임라인·라이더 정보와, 지금 향하는 지점까지의 "
+                    + "도착 예정 시각을 조회한다. 라이더 실시간 좌표는 location 도메인의 SSE 스트림이 밀어 주고, "
+                    + "ETA 는 이 API 재조회로만 갱신된다(상태 전이 SSE 신호 또는 약 1분 백업 폴링). "
+                    + "ETA 를 산정할 수 없으면(라이더 위치 없음·경로 서버 장애) 그 필드만 null 인 200 이다. "
                     + "실패 판정은 스트림과 동일하다: 404(없거나 타인 주문), 409(WAITING·COMPLETED·CANCELED).")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(

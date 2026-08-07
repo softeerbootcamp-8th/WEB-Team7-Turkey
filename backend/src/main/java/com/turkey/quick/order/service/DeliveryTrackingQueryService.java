@@ -1,6 +1,7 @@
 package com.turkey.quick.order.service;
 
 import com.turkey.quick.common.exception.BusinessException;
+import com.turkey.quick.common.routing.Route;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.FareType;
@@ -9,13 +10,18 @@ import com.turkey.quick.order.dto.DeliveryStatusStepResponse;
 import com.turkey.quick.order.dto.DeliveryTrackingResponse;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 배송 추적 화면 진입 시 한 번 그릴 스냅샷(#79).
+ * 배송 추적 화면 진입 시 한 번 그릴 스냅샷(#79) + 도착 예정 시각(#421).
+ *
+ * <p>경로 폴리라인은 라우팅 응답에 함께 오지만 <b>버린다</b> — 고객에게 ETA 만 보여주기로 했다
+ * (사람 확인, 2026-08-07). 자세한 근거는 {@link DeliveryTrackingResponse} javadoc.
  *
  * <p><b>스트림과 판정을 공유한다.</b> 404(없음·타인 주문)/409(추적 불가 상태)를
  * {@link DeliveryTrackingAccessService}에 위임하므로 <b>이 API 가 200 이면 SSE 스트림도 열린다</b>가
@@ -23,9 +29,14 @@ import org.springframework.transaction.annotation.Transactional;
  * 스크립트에 노출하지 않아, 스트림 실패 사유를 알 수 있는 통로가 이 REST 뿐이라는 것이다
  * ({@code docs/04-frontend-api-map.md} §7).
  *
- * <p><b>주문 행을 두 번 읽는다</b> — 게이트가 투영을 읽고(SSE 는 트랜잭션 밖에서 값을 쓰므로
- * 투영이어야 한다) 여기서 엔터티를 다시 읽는다. 판정 정책을 복사하지 않는 대가이고, 화면 진입당
- * 1회뿐이라 감내한다. 문제가 되면 투영 쿼리 하나로 합친다(그때 게이트 정책도 함께 옮겨야 한다).
+ * <p><b>이 메서드에 트랜잭션이 없는 것은 #421 의 결과다.</b> ETA 산정이 OSRM 을 호출하는데(최대 1초:
+ * 연결 300ms + 읽기 700ms) 그 호출을 트랜잭션 안에 두면 외부 서버가 느려지는 만큼 DB 커넥션이
+ * 잠긴다 — 백업 폴링이 1분 주기(#422)라 동시 추적 수에 그대로 비례한다. 그래서 DB 읽기를 먼저 끝내고
+ * (각 조회가 자기 트랜잭션) 라우팅 호출은 그 밖에서 한다. 대가로 세 번의 읽기가 같은 스냅샷을 보지
+ * 않지만, 표시용 조회라 감내한다(원래도 주문 행을 두 번 읽고 있었다).
+ *
+ * <p>그 대신 <b>지연 로딩 연관을 트랜잭션 밖에서 만지면 안 된다</b>(OSIV 가 꺼져 있다) — 라이더·회원은
+ * {@code findWithAssignedRiderById} 가 {@code join fetch} 로 미리 채운다.
  */
 @Service
 @RequiredArgsConstructor
@@ -34,6 +45,7 @@ public class DeliveryTrackingQueryService {
     private final DeliveryTrackingAccessService accessService;
     private final DeliveryOrderRepository deliveryOrderRepository;
     private final OrderFareSnapshotRepository orderFareSnapshotRepository;
+    private final DeliveryRouteEstimator routeEstimator;
 
     /**
      * @param deliveryId 조회할 배송요청
@@ -41,18 +53,20 @@ public class DeliveryTrackingQueryService {
      * @throws BusinessException 404(없음·타인 것) / 409(WAITING·COMPLETED·CANCELED) /
      *                           500(예상 운임 스냅샷 없음)
      */
-    @Transactional(readOnly = true)
     public DeliveryTrackingResponse getTracking(Long deliveryId, Long customerId) {
         accessService.authorizeTracking(deliveryId, customerId);
 
-        DeliveryOrder order = deliveryOrderRepository.findById(deliveryId)
-                // 게이트가 같은 트랜잭션에서 이미 읽은 행이라 도달하지 않는다.
+        DeliveryOrder order = deliveryOrderRepository.findWithAssignedRiderById(deliveryId)
+                // 게이트가 방금 읽은 행이라 도달하지 않는다.
                 .orElseThrow(() -> new IllegalStateException(
                         "추적 게이트를 통과한 주문을 다시 조회할 수 없습니다. deliveryId=" + deliveryId));
 
-        // 추적 가능 상태에서는 라이더가 반드시 있다(DDL ck_delivery_assignment). 지연 로딩이지만
-        // 이 메서드가 트랜잭션 경계라 안전하다 — OSIV 가 꺼져 있어 응답 조립을 여기서 끝내야 한다.
+        // 추적 가능 상태에서는 라이더가 반드시 있다(DDL ck_delivery_assignment).
         Member rider = order.getAssignedRider().getMember();
+        Long totalFare = totalFare(order);
+
+        // 여기부터 트랜잭션 밖이다 — 위 조회가 모두 끝난 뒤에 외부 서버를 부른다.
+        Optional<Route> route = routeEstimator.findRemainingRoute(order);
 
         return new DeliveryTrackingResponse(
                 order.getId(),
@@ -60,9 +74,19 @@ public class DeliveryTrackingQueryService {
                 DeliveryStatusStepResponse.timelineOf(order),
                 rider.getName(),
                 rider.getPhoneNumber(),
-                // 산정 근거가 없어 항상 null 이다(사람 확인, 2026-07-31). 지도·경로 API 가 붙을 때 채운다.
-                null,
-                totalFare(order));
+                route.map(DeliveryTrackingQueryService::arrivalAt).orElse(null),
+                totalFare);
+    }
+
+    /**
+     * 소요 시간을 <b>지금</b>에 더해 도착 예정 시각으로 바꾼다.
+     *
+     * <p>기준 시각이 라이더의 위치 측정 시각이 아니라 응답 시각인 것은 의도다. 측정 시각을 쓰면
+     * 위치가 오래됐을 때(최대 TTL 10분) 이미 지나간 시각을 도착 예정으로 내려보내게 된다. 어차피
+     * OSRM 소요 시간은 <b>실시간 교통정보가 없는 자유흐름 기준</b>이라 정밀도를 따질 값이 아니다.
+     */
+    private static LocalDateTime arrivalAt(Route route) {
+        return LocalDateTime.now(ZoneOffset.UTC).plus(route.duration());
     }
 
     /**

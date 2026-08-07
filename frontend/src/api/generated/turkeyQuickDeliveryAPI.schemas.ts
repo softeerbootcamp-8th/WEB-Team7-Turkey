@@ -749,7 +749,7 @@ export const DeliveryTrackingResponseStatus = {
 export interface DeliveryTrackingResponse {
   /** 배송요청 식별자 */
   deliveryId?: number;
-  /** 도착 예정 시각(UTC). 산정 불가하면 null. */
+  /** 현재 향하는 지점의 도착 예정 시각(UTC). 산정 불가하면 null. 픽업 전(ASSIGNED·MOVING_TO_PICKUP)에는 픽업지, 픽업 후(PICKED_UP·DELIVERING)에는 도착지 기준이다 — 어느 쪽인지는 status 로 판단한다. */
   estimatedArrivalAt?: string;
   /** 배차된 라이더 이름. 배차 전이면 null. */
   riderName?: string;
