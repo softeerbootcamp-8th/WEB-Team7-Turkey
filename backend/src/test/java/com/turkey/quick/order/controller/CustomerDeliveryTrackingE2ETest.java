@@ -81,8 +81,27 @@ class CustomerDeliveryTrackingE2ETest extends IntegrationTestSupport {
         assertThat(data.get("riderName").asText()).isEqualTo("홍라이더");
         assertThat(data.get("riderPhoneNumber").asText()).isNotBlank();
         assertThat(data.get("totalFare").asLong()).isEqualTo(scenario.totalFare());
-        assertThat(data.get("estimatedArrivalAt").isNull()).as("ETA 는 아직 산정하지 않는다").isTrue();
         assertThat(data.get("steps")).hasSize(5);
+    }
+
+    @Test
+    @DisplayName("경로 서버가 죽어 있어도 200 이고, ETA 만 null 이다")
+    void respondsWithoutRoutingServer() {
+        // #421 완료 조건. 이 프로파일의 routing.base-url 은 아무도 듣지 않는 주소(localhost:1)라
+        // 실제로 연결이 거부된다 — 즉 "OSRM 장애" 를 흉내가 아니라 그대로 재현한다.
+        // 라이더 최신 위치도 Redis 에 없으므로(FLUSHDB 후) 산정 자체가 두 겹으로 불가능한 상황이다.
+        var scenario = fixture.deliveryWithStatus(OrderStatus.DELIVERING);
+        String cookie = loginAndGetSessionCookie(CUSTOMER_LOGIN, scenario.customerLoginId());
+
+        var response = get(scenario.deliveryId(), cookie);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode data = response.getBody().get("data");
+        assertThat(data.get("estimatedArrivalAt").isNull()).isTrue();
+        // 나머지 화면 요소는 그대로 있어야 한다 — 부분 실패지 화면 실패가 아니다.
+        assertThat(data.get("status").asText()).isEqualTo("DELIVERING");
+        assertThat(data.get("riderName").asText()).isNotBlank();
+        assertThat(data.get("totalFare").asLong()).isEqualTo(scenario.totalFare());
     }
 
     @Test
