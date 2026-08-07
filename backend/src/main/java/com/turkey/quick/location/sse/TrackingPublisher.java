@@ -10,6 +10,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * 라이더의 새 위치, 그리고 배송 상태 전이(#398)를 그 배송의 Pub/Sub 채널로 발행한다(#317).
@@ -43,8 +45,25 @@ public class TrackingPublisher {
         publish(deliveryId, (Object) location);
     }
 
-    /** 상태 전이가 실제로 일어났을 때만 부른다(#398) — 위치처럼 주기적으로 발행하지 않는다. */
+    /**
+     * 상태 전이가 실제로 일어났을 때만 부른다(#398) — 위치처럼 주기적으로 발행하지 않는다.
+     *
+     * <p>호출자가 트랜잭션 안에 있으면 발행을 커밋 후로 미룬다. 커밋 전에 발행하면 Redis 알림이
+     * 먼저 도착해, 그 알림을 받은 고객이 곧바로 재조회해도 아직 커밋 전이라 옛 상태를 읽는
+     * "이른 재조회" 경쟁이 생긴다 — 트랜잭션 안 어디서 호출하든(맨 끝이어도) 이 메서드가 반환된
+     * 뒤에야 커밋되므로, 호출 위치로는 막을 수 없다. 트랜잭션이 없으면(예: 트랜잭션 없는 서비스에서
+     * 직접 호출) 그대로 즉시 발행한다.
+     */
     public void publishStatus(Long deliveryId, OrderStatus status, Instant occurredAt) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    publish(deliveryId, new StatusChangedPayload(status, occurredAt));
+                }
+            });
+            return;
+        }
         publish(deliveryId, new StatusChangedPayload(status, occurredAt));
     }
 

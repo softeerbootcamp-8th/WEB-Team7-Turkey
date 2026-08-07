@@ -3,6 +3,7 @@ package com.turkey.quick.location.sse;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.BDDMockito.never;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
 
@@ -21,6 +22,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionSynchronizationUtils;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("TrackingPublisher")
@@ -102,5 +105,23 @@ class TrackingPublisherTest {
 
         assertThatCode(() -> publisher().publishStatus(1L, OrderStatus.COMPLETED, Instant.now()))
                 .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("트랜잭션 안에서는 커밋 전까지 상태 발행을 미룬다 — 이른 재조회 경쟁 방지")
+    void deferStatusPublishUntilCommit() {
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            publisher().publishStatus(1024L, OrderStatus.COMPLETED,
+                    Instant.parse("2026-08-03T01:02:03.456Z"));
+
+            then(redisTemplate).should(never()).convertAndSend(anyString(), anyString());
+
+            TransactionSynchronizationUtils.triggerAfterCommit();
+
+            then(redisTemplate).should().convertAndSend(anyString(), anyString());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 }
