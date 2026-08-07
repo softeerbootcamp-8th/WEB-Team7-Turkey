@@ -33,6 +33,11 @@ rider:
     storage: ${RIDER_DELIVERY_PROOF_STORAGE:local}
     local-root: ${RIDER_DELIVERY_PROOF_LOCAL_ROOT:../data}
 
+# 로컬에서 실제 경로 응답이 필요하면 #407 처럼 Docker 로 OSRM 을 직접 띄운다(전처리 산출물 필요).
+# 띄우지 않아도 앱은 정상 동작한다 — 경로 호출이 실패로 흡수돼 ETA·경로선만 비어 있다.
+routing:
+  base-url: ${ROUTING_BASE_URL:http://localhost:5000}
+
 logging:
   level:
     com.turkey.quick: DEBUG

@@ -58,6 +58,14 @@ spring:
       max-file-size: 50MB
       max-request-size: 50MB
 
+# --- 경로 탐색(OSRM): ETA·예상 경로 산정 ---
+# 서울시 행정구역만 전처리한 자체 호스팅 OSRM 이다(#416). Redis 인스턴스에 co-locate 돼 있고
+# WAS 보안그룹에서만 접근할 수 있어 개발 PC 에서는 닿지 않는다 — 로컬은 application-local.yml 참고.
+# 이 서버가 죽어도 애플리케이션은 정상 기동한다(호출 시점에만 접속하고, 실패는 OsrmRoutingClient 가
+# 빈 값으로 흡수한다).
+routing:
+  base-url: ${ROUTING_BASE_URL:http://10.0.130.0:5000}
+
 # --- S3: 배송 완료 인증 사진 저장 ---
 # 자격 증명은 기본 프로바이더 체인(환경변수/인스턴스 프로파일)을 쓴다. 버킷은 배포 시 환경변수로 채운다.
 aws:
