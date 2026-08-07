@@ -141,6 +141,25 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
         return saved;
     }
 
+    /** #60 필터·페이지네이션 검증용 — 예상 정산액(baseFare+130)을 지정해 WAITING 주문을 만든다. */
+    private DeliveryOrder saveWaitingOrderWithFare(long baseFare) {
+        String uniqueSuffix = String.valueOf(System.nanoTime() % 100_000_000L);
+        FarePolicy policy = farePolicyRepository.save(
+                FarePolicy.create("v1-" + uniqueSuffix, 3000L, 100, 130L, 30000, LocalDateTime.now().minusDays(1)));
+        Member customer = memberRepository.save(
+                Member.create("e2e_rider_requests_customer_" + uniqueSuffix, "hash", "고객", "010" + uniqueSuffix,
+                        MemberRole.CUSTOMER));
+        DeliveryOrder order = DeliveryOrder.request(customer, "req-e2e-" + System.nanoTime(), ItemType.SMALL_PARCEL, 1000,
+                Address.of("픽업지 도로명", "상세", "12345", new BigDecimal("37.5010000"), new BigDecimal("127.0010000")),
+                Address.of("도착지 도로명", "상세", "54321", new BigDecimal("37.6000000"), new BigDecimal("127.1000000")),
+                Contact.of("보내는사람", "01011112222"), Contact.of("받는사람", "01033334444"));
+        DeliveryOrder saved = deliveryOrderRepository.save(order);
+        orderFareSnapshotRepository.save(
+                OrderFareSnapshot.create(saved, policy, FareType.ESTIMATE, policy.getPolicyVersion(),
+                        1000, baseFare, 130L, 0L));
+        return saved;
+    }
+
     @Test
     void AVAILABLE_라이더가_조회하면_200과_WAITING_목록을_반환한다() {
         saveRider("e2e_rider_requests01", "p@ssw0rd", "01022223333", true);
@@ -151,8 +170,9 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody().success()).isTrue();
-        List<?> data = (List<?>) response.getBody().data();
-        assertThat(data).isNotEmpty();
+        Map<?, ?> page = (Map<?, ?>) response.getBody().data();
+        List<?> items = (List<?>) page.get("items");
+        assertThat(items).isNotEmpty();
     }
 
     @Test
@@ -167,7 +187,8 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
                 HttpMethod.GET, withCookie(cookie), ApiResponse.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        List<Integer> deliveryIds = ((List<?>) response.getBody().data()).stream()
+        Map<?, ?> page = (Map<?, ?>) response.getBody().data();
+        List<Integer> deliveryIds = ((List<?>) page.get("items")).stream()
                 .map(o -> (Integer) ((Map<?, ?>) o).get("deliveryId"))
                 .toList();
         assertThat(deliveryIds).contains(near.getId().intValue()).doesNotContain(far.getId().intValue());
@@ -181,6 +202,62 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
         var response = rest.exchange(
                 ENDPOINT + "?latitude=91&longitude=127.0000000",
                 HttpMethod.GET, withCookie(cookie), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().success()).isFalse();
+    }
+
+    @Test
+    void 운임_범위_필터를_보내면_범위_내_주문만_반환한다() {
+        saveRider("e2e_rider_requests13", "p@ssw0rd", "01099998885", true);
+        DeliveryOrder cheap = saveWaitingOrderWithFare(3000L);
+        DeliveryOrder expensive = saveWaitingOrderWithFare(9000L);
+        String cookie = loginAndGetSessionCookie("e2e_rider_requests13", "p@ssw0rd");
+
+        var response = rest.exchange(ENDPOINT + "?fareMin=5000", HttpMethod.GET, withCookie(cookie), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<?, ?> page = (Map<?, ?>) response.getBody().data();
+        List<Integer> deliveryIds = ((List<?>) page.get("items")).stream()
+                .map(o -> (Integer) ((Map<?, ?>) o).get("deliveryId"))
+                .toList();
+        assertThat(deliveryIds).contains(expensive.getId().intValue()).doesNotContain(cheap.getId().intValue());
+    }
+
+    @Test
+    void size로_페이지가_잘리고_hasNext가_표시된다() {
+        saveRider("e2e_rider_requests14", "p@ssw0rd", "01099998884", true);
+        saveWaitingOrderWithFare(3000L);
+        saveWaitingOrderWithFare(5000L);
+        saveWaitingOrderWithFare(9000L);
+        String cookie = loginAndGetSessionCookie("e2e_rider_requests14", "p@ssw0rd");
+
+        var response = rest.exchange(ENDPOINT + "?size=2", HttpMethod.GET, withCookie(cookie), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<?, ?> page = (Map<?, ?>) response.getBody().data();
+        assertThat((List<?>) page.get("items")).hasSize(2);
+        assertThat(page.get("hasNext")).isEqualTo(true);
+    }
+
+    @Test
+    void fareMin이_fareMax보다_크면_400을_반환한다() {
+        saveRider("e2e_rider_requests15", "p@ssw0rd", "01099998883", true);
+        String cookie = loginAndGetSessionCookie("e2e_rider_requests15", "p@ssw0rd");
+
+        var response = rest.exchange(ENDPOINT + "?fareMin=9000&fareMax=3000",
+                HttpMethod.GET, withCookie(cookie), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().success()).isFalse();
+    }
+
+    @Test
+    void 페이지_크기가_0이면_400을_반환한다() {
+        saveRider("e2e_rider_requests16", "p@ssw0rd", "01099998882", true);
+        String cookie = loginAndGetSessionCookie("e2e_rider_requests16", "p@ssw0rd");
+
+        var response = rest.exchange(ENDPOINT + "?size=0", HttpMethod.GET, withCookie(cookie), ApiResponse.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody().success()).isFalse();
