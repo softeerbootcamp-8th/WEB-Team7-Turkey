@@ -271,4 +271,51 @@ class DeliveryCancelIntegrationTest extends IntegrationTestSupport {
             assertThat(balanceOf(customerId)).isEqualTo(50_000L); // 전액 환급됨
         }
     }
+
+    @Test
+    @DisplayName("같은 주문에 취소 요청이 거의 동시에 두 번 들어와도 둘 다 200이고 환급은 한 번만 된다(#405)")
+    void bothCancelRequestsSucceedIdempotentlyWhenRacingEachOther() throws Exception {
+        long fare = serverFare();
+        Long customerId = saveCustomerWithBalance(50_000L);
+        Long orderId = createWaitingOrder(customerId, fare);
+
+        var start = new CountDownLatch(1);
+        var done = new CountDownLatch(2);
+        var firstFailed = new AtomicBoolean(false);
+        var secondFailed = new AtomicBoolean(false);
+
+        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+            pool.submit(() -> {
+                try {
+                    start.await();
+                    deliveryService.cancelDelivery(orderId, customerId, "취소 시도 A");
+                } catch (Exception e) {
+                    firstFailed.set(true);
+                } finally {
+                    done.countDown();
+                }
+            });
+            pool.submit(() -> {
+                try {
+                    start.await();
+                    deliveryService.cancelDelivery(orderId, customerId, "취소 시도 B");
+                } catch (Exception e) {
+                    secondFailed.set(true);
+                } finally {
+                    done.countDown();
+                }
+            });
+            start.countDown();
+            done.await(10, TimeUnit.SECONDS);
+        }
+
+        // #405 성공 조건: 도착 순서·경쟁 결과와 무관하게 둘 다 예외 없이 200이어야 한다
+        assertThat(firstFailed.get()).isFalse();
+        assertThat(secondFailed.get()).isFalse();
+
+        DeliveryOrder persisted = deliveryOrderRepository.findById(orderId).orElseThrow();
+        assertThat(persisted.getStatus()).isEqualTo(OrderStatus.CANCELED);
+        assertThat(balanceOf(customerId)).isEqualTo(50_000L); // 환급은 정확히 한 번만
+        assertThat(pointTransactionRepository.findAll()).hasSize(2); // ORDER_USE 1건 + ORDER_REFUND 1건뿐
+    }
 }
