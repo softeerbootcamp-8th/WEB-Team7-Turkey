@@ -12,9 +12,13 @@ import java.util.function.LongSupplier;
  * 대기 시간을 두고 그 사이의 호출을 건너뛴다. 대기 시간은 실패가 이어질 때마다 두 배가 되고
  * ({@link #INITIAL_BACKOFF} → … → {@link #MAX_BACKOFF} 상한), 한 번이라도 성공하면 초기화된다.
  *
- * <p><b>이게 없으면</b> OSRM 이 죽어 있는 동안 모든 고객의 추적 API 가 매 호출 읽기 타임아웃
- * (700ms)만큼 느려진다. 백업 폴링이 1분 주기(#422)라 동시 추적 수에 비례해 계속 쌓인다.
+ * <p><b>이게 없으면</b> 라우팅 API 가 응답하지 않는 동안 모든 고객의 추적 API 가 매 호출 읽기
+ * 타임아웃(2초)만큼 느려진다. 백업 폴링이 1분 주기(#422)라 동시 추적 수에 비례해 계속 쌓인다.
  * 서버가 죽은 것을 이미 세 번 확인했는데 네 번째 호출로 또 확인할 이유가 없다.
+ *
+ * <p><b>카카오로 바꾼 뒤(#431) 이유가 하나 더 붙었다</b>: 호출당 과금이라 429(쿼터 초과)나
+ * 401(키 불량)에 계속 두드리면 손해다. 그래서 {@link KakaoMobilityRoutingClient} 는 4xx 도 실패로
+ * 센다 — OSRM 시절엔 4xx 가 "경로 없음"이라 세지 않았다.
  *
  * <p><b>일부러 단순하게 둔 것</b>: 대기가 끝난 뒤 흘려보내는 호출 수를 1개로 제한하지 않는다
  * (엄밀한 half-open 이 아니다). 그러려면 in-flight 상태가 하나 더 필요한데, 그 사이에 몰릴 수 있는
@@ -32,7 +36,7 @@ class RoutingFailureBackoff {
 
     static final Duration INITIAL_BACKOFF = Duration.ofSeconds(1);
 
-    /** 상한. 이보다 길면 OSRM 이 복구된 뒤에도 ETA 가 한참 비어 있게 된다. */
+    /** 상한. 이보다 길면 라우팅 API 가 복구된 뒤에도 ETA 가 한참 비어 있게 된다. */
     static final Duration MAX_BACKOFF = Duration.ofSeconds(30);
 
     /**

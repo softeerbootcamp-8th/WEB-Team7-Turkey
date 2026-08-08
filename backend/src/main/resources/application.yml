@@ -58,13 +58,18 @@ spring:
       max-file-size: 50MB
       max-request-size: 50MB
 
-# --- 경로 탐색(OSRM): ETA·예상 경로 산정 ---
-# 서울시 행정구역만 전처리한 자체 호스팅 OSRM 이다(#416). Redis 인스턴스에 co-locate 돼 있고
-# WAS 보안그룹에서만 접근할 수 있어 개발 PC 에서는 닿지 않는다 — 로컬은 application-local.yml 참고.
-# 이 서버가 죽어도 애플리케이션은 정상 기동한다(호출 시점에만 접속하고, 실패는 OsrmRoutingClient 가
-# 빈 값으로 흡수한다).
+# --- 경로 탐색(카카오모빌리티 길찾기): ETA·예상 경로 산정 ---
+# #431 에서 자체 호스팅 OSRM(#416)을 카카오모빌리티 API 로 교체했다. 실시간 교통정보가 반영되고
+# 자체 인프라 운영 부담이 없다.
+#
+# api-key 는 비밀정보라 저장소에 두지 않는다(CLAUDE.md). 배포 서버는 WAS 의 systemd 유닛
+# (myapp.service)에 KAKAO_REST_API_KEY 를 넣어 주입한다 — deploy.yml 은 환경변수를 건드리지 않으므로
+# 이 등록은 사람이 직접 해야 한다. 키가 비어 있어도 애플리케이션은 정상 기동하고, 경로 호출만
+# 건너뛴다(기동 시 ROUTING_API_KEY_MISSING 경고가 한 번 남는다). 호출 실패도 마찬가지로
+# KakaoMobilityRoutingClient 가 빈 값으로 흡수해 ETA 만 비고 추적 화면은 그대로 열린다.
 routing:
-  base-url: ${ROUTING_BASE_URL:http://10.0.130.0:5000}
+  base-url: ${ROUTING_BASE_URL:https://apis-navi.kakaomobility.com}
+  api-key: ${KAKAO_REST_API_KEY:}
 
 # --- S3: 배송 완료 인증 사진 저장 ---
 # 자격 증명은 기본 프로바이더 체인(환경변수/인스턴스 프로파일)을 쓴다. 버킷은 배포 시 환경변수로 채운다.

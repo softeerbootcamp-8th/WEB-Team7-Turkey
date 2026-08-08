@@ -98,11 +98,13 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
      * 추적 스냅샷(#79)이 응답을 조립하는 데 필요한 것을 <b>한 번에</b> 읽는다(#421에서 추가).
      *
      * <p>배정 라이더와 그 회원까지 {@code join fetch} 하는 이유는 <b>호출자가 트랜잭션 밖에서 응답을
-     * 조립하기 때문이다.</b> #421 이 이 경로에 OSRM 호출(최대 1초)을 넣으면서
+     * 조립하기 때문이다.</b> #421 이 이 경로에 경로 탐색 호출(#431 기준 최대 3초)을 넣으면서
      * {@code DeliveryTrackingQueryService.getTracking} 의 트랜잭션을 걷어냈다 — 외부 HTTP 호출이
      * 끝날 때까지 DB 커넥션을 붙잡고 있으면 백업 폴링(1분 주기, #422) × 동시 추적 수만큼 커넥션이
      * 잠긴다. 그 대신 엔터티가 곧바로 준영속이 되므로, 지연 로딩된 연관을 만지는 순간
      * {@code LazyInitializationException} 이다(OSIV 가 꺼져 있다). 여기서 미리 채워 그 상황을 없앤다.
+     * ({@code join fetch} 를 걷어내려면 트랜잭션을 되살려야 하고, 그러면 외부 호출이 커넥션을 잡는
+     * 원래 문제로 돌아간다 — 둘은 한 묶음이다.)
      *
      * <p>고객 조건이 없는 것은 이 조회 앞에 {@code DeliveryTrackingAccessService} 의 소유권·상태
      * 판정이 반드시 오기 때문이다(그쪽이 404/409 를 담당한다).

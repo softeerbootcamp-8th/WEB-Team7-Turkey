@@ -5,10 +5,11 @@ import java.util.Optional;
 /**
  * 경로 탐색 포트 — 두 좌표 사이의 예상 소요시간과 경로 좌표를 얻는다(#420).
  *
- * <p><b>인터페이스로 끊는 이유</b>: #407 에서 카카오모빌리티 Directions·Tmap 과 비교한 끝에 자체
- * 호스팅 OSRM 을 택했지만, 실시간 교통정보 반영 여부에서 재검토 여지가 남아 있다(정확도 정량 비교는
- * 미수행 — 카카오 API 사용 권한 심사가 끝나지 않았다). 구현체를 갈아 끼울 때 서비스 코드가 바뀌지
- * 않게 한다. {@code payment/service/PaymentGateway} 와 같은 성격의 포트다.
+ * <p><b>인터페이스로 끊은 이유가 실제로 값을 했다</b>: #407 에서 카카오 API 사용 권한 심사가 끝나지
+ * 않아 자체 호스팅 OSRM 으로 먼저 갔는데, 심사가 끝난 뒤 #431 에서 구현체를
+ * ({@link KakaoMobilityRoutingClient}) 갈아 끼웠고 <b>이 포트도 호출자
+ * ({@code DeliveryRouteEstimator}, #421)도 한 줄도 바뀌지 않았다.</b>
+ * {@code payment/service/PaymentGateway} 와 같은 성격의 포트다.
  *
  * <p><b>패키지 위치가 {@code common} 인 이유</b>: {@code PaymentGateway}·{@code SmsSender} 는 소비자와
  * 같은 도메인 패키지에 두는 관례지만, 이 포트는 시그니처에 도메인 타입이 하나도 없는 순수 인프라

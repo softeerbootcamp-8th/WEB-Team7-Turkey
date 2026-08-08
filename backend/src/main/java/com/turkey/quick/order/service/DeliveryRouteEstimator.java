@@ -17,7 +17,7 @@ import org.springframework.stereotype.Component;
  *
  * <p>호출자({@link DeliveryTrackingQueryService})는 지금 {@link Route#duration()} 만 쓰고 경로
  * 폴리라인은 버린다 — 고객에게 ETA 만 보여주기로 했기 때문이다(사람 확인, 2026-08-07). 그래도
- * {@code Route} 를 그대로 돌려주는 것은, OSRM 호출 한 번에 둘이 함께 오므로 좁혀 봤자 아끼는 것이
+ * {@code Route} 를 그대로 돌려주는 것은, 라우팅 호출 한 번에 둘이 함께 오므로 좁혀 봤자 아끼는 것이
  * 없고 화면이 경로선을 요구할 때(#422) 이 클래스를 다시 열지 않아도 되기 때문이다.
  *
  * <p><b>어느 구간인가</b>(사람 확인, 2026-08-07): 픽업 전({@code ASSIGNED}·{@code MOVING_TO_PICKUP})

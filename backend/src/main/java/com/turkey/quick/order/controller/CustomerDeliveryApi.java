@@ -214,7 +214,8 @@ public interface CustomerDeliveryApi {
      *
      * <p>{@code steps} 는 {@code delivery_order} 의 단계별 시각 컬럼에서 파생한다.
      *
-     * <p>{@code estimatedArrivalAt} 은 <b>라이더 최신 위치와 OSRM 이 둘 다 있을 때만</b> 채워진다(#421).
+     * <p>{@code estimatedArrivalAt} 은 <b>라이더 최신 위치와 경로 탐색 결과가 둘 다 있을 때만</b>
+     * 채워진다(#421, 경로 탐색은 #431 에서 카카오모빌리티로 교체).
      * 둘 중 하나라도 없으면 그 필드만 null 이고 나머지는 그대로 내려간다 — 경로 서버 장애가 추적 화면
      * 자체를 못 여는 장애로 번지면 안 된다. 예상 경로 좌표는 싣지 않는다(사람 확인, 2026-08-07).
      */
