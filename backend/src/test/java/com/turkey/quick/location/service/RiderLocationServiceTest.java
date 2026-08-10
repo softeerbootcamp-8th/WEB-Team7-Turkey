@@ -1,17 +1,21 @@
 package com.turkey.quick.location.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 
 import com.turkey.quick.common.exception.BusinessException;
 import com.turkey.quick.location.dto.LocationPayload;
+import com.turkey.quick.order.domain.OrderStatus;
+import com.turkey.quick.order.dto.InProgressDelivery;
 import com.turkey.quick.location.repository.RiderLocationRepository;
 import com.turkey.quick.location.sse.TrackingPublisher;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
@@ -65,9 +69,17 @@ class RiderLocationServiceTest {
         return new AuthenticatedRider(RIDER_ID, "rider1", "홍라이더", status);
     }
 
+    /** 조회는 이제 식별자와 상태를 함께 돌려준다(#449). 상태는 네이티브 쿼리라 문자열이다. */
     private void givenInProgressDelivery() {
-        given(deliveryOrderRepository.findInProgressIdByActiveRiderId(RIDER_ID))
-                .willReturn(Optional.of(DELIVERY_ID));
+        givenInProgressDelivery(OrderStatus.DELIVERING);
+    }
+
+    private void givenInProgressDelivery(OrderStatus status) {
+        InProgressDelivery projection = mock(InProgressDelivery.class);
+        given(projection.getOrderId()).willReturn(DELIVERY_ID);
+        given(projection.getStatus()).willReturn(status.name());
+        given(deliveryOrderRepository.findInProgressByActiveRiderId(RIDER_ID))
+                .willReturn(Optional.of(projection));
     }
 
     @Nested
@@ -82,7 +94,7 @@ class RiderLocationServiceTest {
 
             service.update(rider(OperatingStatus.BUSY), LOCATION);
 
-            then(trackingPublisher).should().publish(DELIVERY_ID, LOCATION);
+            then(trackingPublisher).should().publish(DELIVERY_ID, LOCATION.withStatus(OrderStatus.DELIVERING));
         }
 
         @Test
@@ -98,7 +110,7 @@ class RiderLocationServiceTest {
 
             service.update(rider(OperatingStatus.BUSY), LOCATION);
 
-            then(deliveryOrderRepository).should().findInProgressIdByActiveRiderId(RIDER_ID);
+            then(deliveryOrderRepository).should().findInProgressByActiveRiderId(RIDER_ID);
             then(deliveryOrderRepository).should(never()).findInProgressByRiderId(anyLong(), anySet());
         }
 
@@ -112,12 +124,38 @@ class RiderLocationServiceTest {
             then(riderLocationRepository).should().saveIfNewer(RIDER_ID, LOCATION);
         }
 
+
+        @Test
+        @DisplayName("발행 프레임에는 현재 배송 상태가 실린다 (#449)")
+        void publishedFrameCarriesCurrentStatus() {
+            // 상태 전이 이벤트는 전이 시점에 한 번만 오므로 유실되면 다시 오지 않는다. 주기적으로
+            // 흐르는 이 위치 프레임이 상태를 실어 나르는 것이 그 유실의 유일한 자연 복구 수단이다.
+            givenInProgressDelivery(OrderStatus.PICKED_UP);
+
+            service.update(rider(OperatingStatus.BUSY), LOCATION);
+
+            then(trackingPublisher).should().publish(DELIVERY_ID, LOCATION.withStatus(OrderStatus.PICKED_UP));
+        }
+
+        @Test
+        @DisplayName("Redis 최신 위치에는 상태를 저장하지 않는다 (#449)")
+        void doesNotPersistStatusToLatestLocation() {
+            // 저장소는 위치 저장소이지 주문 상태 저장소가 아니다. 여기에 상태가 섞이면 쉼표 구분
+            // Redis 값 형식이 바뀌어 배포 호환성 표면이 하나 더 늘어난다 — 원본을 그대로 넘긴다.
+            givenInProgressDelivery(OrderStatus.PICKED_UP);
+
+            service.update(rider(OperatingStatus.BUSY), LOCATION);
+
+            then(riderLocationRepository).should().saveIfNewer(RIDER_ID, LOCATION);
+            assertThat(LOCATION.status()).isNull();
+        }
+
         @Test
         @DisplayName("수행 중 배송이 없으면 발행하지 않고 조용히 끝낸다")
         void skipsPublishWhenNoInProgressDelivery() {
             // 운행 상태는 BUSY 인데 배정된 배송이 없는 정합성 깨진 상태다. 위치 갱신 자체는
             // 실패시키지 않고(로그로 드러낸다) 발행만 건너뛴다.
-            given(deliveryOrderRepository.findInProgressIdByActiveRiderId(RIDER_ID))
+            given(deliveryOrderRepository.findInProgressByActiveRiderId(RIDER_ID))
                     .willReturn(Optional.empty());
 
             assertThatCode(() -> service.update(rider(OperatingStatus.BUSY), LOCATION))
@@ -140,7 +178,7 @@ class RiderLocationServiceTest {
 
             service.update(rider(OperatingStatus.BUSY), LOCATION);
 
-            then(trackingPublisher).should().publish(DELIVERY_ID, LOCATION);
+            then(trackingPublisher).should().publish(DELIVERY_ID, LOCATION.withStatus(OrderStatus.DELIVERING));
         }
 
         @Test
@@ -149,7 +187,7 @@ class RiderLocationServiceTest {
             // 이 경로에 MySQL 의존이 있다. DB 장애가 최신 위치 저장까지 같이 죽이면 안 된다 —
             // 전달은 at-most-once 이고 다음 전송(5초)이 복구한다.
             willThrow(new RuntimeException("mysql down")).given(deliveryOrderRepository)
-                    .findInProgressIdByActiveRiderId(RIDER_ID);
+                    .findInProgressByActiveRiderId(RIDER_ID);
 
             assertThatCode(() -> service.update(rider(OperatingStatus.BUSY), LOCATION))
                     .doesNotThrowAnyException();
