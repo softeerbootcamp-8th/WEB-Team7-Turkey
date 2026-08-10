@@ -48,6 +48,11 @@ Grafana: `.env` 의 `SITE_ADDRESS` 주소 (자체서명이라 최초 1회 "고�
 | `prometheus.yml` | `docker compose restart prometheus` — 단일 파일 바인드 마운트라 reload 로는 안 잡힌다 |
 | 대시보드 | `./fetch-dashboards.sh` 재실행(프로바이더가 다시 읽는다) |
 
+**로컬에서 브랜치를 옮겼다면 `docker compose ... up -d --force-recreate prometheus` 를 해야 한다.**
+`targets/`·`rules/` 는 디렉터리 바인드 마운트인데, 브랜치 전환으로 그 디렉터리가 지워졌다 다시
+생기면 컨테이너는 삭제된 inode 를 계속 본다 — 대상이 **조용히 사라지고**(mysql 만 남는다) 지표가
+빈다. 실제로 재측정 한 번을 이것 때문에 날렸다.
+
 ## 알아둘 것
 
 - **9090(Prometheus)은 루프백 바인딩**이다. 부하테스트 결과를 밀어 넣거나 개발 PC 에서 직접

@@ -92,9 +92,12 @@ server:
   port: 8080
   tomcat:
     mbeanregistry:
-      # 이걸 켜야 Micrometer 가 tomcat_threads_busy_threads / config_max_threads 를 노출한다.
-      # 끄면 tomcat_sessions_* 만 나온다 — 커넥션 풀 대기로 스레드가 묶이는 상황(부하테스트에서
-      # 실제로 관측됨, backend/loadtest/README.md)을 진단할 지표가 없어진다.
+      # 켜면 tomcat_connections_*(현재/최대 연결), tomcat_global_*(요청 수·에러·바이트),
+      # tomcat_threads_* 가 나온다. 끄면 tomcat_sessions_* 만 남아 동시 연결이 얼마나 쌓였는지
+      # 볼 방법이 없다 — 부하 구간 진단에 실제로 필요했다(backend/loadtest/README.md).
+      # 주의: 가상 스레드(spring.threads.virtual.enabled)에서는 tomcat_threads_* 가 -1 이다.
+      # 스레드 풀이 없어 보고할 값이 없기 때문이다. 동시성은 tomcat_connections_current_connections
+      # 로 본다.
       enabled: true
 
 # --- Actuator: 모니터링(Prometheus)용 지표 노출 ---
