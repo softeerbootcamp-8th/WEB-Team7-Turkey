@@ -539,9 +539,17 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   (사람 확인) — **#401(2026-08-06)로 WAITING은 이 게이트를 통과하도록 바뀌었다**(라이더 배정 전이라도
   상태 전이 SSE는 받을 수 있어야 하므로, `OrderStatus.isTerminal()`로 판정을 바꿈). 지금은
   **COMPLETED·CANCELED만 409고, 완료·취소된 배송의 추적 화면을 그릴 API가 없다**(배송요청 상세 API는
-  아직 스텁). 또 `estimatedArrivalAt`은 항상 null이며(산정 근거 없음), `steps`는 `order_status_history`가
+  아직 스텁). ~~또 `estimatedArrivalAt`은 항상 null이며(산정 근거 없음),~~ **해소(#421/#431)**: ETA를
+  채운다(아래 항목 참조). 단 **WAITING은 라이더가 없어 ETA도 null이다** — 출발점이 없어 경로를
+  구할 수 없고, 라우팅을 호출하지도 않는다. `steps`는 `order_status_history`가
   아니라 `delivery_order` 시각 컬럼에서 파생한다 — 그 테이블은 엔터티만 있고 **행을 쓰는 코드가 없어
   런타임에 비어 있다**(상태 전이 API 이슈에서 작성기 필요)
+- **#401(WAITING 추적 허용)과 #421(ETA)이 만나는 지점에 함정이 하나 있다.** 추적 스냅샷이 응답 조립에
+  쓰는 `DeliveryOrderRepository.findWithAssignedRiderById`는 **반드시 `left join fetch` 여야 한다** —
+  WAITING은 `assigned_rider_id`가 NULL이라 inner join이면 주문이 존재하는데도 결과가 비어
+  `orElseThrow`가 500을 던진다. 같은 이유로 `DeliveryTrackingQueryService`는 라이더가 null이면
+  `DeliveryRouteEstimator`를 아예 호출하지 않는다(호출하면 NPE, 넘겨도 `targetOf`가 WAITING에
+  `IllegalStateException`을 던진다). `CustomerDeliveryTrackingE2ETest`의 WAITING 케이스가 이 조합을 지킨다
 - 배차 확정(`POST /api/rider/requests/{deliveryId}/accept`, #56) 실패 사유(취소/이미 배차/라이더
   다른 배송 수행 중)를 `ApiResponse`에 에러코드 필드 없이 `message` 문자열로만 구분함(ADR-006).
   프론트가 사유별로 다른 UX를 보여줘야 하면 에러코드 체계 신설을 별도 이슈로 논의해야 함
@@ -550,3 +558,56 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - 라이더 출금 최소 금액이 잠정값(#68, 사람 확인): `RiderPaymentService.MIN_WITHDRAWAL_AMOUNT` 5,000P.
   충전 최소 단위(#32, 1,000원)와는 별개 상수이며 화면 프리셋·이체 수수료 정책이 확정되면 재검토
   필요. 계좌 미등록·잔액 부족은 둘 다 409 로 응답한다(`RiderPointApi` 문서에서 이미 확정).
+- **경로 탐색 클라이언트가 `common/routing` 에 생겼다(#420, 2026-08-07).** 한때 카카오모빌리티로
+  바꿨다가(#431, 2026-08-09) 다시 OSRM 으로 되돌렸다(#431, 2026-08-10) — **"카카오 API 사용 권한
+  심사가 끝나 확정됐다(사람 확인)"는 당시 이슈 본문 기록은 근거 없는 오류였고, 실제로는 그런 확인이
+  없었다.** 카카오모빌리티 길찾기 API를 실제로 쓸 수 없는 상황이 되어 자체 호스팅 OSRM
+  (`OsrmRoutingClient`, #416)을 그대로 쓰는 것으로 정리했다(사람 확인, 2026-08-10). "사람 확인"
+  태그는 실제 확인 없이 붙이지 않는다 — 이슈·문서에 적을 때 주의할 것.
+  `RoutingClient` 인터페이스·호출자(`DeliveryRouteEstimator`, #421)는 이 두 번의 교체 동안 한 줄도
+  안 바뀌었다. 다만 **계약은 좁혔다**: `Optional<Route>`(duration/distanceMeters/path) →
+  `Optional<Duration>` — 유일한 소비자가 duration 만 쓰고 있었다(사람 확인, 2026-08-10). OSRM
+  요청도 `overview=false`로 바꿔 경로 좌표 자체를 요청하지 않는다. 확정된 것: 타임아웃 연결
+  300ms/읽기 700ms(#420 값 그대로 복원 — VPC 내부 co-locate 전제), 재시도 없음, 실패는 예외 대신
+  빈 값, 4xx 는 "경로 없음"이라 실패로 안 셈(OSRM 고유 판정), 연속 3회 실패 시 호출 스킵(대기 1초 →
+  2배씩 → 30초 상한, 성공 시 초기화 — `RoutingFailureBackoff` 그대로 재사용). **평일 출퇴근
+  시간대(Asia/Seoul 07-09시·18-20시)에는 raw duration 에 ×1.3 을 곱해 보정한다**(`DeliveryRouteEstimator`,
+  잠정값·실측 후 재조정, 사람 확인, 2026-08-10) — OSRM 이 자유흐름 기준이라 실시간 정체를 반영하지
+  않기 때문이다. 남은 미결:
+  - 러시아워 배수(1.3)·시간대(07-09, 18-20시)가 **실측 없이 정한 잠정값**이다. 실제 배송 데이터로
+    재조정 필요
+  - `KakaoMobilityRoutingClient` 는 삭제했다(#431 재작업). 되돌릴 일이 있으면 git 이력에서 꺼낸다
+  - 경로 결과 캐시가 없고, 실패 사유를 호출자에게 알리지 않는다(전부 빈 값 하나로 뭉갬)
+  - 백오프 카운트는 **인스턴스 로컬**이다. 인스턴스가 늘면 각자 세 번씩 확인한다(의도)
+  - 배포된 OSRM 서버(#416) 인프라 — 계속 쓰기로 확정되어 걷어낼지 여부는 더 이상 미결이 아니다.
+    사이징이 지금 트래픽에 맞는지는 별도 확인 필요
+- **추적 스냅샷이 ETA 를 싣는다(#421, 2026-08-07).** 출발점은 Redis 최신 위치, 도착점은 상태별로
+  갈린다 — 픽업 전(`ASSIGNED`·`MOVING_TO_PICKUP`)은 픽업지, 픽업 후(`PICKED_UP`·`DELIVERING`)는
+  도착지까지만 계산한다(사람 확인). 라이더 위치가 없으면(배차 직후·TTL 만료) **픽업지로 대체하지
+  않고 null 로 둔다**(사람 확인) — 픽업 전 상태에서 출발=도착이 되어 "지금 도착"이라는 틀린 값이
+  나오기 때문이다.
+  **예상 경로 좌표는 싣지 않는다**(사람 확인, 2026-08-07 — 한 번 구현했다가 걷어냈다). 고객에게
+  ETA 만 보여주기로 했다. 라우팅 응답에 경로가 함께 오므로 **라우팅 API 호출 수·지연은 같고**, 필요해지면
+  필드를 추가하면 된다 — 계약에서 안전한 방향은 추가지 제거라서 안 쓰는 필드를 미리 싣지 않는다.
+  경로를 다시 실을 때는 `{latitude, longitude}` **이름 붙은 객체 배열**로 한다(그때의 결정을
+  worklog 에 남겨 뒀다) — GeoJSON `[경도, 위도]` 를 그대로 흘리면 카카오맵과 반대인데 서울 좌표는
+  뒤집어도 유효 범위라 조용히 엉뚱한 곳에 그려진다. 남은 미결:
+  - **ETA 가 어느 지점의 시각인지 응답만으로는 알 수 없다.** 프론트가 `status` 로 구분해야 한다 —
+    필드를 나눌지(`pickupEtaAt`/`arrivalEtaAt`)는 화면(#422)에서 헷갈리는지 보고 판단
+  - **경로 결과 캐시가 없어 조회마다 라우팅 API 를 부른다.** 백업 폴링 1분 주기 × 동시 추적 수만큼
+    호출된다 — OSRM 은 자체 호스팅이라 과금은 없지만, 인스턴스 부하는 동시 추적 수에 비례한다
+  - **#421 이슈 본문("경로 좌표 필드 추가")과 부모 #423 제목("예상 경로 표시")이 구현과 어긋나 있다.**
+    이슈 쪽 정리가 필요하다
+  - `DeliveryTrackingQueryService.getTracking` 에서 **`@Transactional` 을 걷어냈다** — 외부 HTTP
+    호출(OSRM 기준 최대 1초: 연결 300ms + 읽기 700ms)이 DB 커넥션을 잡지 않게 하려는 것이고, 대신 지연 로딩을 쓸 수 없어
+    `findWithAssignedRiderById`(join fetch)로 읽는다. **이 메서드에 조회를 추가할 때 연관을 만지면
+    `LazyInitializationException` 이다**
+  - `order` 서비스가 `location/repository/RiderLocationRepository` 를 직접 주입받는다(패키지 방향은
+    엇갈리지만 그 리포지토리가 `order` 를 참조하지 않아 빈 순환은 없다). 세 번째 소비자가 생기면
+    `order` 쪽 포트로 뒤집을지 재검토
+- **개발 PC(Windows)에서 전체 테스트를 한 번에 돌리면 E2E 컨텍스트가 무작위로 실패한다**(#420
+  작업 중 확인, 2026-08-07). 원인은 Tomcat 바인드 실패(`java.net.SocketException: Bad address:
+  listen`)이고 실패 클래스가 실행마다 바뀐다 — 단독 실행하면 전부 통과한다. Windows 예약 포트 범위
+  (`netsh interface ipv4 show excludedportrange protocol=tcp`)가 흔한 원인이다. **테스트 실패를
+  보면 먼저 이 패턴인지 확인할 것.** CI 에서 테스트를 켤 때(위 「Redis 테스트 방식」 항목) 같은
+  문제가 나는지 확인 필요

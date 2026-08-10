@@ -2,14 +2,25 @@ package com.turkey.quick.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
 
 import com.turkey.quick.common.exception.BusinessException;
+import com.turkey.quick.common.routing.RoutingClient;
+import com.turkey.quick.location.dto.LocationPayload;
+import com.turkey.quick.location.repository.RiderLocationRepository;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.DeliveryStatusStepResponse;
 import com.turkey.quick.order.dto.DeliveryTrackingResponse;
 import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
 import com.turkey.quick.support.TrackingFixture;
+import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -17,6 +28,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 /**
  * 추적 스냅샷 조회를 실제 MySQL 로 검증한다(#79).
@@ -42,6 +54,18 @@ class DeliveryTrackingQueryServiceIntegrationTest extends IntegrationTestSupport
 
     @Autowired
     private TrackingFixture fixture;
+
+    @Autowired
+    private RiderLocationRepository riderLocationRepository;
+
+    /**
+     * OSRM 은 개발 PC·CI 어디에서도 닿지 않는다(#420: WAS 보안그룹 전용). 실제 클라이언트를 그대로
+     * 두면 이 클래스의 모든 테스트가 연결 실패 → 빈 경로로 흘러 <b>성공 경로를 한 번도 지나지
+     * 않는다.</b> 그래서 포트만 목으로 바꾼다 — 스텁하지 않은 테스트는 기본값(빈 Optional)이라
+     * "경로 서버가 응답하지 않는 상황"과 같은 결과가 된다.
+     */
+    @MockitoBean
+    private RoutingClient routingClient;
 
     private static BusinessException businessExceptionOf(Runnable action) {
         Throwable thrown = catchThrowable(action::run);
@@ -70,14 +94,37 @@ class DeliveryTrackingQueryServiceIntegrationTest extends IntegrationTestSupport
         }
 
         @Test
-        @DisplayName("도착 예정 시각은 현재 항상 null 이다")
-        void returnsNullEstimatedArrival() {
-            // 사람 확인(2026-07-31): 산정 근거가 없어 값을 만들지 않는다. 지도·경로 API 가 붙을 때
-            // 채운다. 임의의 값을 넣으면 화면이 그것을 약속으로 취급한다.
+        @DisplayName("라이더 최신 위치가 없으면 ETA 만 null 이고 나머지는 그대로 준다")
+        void returnsNullEtaWithoutRiderPosition() {
+            // 배차 직후(첫 위치 미전송)·TTL 만료. 픽업지로 출발점을 대체하지 않기로 했다
+            // (사람 확인, 2026-08-07) — 없는 값을 지어내면 화면이 그것을 약속으로 취급한다.
             var scenario = fixture.assignedDelivery();
 
-            assertThat(queryService.getTracking(scenario.deliveryId(), scenario.customerId())
-                    .estimatedArrivalAt()).isNull();
+            DeliveryTrackingResponse response =
+                    queryService.getTracking(scenario.deliveryId(), scenario.customerId());
+
+            assertThat(response.estimatedArrivalAt()).isNull();
+            assertThat(response.riderName()).isNotBlank();
+            assertThat(response.totalFare()).isEqualTo(scenario.totalFare());
+        }
+
+        @Test
+        @DisplayName("라이더 위치와 경로가 있으면 ETA 를 채운다")
+        void fillsEta() {
+            var scenario = fixture.assignedDelivery();
+            riderLocationRepository.saveIfNewer(scenario.riderId(), new LocationPayload(
+                    new BigDecimal("37.5100000"), new BigDecimal("127.0200000"),
+                    Instant.now(), null));
+            given(routingClient.findRoute(any(), any())).willReturn(Optional.of(Duration.ofSeconds(420)));
+            LocalDateTime before = LocalDateTime.now(ZoneOffset.UTC);
+
+            DeliveryTrackingResponse response =
+                    queryService.getTracking(scenario.deliveryId(), scenario.customerId());
+
+            // 러시아워 보정(최대 x1.3)이 테스트 실행 시각에 따라 걸릴 수 있어 상한을 넉넉히 잡는다.
+            assertThat(response.estimatedArrivalAt())
+                    .as("도착 예정 시각은 응답 시각 + 소요 시간(러시아워 보정 포함)이다")
+                    .isBetween(before.plusSeconds(420), LocalDateTime.now(ZoneOffset.UTC).plusSeconds(546));
         }
 
         @Test
@@ -122,6 +169,8 @@ class DeliveryTrackingQueryServiceIntegrationTest extends IntegrationTestSupport
             assertThat(response.status()).isEqualTo(OrderStatus.WAITING);
             assertThat(response.riderName()).isNull();
             assertThat(response.riderPhoneNumber()).isNull();
+            // 라이더가 없으면 경로의 출발점이 없다 — 라우팅을 부르지 않고 ETA 를 비운다.
+            assertThat(response.estimatedArrivalAt()).isNull();
             assertThat(response.steps())
                     .extracting(DeliveryStatusStepResponse::status)
                     .containsExactly(OrderStatus.WAITING);
