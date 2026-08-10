@@ -58,11 +58,8 @@ spring:
       max-file-size: 50MB
       max-request-size: 50MB
 
-# --- 경로 탐색(카카오모빌리티 길찾기): ETA·예상 경로 산정 ---
-# #431 에서 자체 호스팅 OSRM(#416)을 카카오모빌리티 API 로 교체했다. 실시간 교통정보가 반영되고
-# 자체 인프라 운영 부담이 없다.
-#
-# 서울시 전용 extract 로 Redis 인스턴스에 co-locate 배포된 자체 호스팅 OSRM 이다(#416).
+# --- 경로 탐색(OSRM): ETA 산정 ---
+# 서울시 전용 extract 로 Redis 인스턴스에 co-locate 배포된 자체 호스팅 OSRM 이다(#416, #431).
 # 라우팅 서버가 안 떠도 애플리케이션은 정상 기동한다 — OsrmRoutingClient 가 실패를 빈 값으로 흡수해
 # ETA 만 비고 추적 화면은 그대로 열린다.
 routing:
