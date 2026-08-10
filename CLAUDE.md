@@ -260,7 +260,11 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - **라이더 위치 갱신 한 번이 MySQL 3회 + Redis 3회를 쓴다**(#317). 인터셉터의 `member`·
   `rider_profile` PK 조회 2회 + 배송 조회 1회, GEO 반영 + 최신 위치 Lua + PUBLISH. BUSY 5초
   주기라 동시 배송 수에 비례한다. 인터셉터 비용은 모든 라이더 API 공통 구조여서 손대지 않았고
-  **#311 폴링 arm 비교의 핵심 변수**다 — 부하 테스트에서 확인할 항목
+  **#311 폴링 arm 비교의 핵심 변수**다 — 부하 테스트에서 확인할 항목.
+  **#449(2026-08-10)로 그 배송 조회가 index-only 를 잃었다** — `order_id` 는 보조 인덱스
+  `uk_delivery_active_rider` 에 PK 로 포함돼 인덱스만으로 끝났지만, 위치 프레임에 실을 `status`
+  는 인덱스에 없어 클러스터드 인덱스 조회가 한 번 더 붙는다(단일 행 PK 조회). 같은 부하 테스트
+  항목에 포함해 확인한다
 - **오류 응답에 Content-Type 을 명시해야 한다**(#77 에서 드러남, `GlobalExceptionHandler` 에 적용,
   단순화 이후에도 유효). 지정하지 않으면 스프링이 `Accept` 로 컨텐트 협상을 하고, 브라우저
   `EventSource` 는 `Accept: text/event-stream` 만 보내므로 401·409·429 가 전부 **406** 으로
