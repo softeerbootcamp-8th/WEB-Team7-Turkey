@@ -71,8 +71,22 @@ services:
   app:
     build: .
     profiles: ["app"]
+    # 배포 EC2(1GiB / 2 vCPU)와 같은 자원으로 묶는다. 호스트에서 bootRun 으로 재면 개발 PC의
+    # CPU·메모리를 다 쓰므로 배포 환경의 한계를 볼 수 없다(실제로 처리량이 자릿수로 달라진다 —
+    # loadtest/README.md 의 두 측정 비교).
+    # JVM 힙은 일부러 지정하지 않는다: 컨테이너 인식 기본값(메모리의 25% ≈ 256MiB)이고,
+    # 배포도 1GiB EC2 에서 옵션 없이 `java -jar` 라 같은 값이 나온다.
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1g
     ports:
       - "8080-8089:8080"
+      # Actuator(지표) 포트. Prometheus 가 이걸 긁는다(infra/monitoring-ec2 의
+      # targets.local/spring-app.yml). 고정 매핑이라 --scale app=2 이상은 이 줄을 지우거나
+      # 범위로 바꿔야 한다 — 대신 bootRun 과 포트가 같아 둘을 동시에 띄우는 실수가 막힌다.
+      - "8081:8081"
     environment:
       SPRING_PROFILES_ACTIVE: local
       DB_URL: jdbc:mysql://mysql:3306/turkey?tinyInt1isBit=false
@@ -115,13 +129,30 @@ services:
 
   # 실행: docker compose --profile loadtest run --rm k6 run /scripts/<파일명>.js
   # ./loadtest/ 에 시나리오 스크립트를 직접 작성해서 넣는다(리포지토리에는 없음).
+  #
+  # 모니터링 스택(infra/monitoring-ec2)의 Prometheus 로 결과를 보낼 수 있다. 개발 PC 쪽 포트는
+  # 9099 로 통일한다 — 이 파일의 s3mock 이 9090 을 쓰기 때문이다.
+  #   로컬 스택: docker-compose.local.yml 이 이미 127.0.0.1:9099 로 노출한다.
+  #   실 EC2   : ssh -N -L 9099:localhost:9090 <모니터링-EC2> &   (그쪽 9090 은 루프백 바인딩)
+  # 그다음:
+  #   K6_OUT=experimental-prometheus-rw \
+  #   K6_PROMETHEUS_RW_SERVER_URL=http://host.docker.internal:9099/api/v1/write \
+  #     docker compose --profile loadtest run --rm k6 run /scripts/<파일명>.js
+  # 컨테이너에서 호스트의 터널을 타려고 host.docker.internal 을 쓰므로 extra_hosts 가 필요하다.
+  # 출력 이름은 k6 버전에 따라 다를 수 있다(experimental- 접두어 제거 예정) — 안 먹으면
+  # `docker compose --profile loadtest run --rm k6 --help` 로 확인할 것.
   k6:
     image: grafana/k6:latest
     profiles: ["loadtest"]
     volumes:
       - ./loadtest:/scripts
     environment:
-      K6_OUT: influxdb=http://influxdb:8086/k6
+      K6_OUT: ${K6_OUT:-influxdb=http://influxdb:8086/k6}
+      K6_PROMETHEUS_RW_SERVER_URL: ${K6_PROMETHEUS_RW_SERVER_URL:-}
+      # 기본값은 avg/min/med/max 뿐이라 p99 가 안 올라간다. 부하테스트에서 볼 값은 p99 다.
+      K6_PROMETHEUS_RW_TREND_STATS: p(95),p(99),max
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - influxdb
     entrypoint: ["k6"]

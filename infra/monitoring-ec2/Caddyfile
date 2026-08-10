@@ -1,7 +1,11 @@
 # 도메인이 없어서 자체서명 인증서로 HTTPS 를 준다(tls internal). 팀원은 브라우저에서
-# 최초 1회 "고급 > 계속 진행"을 눌러야 한다. 나중에 도메인이 생기면 아래 :443 을
-# 도메인명으로 바꾸기만 하면 Caddy 가 Let's Encrypt 인증서를 자동으로 받아온다.
-:443 {
+# 최초 1회 "고급 > 계속 진행"을 눌러야 한다. 나중에 도메인이 생기면 .env 의 SITE_ADDRESS 를
+# 그 도메인으로 바꾸고 `tls internal` 줄만 지우면 Caddy 가 Let's Encrypt 인증서를 자동으로 받아온다.
+#
+# 사이트 주소를 반드시 이름(또는 IP)으로 적어야 한다. `:443` 처럼 이름 없이 두면 tls internal 이
+# 어떤 주체로 인증서를 발급할지 몰라 **핸드셰이크 자체가 실패**한다(SSL alert 80 internal error).
+# 실제로 그 상태였고 verify-local.sh 로 재현했다.
+{$SITE_ADDRESS:https://localhost} {
 	tls internal
 	reverse_proxy grafana:3000
 }

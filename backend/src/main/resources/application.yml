@@ -90,6 +90,12 @@ aws:
 
 server:
   port: 8080
+  tomcat:
+    mbeanregistry:
+      # 이걸 켜야 Micrometer 가 tomcat_threads_busy_threads / config_max_threads 를 노출한다.
+      # 끄면 tomcat_sessions_* 만 나온다 — 커넥션 풀 대기로 스레드가 묶이는 상황(부하테스트에서
+      # 실제로 관측됨, backend/loadtest/README.md)을 진단할 지표가 없어진다.
+      enabled: true
 
 # --- Actuator: 모니터링(Prometheus)용 지표 노출 ---
 # 별도 포트로 분리해, 보안그룹에서 앱 포트(8080)와 독립적으로 접근을 제한할 수 있게 한다.

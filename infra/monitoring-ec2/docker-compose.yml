@@ -9,11 +9,22 @@ services:
     image: prom/prometheus:v2.54.1
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      # 스크레이프 대상(앱 인스턴스 목록)과 알림 규칙. 대상 파일은 Prometheus 가 변경을
+      # 스스로 감지하고, 규칙은 /-/reload 로 반영한다.
+      - ./targets:/etc/prometheus/targets:ro
+      - ./rules:/etc/prometheus/rules:ro
       - prometheus-data:/prometheus
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       # k6 가 SSH 터널로 원격 write 로 부하테스트 결과를 여기로 직접 push 한다.
       - --web.enable-remote-write-receiver
+      # 규칙 파일을 고친 뒤 재시작 없이: curl -X POST http://localhost:9090/-/reload
+      # (9090 은 루프백 바인딩이라 외부에서 호출할 수 없다)
+      - --web.enable-lifecycle
+      # 기본값과 같은 15일이지만, 디스크를 실제로 지켜 주는 건 아래 size 상한이다.
+      # 둘 중 먼저 걸리는 쪽이 적용된다. EC2 볼륨 크기에 맞춰 조정할 것.
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=8GB
     # 루프백만 바인딩 — k6 를 로컬에서 돌리는 사람이 SSH 터널(-L 9090:localhost:9090)로만
     # 접근하고, 외부(팀원 브라우저 포함)에는 노출하지 않는다. Grafana 는 같은 docker
     # 네트워크 안에서 서비스명(prometheus:9090)으로 바로 붙으므로 별도 포트 공개가 필요 없다.
@@ -27,7 +38,11 @@ services:
     ports:
       - "3100:3100"
     volumes:
+      - ./loki-config.yaml:/etc/loki/config.yaml:ro
       - loki-data:/loki
+    # 이미지 기본 설정에는 retention 이 없어 로그가 무제한 쌓인다 — loki-config.yaml 참고.
+    command:
+      - -config.file=/etc/loki/config.yaml
 
   # DB(EC2 직접 설치든 RDS든) 에는 아무것도 설치하지 않고, 여기서 MySQL 프로토콜로
   # 접속해 지표를 뽑는다. 읽기전용 계정(PROCESS, REPLICATION CLIENT)의 접속정보는
@@ -57,6 +72,10 @@ services:
 
   caddy:
     image: caddy:2.8-alpine
+    environment:
+      # 팀원이 브라우저에 실제로 입력하는 주소(IP 든 도메인이든). Caddyfile 주석 참고 —
+      # 이 값이 곧 자체서명 인증서의 주체라 비워 두면 HTTPS 가 붙지 않는다.
+      SITE_ADDRESS: ${SITE_ADDRESS:?SITE_ADDRESS 를 .env 에 설정할 것}
     ports:
       - "443:443"
     volumes:

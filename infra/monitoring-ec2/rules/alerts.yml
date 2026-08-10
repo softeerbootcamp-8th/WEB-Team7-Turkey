@@ -1,0 +1,89 @@
+# 부하테스트·운영 중 사람이 놓치기 쉬운 것만 담는다. Alertmanager 를 붙이지 않았으므로
+# **알림은 전송되지 않고** Prometheus /alerts 와 Grafana > Alert rules 에서 상태로만 보인다
+# (전송 채널이 정해지면 compose 에 alertmanager 한 컨테이너 + alerting: 블록을 추가하면 된다).
+groups:
+  - name: infra
+    interval: 1m
+    rules:
+      # exporter·앱 어느 대상이든 스크레이프가 끊기면. job 라벨로 무엇이 죽었는지 구분된다.
+      - alert: TargetDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} 스크레이프 실패 ({{ $labels.instance }})"
+
+      # retention 을 걸어도 로그·TSDB 증가 속도가 예상을 넘으면 여기서 먼저 잡힌다.
+      - alert: DiskAlmostFull
+        expr: |
+          node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"} < 0.15
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }} {{ $labels.mountpoint }} 여유 15% 미만"
+
+      - alert: HostCpuSaturated
+        expr: 1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }} CPU 90% 초과 지속"
+
+  - name: app
+    interval: 1m
+    rules:
+      # max 가 -1 인 풀(설정 안 된 non-heap 등)이 섞이면 비율이 음수가 되므로 0 초과로 건다.
+      - alert: JvmHeapHigh
+        expr: |
+          sum by (instance) (jvm_memory_used_bytes{area="heap"})
+            / sum by (instance) (jvm_memory_max_bytes{area="heap"} > 0) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }} 힙 사용률 90% 초과"
+
+      # 커넥션을 기다리는 스레드가 있다 = 풀이 병목. 부하테스트에서 제일 먼저 봐야 하는 신호다.
+      - alert: HikariPoolPending
+        expr: hikaricp_connections_pending > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }} DB 커넥션 대기 {{ $value }}건"
+
+      - alert: Http5xxRateHigh
+        expr: |
+          sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+            / sum(rate(http_server_requests_seconds_count[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "5xx 비율 5% 초과"
+
+  - name: datastore
+    interval: 1m
+    rules:
+      # maxmemory 미설정이면 max 가 0이라 0으로 나눠 +Inf 가 된다 — 그래서 > 0 을 앞에 둔다.
+      - alert: RedisMemoryHigh
+        expr: redis_memory_max_bytes > 0 and redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis 메모리 90% 초과"
+
+      - alert: MysqlConnectionsHigh
+        expr: |
+          mysql_global_status_threads_connected
+            / mysql_global_variables_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MySQL 커넥션 max_connections 의 80% 초과"
