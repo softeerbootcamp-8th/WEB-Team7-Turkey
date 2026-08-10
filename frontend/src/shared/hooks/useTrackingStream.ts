@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 export type TrackingConnectionStatus = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'error'
 
@@ -32,6 +32,27 @@ export function parseFrameType(raw: string): 'LOCATION' | 'STATUS' {
     // parseLocationPing이 같은 파싱 실패를 다시 처리한다
   }
   return 'LOCATION'
+}
+
+/**
+ * LOCATION 프레임에 실려 오는 배송 상태를 읽는다(#449).
+ *
+ * 상태 전이 이벤트는 전이 시점에 한 번만 오므로 유실되면 다시 오지 않는다. 반면 위치 프레임은
+ * BUSY 5초 주기로 계속 오므로, 여기에 실린 상태를 보면 그 유실을 최대 5초 안에 알아챌 수 있다.
+ *
+ * 값이 없으면(롤링 배포 중 구버전 백엔드) null을 돌려주고, 호출자는 기존 동작을 유지한다.
+ */
+export function parseFrameStatus(raw: string): string | null {
+  try {
+    const parsed = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null) {
+      return null
+    }
+    const status = (parsed as Record<string, unknown>).status
+    return typeof status === 'string' ? status : null
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -85,6 +106,10 @@ export function useTrackingStream(deliveryId: number | undefined, enabled: boole
   const [status, setStatus] = useState<TrackingConnectionStatus>('idle')
   const [location, setLocation] = useState<LocationPing | null>(null)
   const [statusChangedAt, setStatusChangedAt] = useState<number | null>(null)
+  /** 마지막으로 본 배송 상태(#449). 위치 프레임은 5초마다 오므로, 매번이 아니라
+   *  값이 **달라졌을 때만** 재조회를 트리거하기 위한 기준값이다.
+   *  state가 아니라 ref인 이유: 이 값이 바뀐다고 연결을 다시 맺을 이유가 없다. */
+  const lastStatusRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (!enabled || deliveryId == null) {
@@ -95,6 +120,7 @@ export function useTrackingStream(deliveryId: number | undefined, enabled: boole
     setStatus('connecting')
     setLocation(null)
     setStatusChangedAt(null)
+    lastStatusRef.current = null
     const source = new EventSource(trackingStreamUrl(deliveryId), { withCredentials: true })
 
     source.onopen = () => {
@@ -109,6 +135,19 @@ export function useTrackingStream(deliveryId: number | undefined, enabled: boole
       const ping = parseLocationPing(event.data)
       if (ping) {
         setLocation(ping)
+      }
+      // 위치 프레임에 실려 온 상태가 직전과 다르면, 그 사이 상태 전이 이벤트를 놓친 것이다(#449).
+      // 값 자체는 렌더링에 쓰지 않고 재조회 신호만 울린다 — 표시할 값은 REST가 정본이다.
+      // 값이 없으면(구버전 백엔드) 아무것도 하지 않아 기존 동작이 그대로 유지된다.
+      const frameStatus = parseFrameStatus(event.data)
+      if (frameStatus !== null && frameStatus !== lastStatusRef.current) {
+        const isFirstFrame = lastStatusRef.current === null
+        lastStatusRef.current = frameStatus
+        // 첫 프레임은 "바뀐" 것이 아니다 — 화면은 이미 REST로 최신 상태를 읽고 진입했으므로,
+        // 여기서 트리거하면 진입 직후 불필요한 재조회가 한 번 더 돈다.
+        if (!isFirstFrame) {
+          setStatusChangedAt(Date.now())
+        }
       }
     }
 
