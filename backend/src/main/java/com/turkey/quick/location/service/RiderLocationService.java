@@ -2,10 +2,10 @@ package com.turkey.quick.location.service;
 
 import com.turkey.quick.common.exception.BusinessException;
 import com.turkey.quick.location.dto.LocationPayload;
-import com.turkey.quick.order.domain.OrderStatus;
-import com.turkey.quick.order.dto.InProgressDelivery;
 import com.turkey.quick.location.repository.RiderLocationRepository;
 import com.turkey.quick.location.sse.TrackingPublisher;
+import com.turkey.quick.order.domain.OrderStatus;
+import com.turkey.quick.order.dto.InProgressDelivery;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.rider.auth.AuthenticatedRider;
 import com.turkey.quick.rider.domain.OperatingStatus;
