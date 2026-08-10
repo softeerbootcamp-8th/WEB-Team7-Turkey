@@ -46,6 +46,12 @@ describe('운행 상세 표시값', () => {
     expect(formatDetailTime('2026-08-05T05:30:00Z')).toBe('14:30')
     expect(formatDetailTime(undefined)).toBe('시각 미제공')
   })
+
+  it('오프셋 없는 서버 시각(실제 백엔드 형식)도 UTC 로 보고 한국 시간으로 표시한다', () => {
+    // 백엔드는 UTC 값을 `Z` 없이 내보낸다(예: "2026-08-05T05:30:00"). 로컬로 오인하면 -9시간이 된다.
+    expect(formatDetailTime('2026-08-05T05:30:00')).toBe('14:30')
+    expect(formatDetailDate('2026-08-05T20:00:00')).toBe('2026.08.06') // UTC 20:00 → KST 익일 05:00
+  })
 })
 
 describe('상태 이력 타임라인', () => {

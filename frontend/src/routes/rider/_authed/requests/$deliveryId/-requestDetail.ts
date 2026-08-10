@@ -4,6 +4,7 @@ import type {
   ApiResponseRiderDeliveryRequestDetailResponse,
   RiderDeliveryRequestDetailResponseItemType,
 } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
+import { formatSeoul } from '@/shared/lib/datetime'
 
 const ITEM_LABELS: Record<RiderDeliveryRequestDetailResponseItemType, string> = {
   DOCUMENT: '문서',
@@ -38,14 +39,7 @@ export function formatMinutes(minutes: number | undefined): string {
 }
 
 export function formatRequestedAt(requestedAt: string | undefined): string | null {
-  if (!requestedAt) {
-    return null
-  }
-  const date = new Date(requestedAt)
-  if (Number.isNaN(date.getTime())) {
-    return null
-  }
-  return date.toLocaleString('ko-KR', {
+  return formatSeoul(requestedAt, {
     month: 'numeric',
     day: 'numeric',
     hour: '2-digit',

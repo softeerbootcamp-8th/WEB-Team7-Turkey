@@ -5,6 +5,7 @@ import com.turkey.quick.rider.auth.AuthenticatedRider;
 import com.turkey.quick.rider.auth.RiderSessionInterceptor;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestAcceptResponse;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestDetailResponse;
+import com.turkey.quick.rider.dto.RiderDeliveryRequestPageResponse;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestSummaryResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -13,7 +14,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import java.math.BigDecimal;
-import java.util.List;
+import java.time.LocalDateTime;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -47,10 +48,13 @@ public interface RiderDeliveryRequestApi {
                     + "bounding box 인덱스로 거른다(#367). 좌표를 안 보내면 위치 필터 없이 전체를 "
                     + "반환하고, 거리 필드는 null, DISTANCE 정렬은 REQUESTED_AT 으로 대체한다 "
                     + "(#55 계약 확정 — 위치 없음은 에러가 아니다). "
+                    + "운임·배송거리 범위 필터와 keyset(커서) 페이지네이션이 추가됐다(#60). "
+                    + "커서는 이전 페이지 마지막 항목의 정렬값(sort에 해당하는 after* 필드 하나)과 "
+                    + "afterId를 그대로 돌려보내면 된다 — 첫 페이지는 전부 생략한다. "
                     + "(#55) 라이더 식별을 위한 인증 파라미터가 이 계약에 빠져 있었어 추가함 — "
                     + "다른 세 메서드(상세/수락/넘기기)는 각자 이슈에서 채운다.")
     @GetMapping
-    ApiResponse<List<RiderDeliveryRequestSummaryResponse>> getDeliveryRequests(
+    ApiResponse<RiderDeliveryRequestPageResponse> getDeliveryRequests(
             @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
             AuthenticatedRider rider,
 
@@ -66,7 +70,43 @@ public interface RiderDeliveryRequestApi {
             @Parameter(description = "정렬 기준", example = "DISTANCE",
                     schema = @io.swagger.v3.oas.annotations.media.Schema(
                             allowableValues = {"DISTANCE", "FARE", "REQUESTED_AT"}))
-            @RequestParam(defaultValue = "DISTANCE") String sort);
+            @RequestParam(defaultValue = "DISTANCE") String sort,
+
+            @Parameter(description = "정렬 방향(선택, 생략하면 기준별 기본값 — FARE는 내림차순, "
+                    + "나머지는 오름차순)", example = "ASC",
+                    schema = @io.swagger.v3.oas.annotations.media.Schema(allowableValues = {"ASC", "DESC"}))
+            @RequestParam(required = false) String sortDirection,
+
+            @Parameter(description = "예상 정산액(운임) 최소값, 원(선택)", example = "3000")
+            @RequestParam(required = false) Long fareMin,
+
+            @Parameter(description = "예상 정산액(운임) 최대값, 원(선택)", example = "10000")
+            @RequestParam(required = false) Long fareMax,
+
+            @Parameter(description = "배송거리(픽업→도착지) 최소값, m(선택)", example = "500")
+            @RequestParam(required = false) Integer distanceMin,
+
+            @Parameter(description = "배송거리(픽업→도착지) 최대값, m(선택)", example = "5000")
+            @RequestParam(required = false) Integer distanceMax,
+
+            @Parameter(description = "페이지 크기(1~100)", example = "20")
+            @RequestParam(defaultValue = "20") int size,
+
+            @Parameter(description = "커서: 이전 페이지 마지막 항목의 라이더→픽업지 거리(m). "
+                    + "sort=DISTANCE일 때만 채운다", example = "740")
+            @RequestParam(required = false) Integer afterDistanceMeters,
+
+            @Parameter(description = "커서: 이전 페이지 마지막 항목의 예상 정산액. sort=FARE일 때만 채운다",
+                    example = "6400")
+            @RequestParam(required = false) Long afterFare,
+
+            @Parameter(description = "커서: 이전 페이지 마지막 항목의 요청 시각. sort=REQUESTED_AT일 때만 채운다",
+                    example = "2026-07-28T02:10:00")
+            @RequestParam(required = false) LocalDateTime afterRequestedAt,
+
+            @Parameter(description = "커서: 이전 페이지 마지막 항목의 배송요청 식별자(정렬값이 같을 때 "
+                    + "tiebreaker). 첫 페이지면 생략", example = "1024")
+            @RequestParam(required = false) Long afterId);
 
     @Operation(summary = "배차 대기 콜 상세",
             description = "수락 판단에 필요한 거리·운임·소요시간·좌표를 조회한다. "

@@ -5,6 +5,9 @@ import { loadKakaoMaps } from '@/lib/kakaoMaps'
 interface RequestRouteMapProps {
   pickup: AddressResponse | undefined
   destination: AddressResponse | undefined
+  // 정보 시트가 지도 하단을 가리는 높이(px). 기본 상태(시트 올림)에서 가려지는 만큼을
+  // 초기 fit 의 아래 여백으로 줘서 두 지점이 가려지지 않는 위쪽 영역에 놓이게 한다.
+  bottomInsetPx?: number
 }
 
 function hasCoordinates(address: AddressResponse | undefined): address is AddressResponse & {
@@ -32,10 +35,11 @@ function createPinImage(color: string): kakao.maps.MarkerImage {
   )
 }
 
-export function RequestRouteMap({ pickup, destination }: RequestRouteMapProps) {
+export function RequestRouteMap({ pickup, destination, bottomInsetPx = 0 }: RequestRouteMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const markersRef = useRef<kakao.maps.Marker[]>([])
   const routeLineRef = useRef<kakao.maps.Polyline | null>(null)
+  const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const [mapError, setMapError] = useState<string | null>(null)
 
   const pickupLatitude = pickup?.latitude
@@ -96,7 +100,17 @@ export function RequestRouteMap({ pickup, destination }: RequestRouteMapProps) {
         const bounds = new window.kakao.maps.LatLngBounds()
         bounds.extend(pickupPosition)
         bounds.extend(destinationPosition)
-        map.setBounds(bounds, 40, 40, 60, 40)
+        // 첫 렌더에 한 번만 두 지점을 맞춘다(초기 축척 결정). 시트가 가리는 아래 영역만큼
+        // 여백을 더 줘서 두 지점이 가려지지 않는 위쪽에 놓이게 한다.
+        map.setBounds(bounds, 40, 40, 60 + bottomInsetPx, 40)
+
+        // 지도 크기 자체는 고정이라 드래그 중에는 이 콜백이 돌지 않는다. 화면 회전 등으로
+        // 컨테이너가 실제로 바뀔 때만 relayout 으로 타일을 다시 채운다(축척은 유지).
+        const observer = new ResizeObserver(() => {
+          map.relayout()
+        })
+        observer.observe(containerRef.current)
+        resizeObserverRef.current = observer
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -106,6 +120,8 @@ export function RequestRouteMap({ pickup, destination }: RequestRouteMapProps) {
 
     return () => {
       cancelled = true
+      resizeObserverRef.current?.disconnect()
+      resizeObserverRef.current = null
       markersRef.current.forEach((marker) => marker.setMap(null))
       markersRef.current = []
       routeLineRef.current?.setMap(null)

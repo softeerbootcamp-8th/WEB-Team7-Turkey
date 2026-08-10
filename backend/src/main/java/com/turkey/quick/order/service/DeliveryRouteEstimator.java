@@ -100,8 +100,11 @@ public class DeliveryRouteEstimator {
      * 지금 향하는 지점. {@code status} 를 인자로 따로 받는 것은 이 판정만 스프링 없이 단위 테스트하기
      * 위해서다.
      *
-     * @throws IllegalStateException 추적 불가 상태({@code WAITING}·{@code COMPLETED}·{@code CANCELED}).
-     *                              게이트({@code DeliveryTrackingAccessService})가 409 로 이미 거른다
+     * @throws IllegalStateException 라이더가 배정되지 않았거나 끝난 상태
+     *                              ({@code WAITING}·{@code COMPLETED}·{@code CANCELED}).
+     *                              <b>게이트가 다 걸러 주지 않는다</b> — #401 이후 {@code WAITING} 은
+     *                              추적 게이트를 통과하므로, 호출자가 배정 라이더 유무로 먼저 걸러야 한다
+     *                              ({@code DeliveryTrackingQueryService} 참고)
      */
     static Coordinate targetOf(OrderStatus status, DeliveryOrder order) {
         Address target = switch (status) {

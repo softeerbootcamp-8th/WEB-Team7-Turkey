@@ -33,6 +33,20 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
     Optional<DeliveryOrder> findByIdForUpdate(@Param("orderId") Long orderId);
 
     /**
+     * 조건부 UPDATE가 0행일 때 실패 사유를 구분하기 위한 재조회용(#405). 평범한 조회(일관된 읽기)는
+     * 이 트랜잭션이 시작할 때 고정된 스냅샷을 그대로 따르므로, 방금 다른 트랜잭션이 커밋한 최신
+     * 상태를 못 볼 수 있다 — 그래서 잠금 읽기(현재 읽기)로 스냅샷을 건너뛴다.
+     *
+     * <p>이 메서드를 부르는 호출부는 항상 직전에 조건부 UPDATE를 시도해 이 행을 이미 검사한
+     * 뒤라(REPEATABLE READ에서는 조건에 안 맞아도 검사한 행에 락이 남는다), 여기서 락 대기가
+     * 발생하지 않는다. {@link #findByIdForUpdate}와 달리 이후에 이 행을 다시 쓰지 않으므로
+     * 배타 락 대신 공유 락을 쓴다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_READ)
+    @Query("select o from DeliveryOrder o where o.id = :orderId")
+    Optional<DeliveryOrder> findByIdForShare(@Param("orderId") Long orderId);
+
+    /**
      * 고객 본인의 배송요청을 실시간 구독 판정에 필요한 값만 뽑아 조회한다(#77 흐름 ②).
      *
      * <p><b>고객 조건을 쿼리에 넣는 이유</b>: 주문을 먼저 읽고 애플리케이션에서 소유자를 비교하면
@@ -97,8 +111,12 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
     /**
      * 추적 스냅샷(#79)이 응답을 조립하는 데 필요한 것을 <b>한 번에</b> 읽는다(#421에서 추가).
      *
-     * <p>배정 라이더와 그 회원까지 {@code join fetch} 하는 이유는 <b>호출자가 트랜잭션 밖에서 응답을
-     * 조립하기 때문이다.</b> #421 이 이 경로에 경로 탐색 호출(#431 기준 최대 3초)을 넣으면서
+     * <p><b>{@code left} join fetch 여야 한다.</b> #401 이후 WAITING 도 이 경로로 들어오는데 그 상태는
+     * {@code assigned_rider_id} 가 NULL 이라, inner join 이면 주문이 존재하는데도 결과가 비어
+     * 호출자의 {@code orElseThrow} 가 500 을 던진다.
+     *
+     * <p>배정 라이더와 그 회원까지 fetch 하는 이유는 <b>호출자가 트랜잭션 밖에서 응답을
+     * 조립하기 때문이다.</b> #421 이 이 경로에 경로 탐색 호출(OSRM 기준 최대 1초)을 넣으면서
      * {@code DeliveryTrackingQueryService.getTracking} 의 트랜잭션을 걷어냈다 — 외부 HTTP 호출이
      * 끝날 때까지 DB 커넥션을 붙잡고 있으면 백업 폴링(1분 주기, #422) × 동시 추적 수만큼 커넥션이
      * 잠긴다. 그 대신 엔터티가 곧바로 준영속이 되므로, 지연 로딩된 연관을 만지는 순간
@@ -112,8 +130,8 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
     @Query("""
             select o
             from DeliveryOrder o
-            join fetch o.assignedRider r
-            join fetch r.member
+            left join fetch o.assignedRider r
+            left join fetch r.member
             where o.id = :deliveryId
             """)
     Optional<DeliveryOrder> findWithAssignedRiderById(@Param("deliveryId") Long deliveryId);

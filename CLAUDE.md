@@ -210,7 +210,10 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   `application.yml`의 `spring.mvc.async.request-timeout`과 같은 값). heartbeat가 없다는 전제가
   예전(#266, heartbeat 15초)과 다르다
 - **heartbeat가 없다.** 그래서 CloudFront 등 프록시의 유휴 타임아웃에 조용한 스트림이 끊길 수
-  있다(예전에 heartbeat를 둔 이유이기도 하다)
+  있다(예전에 heartbeat를 둔 이유이기도 하다). **#401(2026-08-06)로 이 공백의 실제 영향이
+  커졌다** — WAITING 상태에서도 SSE 연결을 허용하면서, 배차 대기 시간(길면 수 분)만큼 연결이
+  완전히 침묵한 채 열려 있을 수 있다. BUSY 라이더의 5초 위치 전송과 달리 이 구간은 대기 시간
+  전체가 무음이라 프록시 유휴 타임아웃·emitter 타임아웃(5분)에 더 쉽게 걸린다
 - **끊긴 연결 탐지에는 쓰기가 최소 두 번 필요하다**(#317에서 실측). heartbeat가 없어 서버는
   클라이언트가 닫은 것을 스스로 모르고, **끊긴 연결에 대한 첫 쓰기는 소켓 버퍼에 들어가 성공하는
   경우가 많다** — 실패는 그 다음 쓰기부터 올라온다. 탭을 닫은 고객의 연결은 위치 전송 두 주기
@@ -428,13 +431,24 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - `RiderDeliveryRequestApi`의 `getDeliveryRequest`/`acceptDeliveryRequest`/`skipDeliveryRequest`
   세 메서드에 라이더 식별 파라미터(`AuthenticatedRider`)가 빠져 있음(#55) — #56/#57 구현 시
   `getDeliveryRequests`와 같은 방식(`@RequestAttribute`)으로 추가 필요
-- 라이더 콜 목록(`GET /api/rider/requests`, #55)에 `radiusMeters` 상한이 없고 페이지네이션도
-  없음 — WAITING 주문이 크게 늘어나는 시점(다도시 동시 운영 등)에 성능 문제가 되면 계약을 다시 열어야 함.
-  **#367로 위치 검색 자체는 bounding box 인덱스(`idx_delivery_waiting_location`)를 타도록 바뀌었지만
-  ([#367 worklog](docs/worklog/2026-08-05-367-rider-call-list-location-search.md)), 상한·페이지네이션
-  미비는 그대로 남아 있다** — 좌표를 안 보내는 요청(#367에서 선택 파라미터로 확정, 사람 확인)은
-  여전히 WAITING 전체를 반환한다. #60(필터/정렬 확장)에서 페이지네이션 도입 시 이 문제를 함께 해소할지
-  판단 필요
+- 라이더 콜 목록(`GET /api/rider/requests`, #55)에 `radiusMeters` 상한이 없음 — WAITING 주문이
+  크게 늘어나는 시점(다도시 동시 운영 등)에 성능 문제가 되면 계약을 다시 열어야 함(페이지네이션은
+  #60으로 해소됨, 아래 항목 참고). **#367로 위치 검색 자체는 bounding box 인덱스
+  (`idx_delivery_waiting_location`)를 타도록 바뀌었지만
+  ([#367 worklog](docs/worklog/2026-08-05-367-rider-call-list-location-search.md)), 좌표를 안
+  보내는 요청(#367에서 선택 파라미터로 확정, 사람 확인)은 여전히 WAITING 전체를 걸러 정렬한 뒤
+  페이지 크기만큼 잘라 반환한다** — 후보 자체가 줄어들지 않는다는 뜻이라, radiusMeters 상한
+  미비는 그대로 남아 있다.
+- **콜 목록 필터·정렬 확장(#60)이 완료됨**(사람 확인, 2026-08-06) — 운임·배송거리 범위 필터,
+  정렬 방향(`sortDirection`), keyset(커서) 페이지네이션을 추가함
+  ([#60 worklog](docs/worklog/2026-08-06-60-rider-quick-request-filter-sort.md)). 운임·배송거리
+  필터는 반경 필터와 같은 구조(자바 메모리 필터)로 두었고, 페이지 자르기·커서 비교도 그 필터가
+  끝난 최종 목록 위에서 자바로 수행한다(SQL 커서 쿼리 아님) — bounding box 후보가 수백 건
+  수준이라는 전제(#367 실측)에서 성능 문제가 없다고 판단했다. 응답이 `List`에서
+  `{items, hasNext}`로 바뀌었다(총 건수는 안 담음 — keyset은 매 요청 재조회라 COUNT 비용이
+  이 조회 자체와 안 맞음). **새로 생긴 미결**: (a) 여러 정렬 기준 조합(예: "가까우면서 비싼
+  순")은 지원하지 않음 — 이슈 입력값이 단일 기준만 전제했음, 필요해지면 별도 이슈. (b) 총
+  건수 노출이 필요해지면 keyset과 어떻게 공존시킬지 판단 필요.
 - **라이더 좌표를 요청 파라미터로 받는 계약 변경(#367)이 완료됨**(사람 확인, 2026-08-05) — #342가
   없앤 `findPosition(self)`(옛 `riders:geo` 조회)의 대체 경로로, `latitude`/`longitude`를 선택 쿼리
   파라미터로 추가했다. 둘 다 없으면 #55 원래 계약(위치 없음 → 반경 필터 스킵, 전체 반환)을 그대로
@@ -522,11 +536,20 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   use-after-free 를 함께 막아야 한다(`complete()` 는 콜백을 동기로 돌리지 않는다) — 레지스트리 제거를
   값까지 비교하는 형태로 바꾸면 된다. 별도 이슈로 올릴지 미결
 - 추적 스냅샷(`GET /api/customer/deliveries/{deliveryId}/tracking`, #79)이 **스트림과 같은 게이트를 쓴다**
-  (사람 확인) — 그래서 WAITING·COMPLETED·CANCELED 는 409 고, **완료·취소된 배송의 추적 화면을 그릴 API 가
-  없다**(배송요청 상세 API 는 아직 스텁). ~~또 `estimatedArrivalAt` 은 항상 null 이며(산정 근거 없음),~~
-  **해소(#421, 2026-08-07)**: ETA·예상 경로를 채운다(아래 항목 참조).
-  `steps` 는 `order_status_history` 가 아니라 `delivery_order` 시각 컬럼에서 파생한다 — 그 테이블은
-  엔터티만 있고 **행을 쓰는 코드가 없어 런타임에 비어 있다**(상태 전이 API 이슈에서 작성기 필요)
+  (사람 확인) — **#401(2026-08-06)로 WAITING은 이 게이트를 통과하도록 바뀌었다**(라이더 배정 전이라도
+  상태 전이 SSE는 받을 수 있어야 하므로, `OrderStatus.isTerminal()`로 판정을 바꿈). 지금은
+  **COMPLETED·CANCELED만 409고, 완료·취소된 배송의 추적 화면을 그릴 API가 없다**(배송요청 상세 API는
+  아직 스텁). ~~또 `estimatedArrivalAt`은 항상 null이며(산정 근거 없음),~~ **해소(#421/#431)**: ETA를
+  채운다(아래 항목 참조). 단 **WAITING은 라이더가 없어 ETA도 null이다** — 출발점이 없어 경로를
+  구할 수 없고, 라우팅을 호출하지도 않는다. `steps`는 `order_status_history`가
+  아니라 `delivery_order` 시각 컬럼에서 파생한다 — 그 테이블은 엔터티만 있고 **행을 쓰는 코드가 없어
+  런타임에 비어 있다**(상태 전이 API 이슈에서 작성기 필요)
+- **#401(WAITING 추적 허용)과 #421(ETA)이 만나는 지점에 함정이 하나 있다.** 추적 스냅샷이 응답 조립에
+  쓰는 `DeliveryOrderRepository.findWithAssignedRiderById`는 **반드시 `left join fetch` 여야 한다** —
+  WAITING은 `assigned_rider_id`가 NULL이라 inner join이면 주문이 존재하는데도 결과가 비어
+  `orElseThrow`가 500을 던진다. 같은 이유로 `DeliveryTrackingQueryService`는 라이더가 null이면
+  `DeliveryRouteEstimator`를 아예 호출하지 않는다(호출하면 NPE, 넘겨도 `targetOf`가 WAITING에
+  `IllegalStateException`을 던진다). `CustomerDeliveryTrackingE2ETest`의 WAITING 케이스가 이 조합을 지킨다
 - 배차 확정(`POST /api/rider/requests/{deliveryId}/accept`, #56) 실패 사유(취소/이미 배차/라이더
   다른 배송 수행 중)를 `ApiResponse`에 에러코드 필드 없이 `message` 문자열로만 구분함(ADR-006).
   프론트가 사유별로 다른 UX를 보여줘야 하면 에러코드 체계 신설을 별도 이슈로 논의해야 함

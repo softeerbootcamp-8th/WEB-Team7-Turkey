@@ -24,7 +24,10 @@ import com.turkey.quick.rider.auth.AuthenticatedRider;
 import com.turkey.quick.rider.domain.OperatingStatus;
 import com.turkey.quick.rider.domain.RiderProfile;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestAcceptResponse;
+import com.turkey.quick.rider.dto.RiderDeliveryRequestCursor;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestDetailResponse;
+import com.turkey.quick.rider.dto.RiderDeliveryRequestFilter;
+import com.turkey.quick.rider.dto.RiderDeliveryRequestPageResponse;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestSummaryResponse;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
@@ -106,6 +109,19 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         return new AuthenticatedRider(rider.getId(), rider.getLoginId(), rider.getName(), status);
     }
 
+    private static final RiderDeliveryRequestFilter NO_FILTER =
+            new RiderDeliveryRequestFilter(null, null, null, null);
+    private static final RiderDeliveryRequestCursor FIRST_PAGE =
+            new RiderDeliveryRequestCursor(null, null, null, null);
+    private static final int DEFAULT_SIZE = 20;
+
+    /** #60 이전(필터·정렬 방향·페이지네이션 없음) 동작을 검증하던 기존 테스트가 쓰는 기본 호출. */
+    private List<RiderDeliveryRequestSummaryResponse> callDefault(
+            AuthenticatedRider rider, BigDecimal latitude, BigDecimal longitude, int radiusMeters, String sort) {
+        return riderDeliveryRequestService.getDeliveryRequests(rider, latitude, longitude, radiusMeters, sort,
+                null, NO_FILTER, DEFAULT_SIZE, FIRST_PAGE).items();
+    }
+
     /**
      * Member 와 RiderProfile 을 한 트랜잭션에서 저장한다({@code RiderSessionE2ETest.saveRider}와 같은 이유).
      * RiderProfile.member 는 @MapsId 라서, 서로 다른 트랜잭션에서 저장하면 두 번째 저장 시점에
@@ -136,6 +152,23 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         DeliveryOrder saved = deliveryOrderRepository.save(order);
         orderFareSnapshotRepository.save(
                 OrderFareSnapshot.create(saved, farePolicy, FareType.ESTIMATE, "v1", 1000, 3000L, 130L, 0L));
+        return saved;
+    }
+
+    /** #60 필터·페이지네이션 검증용 — 운임·배송거리를 직접 지정해 WAITING 주문을 만든다. */
+    private DeliveryOrder saveWaitingOrderWithFareAndDistance(long totalFare, int distanceMeters) {
+        String uniqueSuffix = String.valueOf(System.nanoTime() % 100_000_000L);
+        Member customer = memberRepository.save(
+                Member.create("integration_fd_customer_" + uniqueSuffix, "hash", "고객", "010" + uniqueSuffix,
+                        MemberRole.CUSTOMER));
+        DeliveryOrder order = DeliveryOrder.request(customer, "req-" + System.nanoTime(), ItemType.SMALL_PARCEL,
+                distanceMeters,
+                Address.of("픽업지 도로명", "상세", "12345", new BigDecimal("37.5010000"), new BigDecimal("127.0010000")),
+                Address.of("도착지 도로명", "상세", "54321", new BigDecimal("37.6000000"), new BigDecimal("127.1000000")),
+                Contact.of("보내는사람", "01011112222"), Contact.of("받는사람", "01033334444"));
+        DeliveryOrder saved = deliveryOrderRepository.save(order);
+        orderFareSnapshotRepository.save(
+                OrderFareSnapshot.create(saved, farePolicy, FareType.ESTIMATE, "v1", distanceMeters, totalFare, 0L, 0L));
         return saved;
     }
 
@@ -189,7 +222,7 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         assignedTarget.assign(assignedRiderProfile);
         deliveryOrderRepository.save(assignedTarget);
 
-        List<RiderDeliveryRequestSummaryResponse> result = riderDeliveryRequestService.getDeliveryRequests(
+        List<RiderDeliveryRequestSummaryResponse> result = callDefault(
                 authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "REQUESTED_AT");
 
         assertThat(result).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
@@ -204,7 +237,7 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         // 적용되지 않기 때문이다.
         DeliveryOrder order = saveWaitingOrder(new BigDecimal("37.9000000"), new BigDecimal("127.9000000"));
 
-        List<RiderDeliveryRequestSummaryResponse> result = riderDeliveryRequestService.getDeliveryRequests(
+        List<RiderDeliveryRequestSummaryResponse> result = callDefault(
                 authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100, "DISTANCE");
 
         assertThat(result).extracting(RiderDeliveryRequestSummaryResponse::deliveryId).contains(order.getId());
@@ -222,7 +255,7 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         // 라이더 위치에서 수십 km — 반경(3km) 훨씬 밖(사각형 범위 자체에도 안 걸림)
         DeliveryOrder far = saveWaitingOrder(new BigDecimal("37.9000000"), new BigDecimal("127.9000000"));
 
-        List<RiderDeliveryRequestSummaryResponse> result = riderDeliveryRequestService.getDeliveryRequests(
+        List<RiderDeliveryRequestSummaryResponse> result = callDefault(
                 authenticatedRider(OperatingStatus.AVAILABLE), riderLat, riderLng, 3000, "DISTANCE");
 
         assertThat(result).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
@@ -242,7 +275,7 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         // (사각형이 원보다 4/π≈1.27배 넓어서 생기는 모서리 후보, #367 처리 흐름 ④의 실제 예시).
         DeliveryOrder corner = saveWaitingOrder(new BigDecimal("37.5088000"), new BigDecimal("127.0112000"));
 
-        List<RiderDeliveryRequestSummaryResponse> result = riderDeliveryRequestService.getDeliveryRequests(
+        List<RiderDeliveryRequestSummaryResponse> result = callDefault(
                 authenticatedRider(OperatingStatus.AVAILABLE), riderLat, riderLng, radiusMeters, "DISTANCE");
 
         assertThat(result).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
@@ -254,12 +287,80 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
     void shouldExposeExpectedSettlementAmountFromFareSnapshot() {
         DeliveryOrder order = saveWaitingOrder(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"));
 
-        List<RiderDeliveryRequestSummaryResponse> result = riderDeliveryRequestService.getDeliveryRequests(
+        List<RiderDeliveryRequestSummaryResponse> result = callDefault(
                 authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "REQUESTED_AT");
 
         RiderDeliveryRequestSummaryResponse summary = result.stream()
                 .filter(r -> r.deliveryId().equals(order.getId())).findFirst().orElseThrow();
         assertThat(summary.expectedSettlementAmount()).isEqualTo(3130L);
+    }
+
+    @Test
+    @DisplayName("운임 범위 필터로 실제 DB에서도 범위 밖 주문을 제외한다(#60)")
+    void shouldExcludeOrdersOutsideFareRangeInRealDb() {
+        DeliveryOrder cheap = saveWaitingOrderWithFareAndDistance(3000L, 1000);
+        DeliveryOrder expensive = saveWaitingOrderWithFareAndDistance(9000L, 1000);
+
+        RiderDeliveryRequestPageResponse result = riderDeliveryRequestService.getDeliveryRequests(
+                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "REQUESTED_AT", null,
+                new RiderDeliveryRequestFilter(5000L, null, null, null), DEFAULT_SIZE, FIRST_PAGE);
+
+        assertThat(result.items()).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
+                .contains(expensive.getId())
+                .doesNotContain(cheap.getId());
+    }
+
+    @Test
+    @DisplayName("배송거리 범위 필터로 실제 DB에서도 범위 밖 주문을 제외한다(#60)")
+    void shouldExcludeOrdersOutsideDistanceRangeInRealDb() {
+        DeliveryOrder near = saveWaitingOrderWithFareAndDistance(4000L, 1000);
+        DeliveryOrder far = saveWaitingOrderWithFareAndDistance(4000L, 5000);
+
+        RiderDeliveryRequestPageResponse result = riderDeliveryRequestService.getDeliveryRequests(
+                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "REQUESTED_AT", null,
+                new RiderDeliveryRequestFilter(null, null, null, 2000), DEFAULT_SIZE, FIRST_PAGE);
+
+        assertThat(result.items()).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
+                .contains(near.getId())
+                .doesNotContain(far.getId());
+    }
+
+    /**
+     * keyset 페이지네이션이 offset과 다르게 목록 변경에 안전한지 실제 DB로 검증한다(#60).
+     *
+     * <p>1페이지(size=2, 운임 오름차순)를 받은 뒤, 두 페이지 사이에 1페이지에서 이미 봤던 항목과
+     * 그다음 항목(o2) "사이" 값(운임 4000)을 가진 새 주문을 끼워 넣는다. offset 방식이었다면 이
+     * 삽입으로 모든 뒤 항목이 한 칸씩 밀려, 2페이지(OFFSET 2)가 이미 1페이지에서 보여준 o2를
+     * 다시 보여주는 중복이 생긴다. keyset은 "커서(o2의 운임+id) 다음 값"만 비교하므로 새로 끼어든
+     * 항목(4000 — 커서 값 5000보다 작음)이 있어도 o2를 중복해서 보여주지 않고, o3만 정확히 반환한다.
+     */
+    @Test
+    @DisplayName("페이지 사이에 새 주문이 끼어들어도 keyset은 중복 없이 다음 항목만 반환한다(#60)")
+    void keysetPaginationSurvivesConcurrentInsertBetweenPages() {
+        DeliveryOrder o1 = saveWaitingOrderWithFareAndDistance(3000L, 1000);
+        DeliveryOrder o2 = saveWaitingOrderWithFareAndDistance(5000L, 1000);
+        DeliveryOrder o3 = saveWaitingOrderWithFareAndDistance(9000L, 1000);
+
+        RiderDeliveryRequestPageResponse firstPage = riderDeliveryRequestService.getDeliveryRequests(
+                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "FARE", "ASC",
+                NO_FILTER, 2, FIRST_PAGE);
+        assertThat(firstPage.items()).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
+                .containsExactly(o1.getId(), o2.getId());
+
+        // 1페이지와 2페이지 사이에 o1·o2 사이 값(4000)을 가진 새 주문이 생긴다.
+        saveWaitingOrderWithFareAndDistance(4000L, 1000);
+
+        RiderDeliveryRequestSummaryResponse lastOfFirstPage = firstPage.items().get(1);
+        RiderDeliveryRequestCursor afterO2 = new RiderDeliveryRequestCursor(
+                null, lastOfFirstPage.expectedSettlementAmount(), null, lastOfFirstPage.deliveryId());
+
+        RiderDeliveryRequestPageResponse secondPage = riderDeliveryRequestService.getDeliveryRequests(
+                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "FARE", "ASC",
+                NO_FILTER, 2, afterO2);
+
+        assertThat(secondPage.items()).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
+                .containsExactly(o3.getId());
+        assertThat(secondPage.hasNext()).isFalse();
     }
 
     @Test

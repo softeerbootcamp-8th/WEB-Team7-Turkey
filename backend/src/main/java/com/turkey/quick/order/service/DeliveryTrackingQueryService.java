@@ -36,7 +36,9 @@ import org.springframework.stereotype.Service;
  * 않지만, 표시용 조회라 감내한다(원래도 주문 행을 두 번 읽고 있었다).
  *
  * <p>그 대신 <b>지연 로딩 연관을 트랜잭션 밖에서 만지면 안 된다</b>(OSIV 가 꺼져 있다) — 라이더·회원은
- * {@code findWithAssignedRiderById} 가 {@code join fetch} 로 미리 채운다.
+ * {@code findWithAssignedRiderById} 가 {@code left join fetch} 로 미리 채운다. <b>{@code left} 인
+ * 것이 #401 이후의 핵심이다</b> — WAITING 은 라이더가 없어서, inner join 이면 주문이 존재하는데도
+ * 조회 결과가 비어 500 이 된다.
  */
 @Service
 @RequiredArgsConstructor
@@ -50,7 +52,7 @@ public class DeliveryTrackingQueryService {
     /**
      * @param deliveryId 조회할 배송요청
      * @param customerId 세션에서 얻은 고객 식별자
-     * @throws BusinessException 404(없음·타인 것) / 409(WAITING·COMPLETED·CANCELED) /
+     * @throws BusinessException 404(없음·타인 것) / 409(COMPLETED·CANCELED, #401 이후 WAITING 제외) /
      *                           500(예상 운임 스냅샷 없음)
      */
     public DeliveryTrackingResponse getTracking(Long deliveryId, Long customerId) {
@@ -61,19 +63,25 @@ public class DeliveryTrackingQueryService {
                 .orElseThrow(() -> new IllegalStateException(
                         "추적 게이트를 통과한 주문을 다시 조회할 수 없습니다. deliveryId=" + deliveryId));
 
-        // 추적 가능 상태에서는 라이더가 반드시 있다(DDL ck_delivery_assignment).
-        Member rider = order.getAssignedRider().getMember();
+        // 추적 가능 상태(ASSIGNED~DELIVERING)에서는 라이더가 반드시 있다(DDL ck_delivery_assignment).
+        // WAITING은 게이트를 통과하지만(#401) 라이더가 없다 — 그래서 null 일 수 있다.
+        // findWithAssignedRiderById 가 left join fetch 라 이 값을 트랜잭션 밖에서 읽어도 안전하다.
+        Member rider = order.getAssignedRider() == null ? null : order.getAssignedRider().getMember();
         Long totalFare = totalFare(order);
 
         // 여기부터 트랜잭션 밖이다 — 위 조회가 모두 끝난 뒤에 외부 서버를 부른다.
-        Optional<Duration> eta = routeEstimator.findRemainingRoute(order);
+        // 라이더가 없으면(WAITING, #401) 경로의 출발점이 없어 ETA 를 구할 수 없다. 라우팅도 부르지
+        // 않는다 — DeliveryRouteEstimator 는 배정 라이더가 있는 주문만 다룬다.
+        Optional<Duration> eta = rider == null
+                ? Optional.empty()
+                : routeEstimator.findRemainingRoute(order);
 
         return new DeliveryTrackingResponse(
                 order.getId(),
                 order.getStatus(),
                 DeliveryStatusStepResponse.timelineOf(order),
-                rider.getName(),
-                rider.getPhoneNumber(),
+                rider == null ? null : rider.getName(),
+                rider == null ? null : rider.getPhoneNumber(),
                 eta.map(DeliveryTrackingQueryService::arrivalAt).orElse(null),
                 totalFare);
     }
