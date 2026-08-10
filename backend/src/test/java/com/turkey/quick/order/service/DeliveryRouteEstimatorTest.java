@@ -8,7 +8,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.turkey.quick.common.routing.Coordinate;
-import com.turkey.quick.common.routing.Route;
 import com.turkey.quick.common.routing.RoutingClient;
 import com.turkey.quick.location.dto.LocationPayload;
 import com.turkey.quick.location.repository.RiderLocationRepository;
@@ -17,9 +16,10 @@ import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.rider.domain.RiderProfile;
 import java.math.BigDecimal;
+import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
+import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -102,12 +102,14 @@ class DeliveryRouteEstimatorTest {
     @DisplayName("픽업 전에는 픽업지까지의 경로를 구한다")
     void routesToPickupBeforePickup(OrderStatus status) {
         givenRiderAt(RIDER_POSITION);
-        Route route = new Route(Duration.ofMinutes(7), 2_400L, List.of(RIDER_POSITION, PICKUP));
-        given(routingClient.findRoute(any(), any())).willReturn(Optional.of(route));
+        given(routingClient.findRoute(any(), any())).willReturn(Optional.of(Duration.ofMinutes(7)));
 
-        Optional<Route> found = estimator.findRemainingRoute(order(status, address(PICKUP)));
+        Optional<Duration> found = estimator.findRemainingRoute(order(status, address(PICKUP)));
 
-        assertThat(found).contains(route);
+        // 러시아워 보정(최대 x1.3)이 실행 시각에 따라 걸릴 수 있어 상한까지 넉넉히 잡는다.
+        assertThat(found).isPresent();
+        assertThat(found.get().toMillis())
+                .isBetween(Duration.ofMinutes(7).toMillis(), Duration.ofMinutes(10).toMillis());
         assertThat(capturedDestination()).isEqualTo(PICKUP);
     }
 
@@ -116,8 +118,7 @@ class DeliveryRouteEstimatorTest {
     @DisplayName("픽업 후에는 도착지까지의 경로를 구한다")
     void routesToDestinationAfterPickup(OrderStatus status) {
         givenRiderAt(RIDER_POSITION);
-        given(routingClient.findRoute(any(), any()))
-                .willReturn(Optional.of(new Route(Duration.ofMinutes(12), 5_100L, List.of(DESTINATION))));
+        given(routingClient.findRoute(any(), any())).willReturn(Optional.of(Duration.ofMinutes(12)));
 
         estimator.findRemainingRoute(order(status, address(DESTINATION)));
 
@@ -163,5 +164,48 @@ class DeliveryRouteEstimatorTest {
         RiderProfile rider = mock(RiderProfile.class);
         given(rider.getMemberId()).willReturn(RIDER_ID);
         return rider;
+    }
+
+    @Test
+    @DisplayName("평일 출근·퇴근 시간대는 x1.3 배 보정한다")
+    void multipliesDurationDuringWeekdayRushHour() {
+        LocalDateTime morningRush = LocalDateTime.of(2026, 8, 10, 8, 0); // 월요일
+        LocalDateTime eveningRush = LocalDateTime.of(2026, 8, 10, 19, 0);
+
+        assertThat(DeliveryRouteEstimator.applyRushHourMultiplier(Duration.ofMinutes(10), morningRush))
+                .isEqualTo(Duration.ofMinutes(13));
+        assertThat(DeliveryRouteEstimator.applyRushHourMultiplier(Duration.ofMinutes(10), eveningRush))
+                .isEqualTo(Duration.ofMinutes(13));
+    }
+
+    @Test
+    @DisplayName("러시아워 시간대를 벗어나면 보정하지 않는다")
+    void doesNotMultiplyOutsideRushHour() {
+        LocalDateTime weekdayNoon = LocalDateTime.of(2026, 8, 10, 12, 0); // 월요일
+
+        assertThat(DeliveryRouteEstimator.applyRushHourMultiplier(Duration.ofMinutes(10), weekdayNoon))
+                .isEqualTo(Duration.ofMinutes(10));
+    }
+
+    @Test
+    @DisplayName("주말은 같은 시각대여도 보정하지 않는다")
+    void doesNotMultiplyOnWeekend() {
+        LocalDateTime saturdayMorningRush = LocalDateTime.of(2026, 8, 8, 8, 0);
+        assertThat(saturdayMorningRush.getDayOfWeek()).isEqualTo(DayOfWeek.SATURDAY);
+
+        assertThat(DeliveryRouteEstimator.applyRushHourMultiplier(Duration.ofMinutes(10), saturdayMorningRush))
+                .isEqualTo(Duration.ofMinutes(10));
+    }
+
+    @Test
+    @DisplayName("경계 시각(09:00, 20:00)은 러시아워에 포함되지 않는다")
+    void treatsWindowEndAsExclusive() {
+        LocalDateTime morningEnd = LocalDateTime.of(2026, 8, 10, 9, 0);
+        LocalDateTime eveningEnd = LocalDateTime.of(2026, 8, 10, 20, 0);
+
+        assertThat(DeliveryRouteEstimator.applyRushHourMultiplier(Duration.ofMinutes(10), morningEnd))
+                .isEqualTo(Duration.ofMinutes(10));
+        assertThat(DeliveryRouteEstimator.applyRushHourMultiplier(Duration.ofMinutes(10), eveningEnd))
+                .isEqualTo(Duration.ofMinutes(10));
     }
 }

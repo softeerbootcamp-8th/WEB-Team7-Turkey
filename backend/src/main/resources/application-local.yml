@@ -33,12 +33,11 @@ rider:
     storage: ${RIDER_DELIVERY_PROOF_STORAGE:local}
     local-root: ${RIDER_DELIVERY_PROOF_LOCAL_ROOT:../data}
 
-# 로컬에서 실제 경로 응답이 필요하면 KAKAO_REST_API_KEY 를 환경변수로 넣는다.
-# 카카오 길찾기는 호출당 과금이므로 키를 넣은 채 개발하면 그만큼 쿼터를 쓴다 — 경로가 필요 없는
-# 작업에는 넣지 않는 편이 낫다. 키가 없어도 앱은 정상 동작한다(경로 호출을 건너뛰어 ETA 만 빈다).
+# 배포 OSRM(#416)은 WAS 보안그룹에서만 닿는다 — 로컬 PC 에서 실제 경로가 필요하면 #407 처럼
+# Docker 로 직접 띄우고 ROUTING_BASE_URL 을 그쪽으로 돌린다. 안 띄워도 앱은 정상 동작한다
+# (경로 호출이 실패로 흡수되어 ETA 만 빈다).
 routing:
-  base-url: ${ROUTING_BASE_URL:https://apis-navi.kakaomobility.com}
-  api-key: ${KAKAO_REST_API_KEY:}
+  base-url: ${ROUTING_BASE_URL:http://localhost:5000}
 
 logging:
   level:

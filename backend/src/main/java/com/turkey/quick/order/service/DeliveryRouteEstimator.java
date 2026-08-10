@@ -1,24 +1,27 @@
 package com.turkey.quick.order.service;
 
 import com.turkey.quick.common.routing.Coordinate;
-import com.turkey.quick.common.routing.Route;
 import com.turkey.quick.common.routing.RoutingClient;
 import com.turkey.quick.location.repository.RiderLocationRepository;
 import com.turkey.quick.order.domain.Address;
 import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.OrderStatus;
+import java.time.DayOfWeek;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * 추적 화면에 실을 "라이더 현재 위치 → 지금 향하는 지점" 경로를 구한다(#421).
+ * 추적 화면에 실을 "라이더 현재 위치 → 지금 향하는 지점" 소요시간을 구한다(#421, #431 OSRM 원복).
  *
- * <p>호출자({@link DeliveryTrackingQueryService})는 지금 {@link Route#duration()} 만 쓰고 경로
- * 폴리라인은 버린다 — 고객에게 ETA 만 보여주기로 했기 때문이다(사람 확인, 2026-08-07). 그래도
- * {@code Route} 를 그대로 돌려주는 것은, 라우팅 호출 한 번에 둘이 함께 오므로 좁혀 봤자 아끼는 것이
- * 없고 화면이 경로선을 요구할 때(#422) 이 클래스를 다시 열지 않아도 되기 때문이다.
+ * <p>OSRM 은 자유흐름 기준이라 실시간 정체를 반영하지 않는다. 평일 출퇴근 시간대(Asia/Seoul
+ * 07-09시·18-20시)에는 {@link #RUSH_HOUR_MULTIPLIER} 를 곱해 보정한다(잠정값, 실측 후 재조정,
+ * 사람 확인 2026-08-10).
  *
  * <p><b>어느 구간인가</b>(사람 확인, 2026-08-07): 픽업 전({@code ASSIGNED}·{@code MOVING_TO_PICKUP})
  * 은 픽업지까지, 픽업 후({@code PICKED_UP}·{@code DELIVERING})는 도착지까지다. 픽업 전에도 최종
@@ -43,15 +46,22 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class DeliveryRouteEstimator {
 
+    private static final double RUSH_HOUR_MULTIPLIER = 1.3;
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+    private static final LocalTime MORNING_RUSH_START = LocalTime.of(7, 0);
+    private static final LocalTime MORNING_RUSH_END = LocalTime.of(9, 0);
+    private static final LocalTime EVENING_RUSH_START = LocalTime.of(18, 0);
+    private static final LocalTime EVENING_RUSH_END = LocalTime.of(20, 0);
+
     private final RoutingClient routingClient;
     private final RiderLocationRepository riderLocationRepository;
 
     /**
      * @param order 추적 게이트를 통과한 주문(배정 라이더가 반드시 있다)
-     * @return 라이더 현재 위치에서 {@link #targetOf(OrderStatus, DeliveryOrder)} 까지의 경로.
-     *         라이더 최신 위치가 없거나 경로를 얻지 못하면 빈 값
+     * @return 라이더 현재 위치에서 {@link #targetOf(OrderStatus, DeliveryOrder)} 까지의 소요시간
+     *         (러시아워 보정 적용). 라이더 최신 위치가 없거나 경로를 얻지 못하면 빈 값
      */
-    public Optional<Route> findRemainingRoute(DeliveryOrder order) {
+    public Optional<Duration> findRemainingRoute(DeliveryOrder order) {
         Long riderId = order.getAssignedRider().getMemberId();
         Optional<Coordinate> origin = findRiderPosition(riderId);
         if (origin.isEmpty()) {
@@ -60,7 +70,8 @@ public class DeliveryRouteEstimator {
                     order.getId(), riderId);
             return Optional.empty();
         }
-        return routingClient.findRoute(origin.get(), targetOf(order.getStatus(), order));
+        return routingClient.findRoute(origin.get(), targetOf(order.getStatus(), order))
+                .map(duration -> applyRushHourMultiplier(duration, LocalDateTime.now(SEOUL)));
     }
 
     /**
@@ -100,5 +111,26 @@ public class DeliveryRouteEstimator {
                     "추적할 수 없는 상태의 경로를 계산할 수 없습니다. status=" + status);
         };
         return new Coordinate(target.getLatitude(), target.getLongitude());
+    }
+
+    /** {@code static} 인 이유는 {@link #targetOf} 와 같다 — 시간 판정을 스프링·시계 없이 테스트하기 위해서다. */
+    static Duration applyRushHourMultiplier(Duration duration, LocalDateTime seoulNow) {
+        if (!isRushHour(seoulNow)) {
+            return duration;
+        }
+        return Duration.ofMillis(Math.round(duration.toMillis() * RUSH_HOUR_MULTIPLIER));
+    }
+
+    private static boolean isRushHour(LocalDateTime seoulNow) {
+        if (seoulNow.getDayOfWeek() == DayOfWeek.SATURDAY || seoulNow.getDayOfWeek() == DayOfWeek.SUNDAY) {
+            return false;
+        }
+        LocalTime time = seoulNow.toLocalTime();
+        return isBetween(time, MORNING_RUSH_START, MORNING_RUSH_END)
+                || isBetween(time, EVENING_RUSH_START, EVENING_RUSH_END);
+    }
+
+    private static boolean isBetween(LocalTime time, LocalTime start, LocalTime end) {
+        return !time.isBefore(start) && time.isBefore(end);
     }
 }

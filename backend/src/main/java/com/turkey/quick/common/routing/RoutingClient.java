@@ -1,15 +1,17 @@
 package com.turkey.quick.common.routing;
 
+import java.time.Duration;
 import java.util.Optional;
 
 /**
- * 경로 탐색 포트 — 두 좌표 사이의 예상 소요시간과 경로 좌표를 얻는다(#420).
+ * 경로 탐색 포트 — 두 좌표 사이의 예상 소요시간을 얻는다(#420, #431 에서 OSRM 으로 원복하며 계약을
+ * {@code Route}(duration/distance/path)에서 {@code Duration} 만으로 좁혔다 — 유일한 소비자
+ * {@code DeliveryRouteEstimator} 가 duration 만 쓰고 있었다).
  *
  * <p><b>인터페이스로 끊은 이유가 실제로 값을 했다</b>: #407 에서 카카오 API 사용 권한 심사가 끝나지
- * 않아 자체 호스팅 OSRM 으로 먼저 갔는데, 심사가 끝난 뒤 #431 에서 구현체를
- * ({@link KakaoMobilityRoutingClient}) 갈아 끼웠고 <b>이 포트도 호출자
- * ({@code DeliveryRouteEstimator}, #421)도 한 줄도 바뀌지 않았다.</b>
- * {@code payment/service/PaymentGateway} 와 같은 성격의 포트다.
+ * 않아 자체 호스팅 OSRM 으로 먼저 갔고, 심사 완료 후 #431 에서 카카오 어댑터로 갈아 끼웠다가, 카카오
+ * 이용이 무산되며 다시 OSRM 으로 되돌렸다 — 그 두 번의 교체 동안 <b>이 포트도 호출자도 한 줄도
+ * 바뀌지 않았다.</b> {@code payment/service/PaymentGateway} 와 같은 성격의 포트다.
  *
  * <p><b>패키지 위치가 {@code common} 인 이유</b>: {@code PaymentGateway}·{@code SmsSender} 는 소비자와
  * 같은 도메인 패키지에 두는 관례지만, 이 포트는 시그니처에 도메인 타입이 하나도 없는 순수 인프라
@@ -40,7 +42,7 @@ public interface RoutingClient {
      * <p>그 대가로 호출자는 실패 사유를 알 수 없다. 사유별 대응(예: 서비스 지역 밖 안내)이 필요해지면
      * 그때 반환 타입을 넓히고, 그전까지는 로그와 지표로만 구분한다.
      *
-     * @return 경로. 찾지 못했거나 라우팅 서버를 호출할 수 없으면 빈 값
+     * @return 예상 소요시간. 찾지 못했거나 라우팅 서버를 호출할 수 없으면 빈 값
      */
-    Optional<Route> findRoute(Coordinate origin, Coordinate destination);
+    Optional<Duration> findRoute(Coordinate origin, Coordinate destination);
 }

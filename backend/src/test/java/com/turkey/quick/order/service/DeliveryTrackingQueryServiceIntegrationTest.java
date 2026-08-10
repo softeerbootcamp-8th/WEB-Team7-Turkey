@@ -6,8 +6,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 
 import com.turkey.quick.common.exception.BusinessException;
-import com.turkey.quick.common.routing.Coordinate;
-import com.turkey.quick.common.routing.Route;
 import com.turkey.quick.common.routing.RoutingClient;
 import com.turkey.quick.location.dto.LocationPayload;
 import com.turkey.quick.location.repository.RiderLocationRepository;
@@ -22,7 +20,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -118,18 +115,16 @@ class DeliveryTrackingQueryServiceIntegrationTest extends IntegrationTestSupport
             riderLocationRepository.saveIfNewer(scenario.riderId(), new LocationPayload(
                     new BigDecimal("37.5100000"), new BigDecimal("127.0200000"),
                     Instant.now(), null));
-            given(routingClient.findRoute(any(), any())).willReturn(Optional.of(new Route(
-                    Duration.ofSeconds(420), 2_400L,
-                    List.of(new Coordinate(new BigDecimal("37.5100000"), new BigDecimal("127.0200000")),
-                            new Coordinate(new BigDecimal("37.4979000"), new BigDecimal("127.0276000"))))));
+            given(routingClient.findRoute(any(), any())).willReturn(Optional.of(Duration.ofSeconds(420)));
             LocalDateTime before = LocalDateTime.now(ZoneOffset.UTC);
 
             DeliveryTrackingResponse response =
                     queryService.getTracking(scenario.deliveryId(), scenario.customerId());
 
+            // 러시아워 보정(최대 x1.3)이 테스트 실행 시각에 따라 걸릴 수 있어 상한을 넉넉히 잡는다.
             assertThat(response.estimatedArrivalAt())
-                    .as("도착 예정 시각은 응답 시각 + 소요 시간이다")
-                    .isBetween(before.plusSeconds(420), LocalDateTime.now(ZoneOffset.UTC).plusSeconds(420));
+                    .as("도착 예정 시각은 응답 시각 + 소요 시간(러시아워 보정 포함)이다")
+                    .isBetween(before.plusSeconds(420), LocalDateTime.now(ZoneOffset.UTC).plusSeconds(546));
         }
 
         @Test

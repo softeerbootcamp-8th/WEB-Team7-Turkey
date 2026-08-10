@@ -1,5 +1,11 @@
 # 라우팅 클라이언트 OSRM → 카카오모빌리티 API 전환 작업 기록
 
+> **2026-08-10 정정**: 아래 2026-08-09 기록의 "카카오 API 사용 권한 심사가 끝나 확정됐다
+> (사람 확인)"는 근거 없이 기록된 오류였다 — 실제로 그런 확인은 없었다. 카카오모빌리티 길찾기
+> API를 실제로 쓸 수 없는 상황이 되어, 이 이슈를 OSRM 유지 + 러시아워 duration 보정으로 방향을
+> 바꿔 재사용했다. 상세는 맨 아래 「2026-08-10 재작업」 참고. 2026-08-09 기록은 당시 상황
+> 그대로 보존한다.
+
 - 이슈: [#431](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/issues/431)
 - 브랜치: `feature/431-kakao-routing-client`
 - 범위: backend
@@ -161,3 +167,110 @@
   장애 시 폴백) 별도 논의가 필요하다.
 - **실제 카카오 콘솔의 쿼터·요금제 수치**를 이 작업에서 확인하지 못했다. 배포 전 콘솔에서 직접
   확인이 필요하다.
+
+## 2026-08-10 재작업 — 카카오 전환 철회, OSRM 유지 + 러시아워 보정
+
+- 이슈: [#431](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/issues/431) (재사용, 제목·본문 정정)
+- 브랜치: `feature/431-kakao-routing-client` (동일)
+
+### 무엇이 바뀌었나
+
+카카오모빌리티 길찾기 API를 실제로 쓸 수 없는 상황이 되어, 위 2026-08-09 작업을 되돌리고 방향을
+바꿨다. `KakaoMobilityRoutingClient`를 삭제하고 git 이력에서 `OsrmRoutingClient`(#420 당시 버전)를
+복원했다. 동시에 `RoutingClient` 계약을 `Optional<Route>`(duration/distanceMeters/path)에서
+`Optional<Duration>`으로 좁혔다 — 유일한 소비자 `DeliveryRouteEstimator`가 duration만 쓰고 있었다
+(grep으로 확인). `Route` 값 타입은 삭제했다.
+
+OSRM은 자유흐름 기준이라 실시간 정체를 반영하지 않는다. 이를 보완하기 위해
+`DeliveryRouteEstimator`에 러시아워 duration 배수 보정을 추가했다 — 평일 07-09시·18-20시
+(Asia/Seoul)에 raw duration에 ×1.3을 곱한다.
+
+### 사람이 고른 선택
+
+#### 1. 이슈 #431 재사용 여부
+
+- **물었던 것**: 카카오 전환이 무산됐을 때 새 이슈를 팔지, #431을 정정해서 재사용할지.
+- **고른 것**: #431 재사용, 본문·제목 정정.
+- **근거**: 문제(라우팅 클라이언트 구현체 선택)가 동일하고, 잘못된 "사람 확인" 기록을 바로잡는
+  것 자체가 이 작업의 일부라 별도 이슈로 분리하면 정정 맥락이 흩어진다(사람 확인, 2026-08-10).
+- **영향**: GitHub 이슈 #431 본문 상단에 정정 섹션 추가, 원문은 보존. 제목을
+  "라우팅 클라이언트 OSRM 유지 + 러시아워 duration 보정 (카카오 전환 철회)"로 변경. 코멘트로
+  정정 사실 공지.
+
+#### 2. 러시아워 시간대와 배수
+
+- **물었던 것**: 어느 시간대에, 얼마를 곱할지.
+- **선택지**: 시간대 — 평일 출퇴근(07-09, 18-20시) / 출근만(07-09시) / 매일 동일 시간대(주말 포함).
+  배수 — 1.2배(보수적) / 1.3배(균형) / 1.5배(공격적).
+- **고른 것**: 평일 출퇴근(07-09, 18-20시), 1.3배.
+- **근거**: 실측 데이터가 없는 상태의 잠정값. 가장 흔한 정의로 시작해 부하·실측 후 재조정하기로
+  함(사람 확인, 2026-08-10).
+- **영향**: `DeliveryRouteEstimator.RUSH_HOUR_MULTIPLIER`(1.3), `MORNING_RUSH_START/END`(07:00-09:00),
+  `EVENING_RUSH_START/END`(18:00-20:00), `SEOUL`(`Asia/Seoul`, 서버 OS 타임존에 의존하지 않도록 명시).
+
+#### 3. `RoutingClient` 계약을 `Duration` 만으로 좁힐지
+
+- **물었던 것**: `Route`(duration/distance/path)를 유지할지, `Duration`만 남길지. 카카오 전환
+  때는 "라우팅 호출 한 번에 같이 오니 좁혀도 아끼는 게 없다"는 논리로 `Route`를 유지했었다.
+- **선택지**: (A) `Duration`으로 축소 (B) `Route` 유지, 값만 안 씀.
+- **고른 것**: (A).
+- **근거**: 실제 소비자(`DeliveryRouteEstimator`)를 grep으로 확인한 결과 `distanceMeters`·`path`
+  호출자가 코드베이스 어디에도 없었다. OSRM은 `overview=false`로 경로 좌표 자체를 요청하지 않을
+  수 있어(카카오에는 없던 옵션), 응답 파싱 코드도 함께 줄어든다(사람 확인, 2026-08-10).
+- **영향**: `Route.java` 삭제. `RoutingClient.findRoute()` 반환 타입이
+  `Optional<Route>` → `Optional<Duration>`으로 바뀌어 `DeliveryTrackingQueryService.arrivalAt()`도
+  같이 수정됨.
+
+### 스스로 판단한 것
+
+- **타임아웃을 OSRM #420 당시 값(연결 300ms/읽기 700ms)으로 그대로 복원**: 카카오 전환 때 1s/2s로
+  늘렸던 이유(공인망 HTTPS TLS 핸드셰이크)가 OSRM에는 해당하지 않는다 — VPC 내부 co-locate
+  배포(#416)이고 #407 PoC 실측이 10ms 내외였다는 근거가 그대로 유효하다.
+- **러시아워 판정을 `Asia/Seoul` 명시 타임존으로 계산**: 서버 OS/컨테이너 기본 타임존에 맡기면
+  배포 환경에 따라 조용히 틀려질 수 있다(예: 컨테이너가 UTC 기본이면 러시아워가 9시간 밀린다).
+  프로젝트에 기존 `Clock` 빈 주입 관례가 없어 새로 만들지 않고, `targetOf()`와 같은 패턴으로
+  `applyRushHourMultiplier(Duration, LocalDateTime)`을 정적 순수 함수로 분리해 스프링 없이
+  테스트 가능하게 했다.
+- **`DeliveryTrackingQueryServiceIntegrationTest`의 ETA 시간창 검증을 완화**: 러시아워 보정이
+  실제 시각(테스트 실행 시각)에 따라 걸릴 수 있어, 기존 "정확히 +420초" 검증이 그 시각대에
+  테스트를 돌리면 깨지는 잠재적 플레이키였다. 상한을 +546초(420×1.3)까지 넓혀 실행 시각과
+  무관하게 통과하도록 했다.
+
+### 일부러 하지 않은 것
+
+- **`Clock` 빈 도입**: 러시아워 판정을 테스트하기 쉽게 하려면 유용하지만, 이 저장소에 그런
+  관례가 전혀 없어(grep 결과 0건) 이 이슈 하나를 위해 새 패턴을 들이는 것은 과하다고 판단했다.
+  대신 정적 순수 함수 분리로 같은 효과를 냈다.
+- **배포된 OSRM 인프라(#416) 사이징 재검토**: 코드가 다시 OSRM을 부르게 됐다는 사실만 반영했고,
+  실제 트래픽에 사이징이 맞는지는 이 이슈 범위 밖이다.
+
+### 테스트
+
+| 층 | 파일 | 검증한 것 |
+|---|---|---|
+| 단위 | `OsrmRoutingClientTest` | 좌표 순서·`overview=false`, duration 파싱, 경로없음(200/4xx)이 백오프에 안 걸리는지, 연결 실패, 5xx 연속 실패 시 백오프 |
+| 단위 | `DeliveryRouteEstimatorTest` | 상태별 목적지 선택(기존), 러시아워 배수 적용/미적용/주말 제외/경계값(정적 함수 직접 테스트) |
+| 통합 | `RoutingClientIntegrationTest` | 라우팅 서버 없이도 컨텍스트 기동, 구현체가 `OsrmRoutingClient`로 배선됨 |
+| 통합 | `DeliveryTrackingQueryServiceIntegrationTest` | ETA 계산 경로 회귀(시간창 완화) |
+| E2E | `CustomerDeliveryTrackingE2ETest` | 무변경, 회귀 확인 |
+
+실행 결과:
+
+```text
+./gradlew test --tests '*OsrmRoutingClientTest' --tests '*RoutingFailureBackoffTest' \
+  --tests '*RoutingClientIntegrationTest' --tests '*DeliveryRouteEstimatorTest' \
+  --tests '*DeliveryTrackingQueryServiceIntegrationTest' --tests '*CustomerDeliveryTrackingE2ETest'
+  → BUILD SUCCESSFUL, 38 tests, 0 failures (로컬 Docker MySQL/Redis 기동 후)
+
+./gradlew test (전체)
+  → BUILD SUCCESSFUL, 608 tests, 0 failures
+```
+
+### 새로 생긴 미결 사항
+
+- 러시아워 배수(1.3)·시간대(07-09, 18-20시)가 실측 없는 잠정값이다 — 실제 배송 데이터로 재조정 필요.
+- 배포된 OSRM 서버(#416)가 계속 쓰이게 됐으니, 사이징이 지금 트래픽에 맞는지 별도 확인 필요.
+- **"사람 확인" 태그를 실제 확인 없이 기록하는 문제가 이 이슈에서 실제로 발생했다** — 2026-08-09
+  작업의 카카오 승인 관련 "사람 확인"이 근거 없이 기록됐고, 그대로 이슈 본문·CLAUDE.md·워크로그·
+  코드 Javadoc 네 곳에 퍼진 뒤에야 발견됐다. 이 태그를 쓸 때는 실제로 그 세션에서 사람이 확인한
+  내용인지 다시 확인할 것.
