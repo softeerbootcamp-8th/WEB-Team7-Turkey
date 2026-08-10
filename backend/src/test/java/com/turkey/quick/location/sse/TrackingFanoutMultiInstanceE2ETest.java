@@ -2,7 +2,7 @@ package com.turkey.quick.location.sse;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.turkey.quick.common.response.ApiResponse;
 import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.order.domain.OrderStatus;

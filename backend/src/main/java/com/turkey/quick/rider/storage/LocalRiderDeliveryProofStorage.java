@@ -7,17 +7,14 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 
-/** 로컬 프로파일에서 프로젝트의 data 디렉터리에 인증 파일을 저장한다. */
+/** 저장소 설정이 local일 때 호스트 파일시스템에 인증 파일을 저장한다. */
 @Component
-@Profile("local")
 @ConditionalOnProperty(
         name = "rider.delivery-proof.storage",
-        havingValue = "local",
-        matchIfMissing = true)
+        havingValue = "local")
 public class LocalRiderDeliveryProofStorage implements RiderDeliveryProofStorage {
 
     private final Path rootDirectory;

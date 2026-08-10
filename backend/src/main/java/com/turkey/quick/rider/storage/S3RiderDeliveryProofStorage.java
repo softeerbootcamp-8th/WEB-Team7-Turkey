@@ -8,7 +8,7 @@ import java.io.InputStream;
 import java.time.Duration;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Profile;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.services.s3.model.*;
@@ -16,9 +16,9 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 
-/** local 이외의 프로파일에서 배송 인증 파일을 실제 S3에 저장한다. */
+/** 저장소 설정이 s3일 때 배송 인증 파일을 실제 S3에 저장한다. */
 @Component
-@Profile("!local")
+@ConditionalOnProperty(name = "rider.delivery-proof.storage", havingValue = "s3")
 public class S3RiderDeliveryProofStorage implements RiderDeliveryProofStorage {
 
     private final S3Client amazonS3;
