@@ -10,9 +10,9 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3Configuration;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 import java.net.URI;
-import java.time.Duration;
 
 @Configuration
 @Profile("local")
@@ -33,20 +33,31 @@ public class S3MockConfig {
 
     @Bean
     public S3Client s3Client() {
-        // 1. 자격 증명 설정 (v2 방식)
-        AwsBasicCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
-
-        // 2. Path-Style Access 활성화 설정 (v2 방식)
-        S3Configuration s3Configuration = S3Configuration.builder()
-                .pathStyleAccessEnabled(true)
-                .build();
-
-        // 4. 최종 S3Client 빈 생성
         return S3Client.builder()
-                .endpointOverride(URI.create(endpoint))   // 커스텀 엔드포인트 지정 (MinIO, LocalStack 등)
+                .endpointOverride(URI.create(endpoint))
                 .region(Region.of(region))
-                .credentialsProvider(StaticCredentialsProvider.create(credentials))
-                .serviceConfiguration(s3Configuration)
+                .credentialsProvider(credentialsProvider())
+                .serviceConfiguration(s3Configuration())
+                .build();
+    }
+
+    @Bean
+    public S3Presigner s3Presigner() {
+        return S3Presigner.builder()
+                .endpointOverride(URI.create(endpoint))
+                .region(Region.of(region))
+                .credentialsProvider(credentialsProvider())
+                .serviceConfiguration(s3Configuration())
+                .build();
+    }
+
+    private StaticCredentialsProvider credentialsProvider() {
+        return StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey));
+    }
+
+    private S3Configuration s3Configuration() {
+        return S3Configuration.builder()
+                .pathStyleAccessEnabled(true)
                 .build();
     }
 }

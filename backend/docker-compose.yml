@@ -52,6 +52,17 @@ services:
       retries: 20
       start_period: 10s
 
+  # 배송 완료 인증 사진 로컬 개발용 S3 호환 서버.
+  # 버킷은 컨테이너 시작 시 생성하므로 별도 AWS CLI 초기화가 필요 없다.
+  s3mock:
+    image: adobe/s3mock:5.1.0
+    container_name: turkey-s3mock-local
+    ports:
+      - "9090:9090"
+    environment:
+      COM_ADOBE_TESTING_S3MOCK_STORE_REGION: ap-northeast-2
+      COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: turkey-delivery-proof-local
+
   # 부하 테스트용 spring 앱 컨테이너. 기본 `docker compose up -d` 에는 안 끼고,
   # `--profile app` 을 줘야만 뜬다 — 평소 로컬 개발(bootRun)에는 영향 없음.
   # `docker compose --profile app up -d --build --scale app=3` 처럼 여러 대로 늘릴 수 있다.
@@ -69,11 +80,16 @@ services:
       DB_PASSWORD: local
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      RIDER_DELIVERY_PROOF_STORAGE: s3mock
+      AWS_S3_ENDPOINT: http://s3mock:9090
+      AWS_S3_BUCKET: turkey-delivery-proof-local
     depends_on:
       mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
+      s3mock:
+        condition: service_started
 
   # k6 부하 테스트 결과 시각화용. `--profile loadtest` 로 별도로 켠다(app profile 과 독립적).
   influxdb:
