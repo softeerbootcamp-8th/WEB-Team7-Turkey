@@ -267,6 +267,66 @@ class TrackingFanoutMultiInstanceE2ETest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("B 에서 완료 처리하면 A 가 들고 있던 연결이 닫힌다 — 이 기능의 핵심 (#450)")
+    void closesConnectionOnOtherInstanceWhenCompleted() {
+        // 완료 처리를 한 인스턴스(B)와 고객 emitter 를 들고 있는 인스턴스(A)가 다르다는 것이
+        // 이 설계의 출발점이다. B 는 A 의 emitter 를 직접 부를 수 없으므로 종료도 데이터와
+        // 똑같이 Pub/Sub 을 거쳐야 한다 — 그 사실을 증명하는 유일한 테스트다.
+        var scenario = fixture.deliveryWithStatus(OrderStatus.DELIVERING);
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                pointWalletRepository.save(
+                        PointWallet.create(memberRepository.findById(scenario.riderId()).orElseThrow())));
+        String customerCookie = loginOnA(CUSTOMER_LOGIN, scenario.customerLoginId());
+        String riderCookie = loginOnA(RIDER_LOGIN, scenario.riderLoginId());
+
+        try (var client = SseTestClient.get(streamUrlOnA(scenario.deliveryId()), customerCookie)) {
+            assertThat(client.statusCode()).isEqualTo(200);
+            assertThat(registryA.connectionOf(scenario.deliveryId()))
+                    .as("A 가 연결을 들고 있다 — 이 전제가 깨지면 아래 단언이 아무것도 증명하지 못한다")
+                    .hasSize(1);
+            assertThat(secondary.bean(SseRegistry.class).connectionOf(scenario.deliveryId()))
+                    .as("B 는 그 연결을 갖고 있지 않다").isEmpty();
+
+            completeOnSecondary(scenario.deliveryId(), riderCookie);
+
+            awaitConnectionClosed(scenario.deliveryId());
+        }
+    }
+
+    /** 종료는 Pub/Sub 왕복 뒤 다른 스레드에서 일어난다. 이 저장소는 Awaitility 를 쓰지 않아 직접 폴링한다. */
+    private void awaitConnectionClosed(Long deliveryId) {
+        long deadline = System.currentTimeMillis() + AWAIT.toMillis();
+        while (System.currentTimeMillis() < deadline) {
+            if (registryA.connectionOf(deliveryId).isEmpty()) {
+                return;
+            }
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("종료 대기가 중단됐습니다.", e);
+            }
+        }
+        assertThat(registryA.connectionOf(deliveryId))
+                .as("완료 후 A 의 연결이 정리돼야 한다").isEmpty();
+    }
+
+    private void completeOnSecondary(Long deliveryId, String riderCookie) {
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("proofType", "PHOTO");
+        body.add("proofValue", "proof/close-test.jpg");
+        HttpHeaders headers = new HttpHeaders();
+        headers.add(HttpHeaders.COOKIE, riderCookie);
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+        var completed = rest.exchange(
+                secondary.url("/api/rider/deliveries/%d/complete".formatted(deliveryId)),
+                HttpMethod.POST, new HttpEntity<>(body, headers), ApiResponse.class);
+        assertThat(completed.getStatusCode()).as("배송 완료 처리 body=%s", completed.getBody())
+                .isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
     @DisplayName("B 에서 배송 완료 처리되면 A 에 연결된 고객 스트림으로 COMPLETED가 전달된다(#398)")
     void deliversCompletedEventAcrossInstances() {
         // complete()는 transition()과 다른 메서드다 — 정산·포인트 적립까지 한 트랜잭션에서
