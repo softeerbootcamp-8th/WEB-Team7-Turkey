@@ -45,8 +45,16 @@ jobs:
         working-directory: ./frontend
         run: pnpm test
 
+      - name: Validate frontend build configuration
+        env:
+          VITE_KAKAO_MAP_KEY: ${{ vars.VITE_KAKAO_MAP_KEY }}
+        run: |
+          test -n "$VITE_KAKAO_MAP_KEY" || { echo "VITE_KAKAO_MAP_KEY repository variable is required"; exit 1; }
+
       - name: Build frontend
         working-directory: ./frontend
+        env:
+          VITE_KAKAO_MAP_KEY: ${{ vars.VITE_KAKAO_MAP_KEY }}
         run: pnpm build
 
       - name: Upload frontend artifact
