@@ -56,6 +56,33 @@ export function parseFrameStatus(raw: string): string | null {
 }
 
 /**
+ * 프레임 하나를 받았을 때 "재조회를 트리거할지"와 "기준 상태를 무엇으로 갱신할지"를 정한다.
+ *
+ * 두 메커니즘이 같은 전이를 가리키기 때문에 판정이 필요하다(#398 + #449).
+ * - **STATUS 프레임**: 전이 통보 그 자체다. 항상 트리거하고, 기준값도 함께 올려서
+ *   몇 초 뒤 같은 상태를 실은 위치 프레임이 도착해도 다시 트리거하지 않게 한다.
+ * - **LOCATION 프레임**: 5초마다 오므로 **값이 달라졌을 때만** 트리거한다. 달라졌다는 것은
+ *   그 사이 STATUS 프레임을 놓쳤다는 뜻이다.
+ * - **첫 LOCATION 프레임**: 기준값만 세우고 트리거하지 않는다. 화면은 진입 시 이미 REST로
+ *   최신 상태를 읽었으므로, 여기서 트리거하면 불필요한 재조회가 한 번 더 돈다.
+ * - **상태가 없는 프레임**(구버전 백엔드, Redis 복원값): 기준값을 유지하고 아무것도 하지 않는다.
+ */
+export function nextTrackingSignal(
+  frame: { type: 'LOCATION' | 'STATUS'; status: string | null },
+  lastStatus: string | null,
+): { lastStatus: string | null; refetch: boolean } {
+  const nextStatus = frame.status ?? lastStatus
+
+  if (frame.type === 'STATUS') {
+    return { lastStatus: nextStatus, refetch: true }
+  }
+
+  const isFirstFrame = lastStatus === null
+  const changed = frame.status !== null && frame.status !== lastStatus
+  return { lastStatus: nextStatus, refetch: changed && !isFirstFrame }
+}
+
+/**
  * SSE `data:` 페이로드를 위치 값으로 파싱한다. 형식이 어긋나면 예외 대신 null을 돌려준다 —
  * 백엔드가 페이로드를 파싱 없이 그대로 흘려보내므로(location/sse), 계약이 어긋난 프레임
  * 하나가 스트림 전체(이후 이벤트 처리)를 멈추면 안 된다.
@@ -128,26 +155,24 @@ export function useTrackingStream(deliveryId: number | undefined, enabled: boole
     }
 
     source.onmessage = (event: MessageEvent<string>) => {
-      if (parseFrameType(event.data) === 'STATUS') {
-        setStatusChangedAt(Date.now())
-        return
-      }
-      const ping = parseLocationPing(event.data)
-      if (ping) {
-        setLocation(ping)
-      }
-      // 위치 프레임에 실려 온 상태가 직전과 다르면, 그 사이 상태 전이 이벤트를 놓친 것이다(#449).
-      // 값 자체는 렌더링에 쓰지 않고 재조회 신호만 울린다 — 표시할 값은 REST가 정본이다.
-      // 값이 없으면(구버전 백엔드) 아무것도 하지 않아 기존 동작이 그대로 유지된다.
-      const frameStatus = parseFrameStatus(event.data)
-      if (frameStatus !== null && frameStatus !== lastStatusRef.current) {
-        const isFirstFrame = lastStatusRef.current === null
-        lastStatusRef.current = frameStatus
-        // 첫 프레임은 "바뀐" 것이 아니다 — 화면은 이미 REST로 최신 상태를 읽고 진입했으므로,
-        // 여기서 트리거하면 진입 직후 불필요한 재조회가 한 번 더 돈다.
-        if (!isFirstFrame) {
-          setStatusChangedAt(Date.now())
+      const frameType = parseFrameType(event.data)
+
+      if (frameType === 'LOCATION') {
+        const ping = parseLocationPing(event.data)
+        if (ping) {
+          setLocation(ping)
         }
+      }
+
+      // 재조회 여부 판정은 순수 함수에 맡긴다(nextTrackingSignal). 상태값 자체는 렌더링에 쓰지
+      // 않고 "다시 조회하라"는 신호로만 쓴다 — 표시할 값은 REST가 정본이다.
+      const decision = nextTrackingSignal(
+        { type: frameType, status: parseFrameStatus(event.data) },
+        lastStatusRef.current,
+      )
+      lastStatusRef.current = decision.lastStatus
+      if (decision.refetch) {
+        setStatusChangedAt(Date.now())
       }
     }
 
