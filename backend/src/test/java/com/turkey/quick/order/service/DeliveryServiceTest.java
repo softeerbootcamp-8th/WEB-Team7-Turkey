@@ -405,19 +405,45 @@ class DeliveryServiceTest {
         }
 
         @Test
-        @DisplayName("조건부 UPDATE가 0행이면(이미 배차되었거나 완료됨) 409이고 환급하지 않는다")
-        void rejectsWithConflictWhenNotWaiting() {
+        @DisplayName("조건부 UPDATE가 0행이고 재조회 결과가 CANCELED가 아니면(배차 등 다른 전이) 409이고 환급하지 않는다")
+        void rejectsWithConflictWhenLostRaceToOtherTransition() {
             DeliveryOrder order = waitingOrder();
             given(deliveryOrderRepository.findByIdAndCustomer_Id(CANCEL_DELIVERY_ID, CANCEL_CUSTOMER_ID))
                     .willReturn(Optional.of(order));
             given(deliveryOrderRepository.cancelIfWaiting(eq(CANCEL_DELIVERY_ID), any(), any()))
                     .willReturn(0);
+            DeliveryOrder assigned = waitingOrder();
+            ReflectionTestUtils.setField(assigned, "status", OrderStatus.ASSIGNED);
+            given(deliveryOrderRepository.findByIdForShare(CANCEL_DELIVERY_ID))
+                    .willReturn(Optional.of(assigned));
 
             Throwable thrown = catchThrowable(
                     () -> deliveryService.cancelDelivery(CANCEL_DELIVERY_ID, CANCEL_CUSTOMER_ID, null));
 
             assertThat(thrown).isInstanceOf(BusinessException.class);
             assertThat(((BusinessException) thrown).getStatus()).isEqualTo(HttpStatus.CONFLICT);
+            verifyNoInteractions(customerPaymentService);
+        }
+
+        @Test
+        @DisplayName("조건부 UPDATE가 0행이어도 재조회 결과가 CANCELED면(동시 취소 경쟁에서 짐) 200으로 멱등 응답한다")
+        void isIdempotentWhenLostRaceToAnotherCancel() {
+            DeliveryOrder order = waitingOrder();
+            given(deliveryOrderRepository.findByIdAndCustomer_Id(CANCEL_DELIVERY_ID, CANCEL_CUSTOMER_ID))
+                    .willReturn(Optional.of(order));
+            given(deliveryOrderRepository.cancelIfWaiting(eq(CANCEL_DELIVERY_ID), any(), any()))
+                    .willReturn(0);
+            DeliveryOrder canceledByOther = waitingOrder();
+            canceledByOther.cancel("다른 요청이 먼저 취소함");
+            given(deliveryOrderRepository.findByIdForShare(CANCEL_DELIVERY_ID))
+                    .willReturn(Optional.of(canceledByOther));
+
+            DeliveryCancelResponse response =
+                    deliveryService.cancelDelivery(CANCEL_DELIVERY_ID, CANCEL_CUSTOMER_ID, "내 취소 시도");
+
+            assertThat(response.deliveryId()).isEqualTo(CANCEL_DELIVERY_ID);
+            assertThat(response.status()).isEqualTo(OrderStatus.CANCELED);
+            assertThat(response.canceledAt()).isEqualTo(canceledByOther.getCanceledAt());
             verifyNoInteractions(customerPaymentService);
         }
 

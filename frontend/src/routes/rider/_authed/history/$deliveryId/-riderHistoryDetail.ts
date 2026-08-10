@@ -6,8 +6,7 @@ import type {
   RiderDeliveryHistoryDetailResponseItemType,
   RiderDeliveryHistoryDetailResponseProofType,
 } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
-
-const SEOUL_TIME_ZONE = 'Asia/Seoul'
+import { formatSeoul } from '@/shared/lib/datetime'
 
 const ITEM_TYPE_LABELS: Record<RiderDeliveryHistoryDetailResponseItemType, string> = {
   DOCUMENT: '문서',
@@ -39,36 +38,29 @@ export interface HistoryTimelineStep {
   time: string
 }
 
-function toDate(value?: string): Date | null {
-  if (!value) return null
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? null : date
-}
-
 /** 헤더용 날짜(YYYY.MM.DD, Asia/Seoul). 값이 없거나 파싱 불가면 대체 문구. */
 export function formatDetailDate(value?: string): string {
-  const date = toDate(value)
-  if (!date) return '날짜 미제공'
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: SEOUL_TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  })
-    .format(date)
-    .replaceAll('-', '.')
+  const formatted = formatSeoul(
+    value,
+    {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    },
+    'en-CA',
+  )
+  return formatted ? formatted.replaceAll('-', '.') : '날짜 미제공'
 }
 
 /** 시각(HH:mm, 24시간, Asia/Seoul). 타임라인 각 단계와 헤더 완료 시각에 공용. */
 export function formatDetailTime(value?: string): string {
-  const date = toDate(value)
-  if (!date) return '시각 미제공'
-  return new Intl.DateTimeFormat('ko-KR', {
-    timeZone: SEOUL_TIME_ZONE,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(date)
+  return (
+    formatSeoul(value, {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }) ?? '시각 미제공'
+  )
 }
 
 export function formatItemType(itemType?: RiderDeliveryHistoryDetailResponseItemType): string {

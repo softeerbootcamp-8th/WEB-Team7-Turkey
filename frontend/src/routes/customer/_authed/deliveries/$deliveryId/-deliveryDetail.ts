@@ -6,6 +6,7 @@ import type {
   ContactResponse,
   DeliveryDetailResponseItemType,
 } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
+import { formatSeoul } from '@/shared/lib/datetime'
 
 // 배송 완료 인증 사진 소스 해석은 라이더 운행 기록 상세와 공유한다(shared/delivery/proofImage).
 // 여기서 재노출해 기존 소비처(index.tsx·-deliveryDetail.test.ts)의 import 경로를 유지한다.
@@ -38,22 +39,16 @@ export function formatDetailContact(contact: ContactResponse | undefined): strin
 }
 
 export function formatDetailDateTime(value: string | undefined): string {
-  if (!value) {
-    return '시각 미제공'
-  }
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return '시각 미제공'
-  }
-  return new Intl.DateTimeFormat('ko-KR', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(date)
+  return (
+    formatSeoul(value, {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }) ?? '시각 미제공'
+  )
 }
 
 export function formatDetailFare(amount: number | undefined): string {

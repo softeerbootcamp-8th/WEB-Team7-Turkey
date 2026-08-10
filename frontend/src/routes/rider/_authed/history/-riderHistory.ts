@@ -3,6 +3,7 @@ import type {
   RiderDeliveryHistoryItemResponse,
   RiderDeliveryHistoryItemResponseItemType,
 } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
+import { formatSeoul } from '@/shared/lib/datetime'
 
 export interface RiderDeliveryHistoryItem {
   deliveryId?: number
@@ -13,8 +14,6 @@ export interface RiderDeliveryHistoryItem {
   destinationRoadAddress?: string
   straightDistanceMeters?: number
 }
-
-const SEOUL_TIME_ZONE = 'Asia/Seoul'
 
 const ITEM_TYPE_LABELS: Record<RiderDeliveryHistoryItemResponseItemType, string> = {
   DOCUMENT: '문서',
@@ -42,32 +41,24 @@ export function toRiderDeliveryHistory(items: RiderDeliveryHistoryItemResponse[]
 }
 
 export function formatHistoryDate(value?: string): string {
-  if (!value) return '날짜 미제공'
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '날짜 미제공'
-
-  return new Intl.DateTimeFormat('ko-KR', {
-    timeZone: SEOUL_TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    weekday: 'short',
-  }).format(date)
+  return (
+    formatSeoul(value, {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      weekday: 'short',
+    }) ?? '날짜 미제공'
+  )
 }
 
 export function formatHistoryTime(value?: string): string {
-  if (!value) return '완료 시각 미제공'
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '완료 시각 미제공'
-
-  return new Intl.DateTimeFormat('ko-KR', {
-    timeZone: SEOUL_TIME_ZONE,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(date)
+  return (
+    formatSeoul(value, {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }) ?? '완료 시각 미제공'
+  )
 }
 
 export function formatItemType(itemType?: RiderDeliveryHistoryItemResponseItemType): string {
