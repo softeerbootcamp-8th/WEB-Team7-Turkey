@@ -12,6 +12,26 @@ export interface LocationPing {
 export interface UseTrackingStreamResult {
   status: TrackingConnectionStatus
   location: LocationPing | null
+  /** STATUS 프레임을 받을 때마다 바뀌는 신호값(타임스탬프). 값 자체엔 의미가 없고
+   *  "재조회하라"는 트리거로만 쓴다 — 상태 표시는 REST가 정본(#399). */
+  statusChangedAt: number | null
+}
+
+/**
+ * SSE 프레임의 판별 필드만 읽는다. 백엔드 값은 소문자 "location"/"status"다
+ * (`LocationPayload`/`StatusChangedPayload`, #398). `type`이 없으면(레거시 프레임,
+ * 또는 롤링 배포 중 구버전) LOCATION으로 간주해 기존 동작을 유지한다.
+ */
+export function parseFrameType(raw: string): 'LOCATION' | 'STATUS' {
+  try {
+    const parsed = JSON.parse(raw)
+    if (typeof parsed === 'object' && parsed !== null && (parsed as Record<string, unknown>).type === 'status') {
+      return 'STATUS'
+    }
+  } catch {
+    // parseLocationPing이 같은 파싱 실패를 다시 처리한다
+  }
+  return 'LOCATION'
 }
 
 /**
@@ -54,9 +74,8 @@ function trackingStreamUrl(deliveryId: number): string {
 /**
  * 배송 실시간 위치 SSE 구독.
  *
- * 배송 상태는 여기서 받지 않는다 — 지금 백엔드는 위치만 이름 없는 기본 `message` 이벤트로
- * 중계한다(위치 추적 단순화, #297). 상태 변경을 실시간으로 미는 이벤트는 아직 없으므로,
- * 화면은 초기 REST 조회값을 상태 표시에 쓰고 이 훅은 위치 갱신에만 쓴다.
+ * 상태 변경(STATUS 프레임, #398)은 값을 렌더링에 쓰지 않는다 — `statusChangedAt` 신호만
+ * 바뀌고, 화면이 그 신호로 REST를 재조회해 상태를 갱신한다(REST가 상태 표시의 정본, #399).
  *
  * @param deliveryId 구독할 배송 ID.
  * @param enabled `false`거나 `deliveryId`가 없으면 연결하지 않는다 — 배차 전(WAITING)이거나
@@ -65,6 +84,7 @@ function trackingStreamUrl(deliveryId: number): string {
 export function useTrackingStream(deliveryId: number | undefined, enabled: boolean): UseTrackingStreamResult {
   const [status, setStatus] = useState<TrackingConnectionStatus>('idle')
   const [location, setLocation] = useState<LocationPing | null>(null)
+  const [statusChangedAt, setStatusChangedAt] = useState<number | null>(null)
 
   useEffect(() => {
     if (!enabled || deliveryId == null) {
@@ -74,6 +94,7 @@ export function useTrackingStream(deliveryId: number | undefined, enabled: boole
 
     setStatus('connecting')
     setLocation(null)
+    setStatusChangedAt(null)
     const source = new EventSource(trackingStreamUrl(deliveryId), { withCredentials: true })
 
     source.onopen = () => {
@@ -81,6 +102,10 @@ export function useTrackingStream(deliveryId: number | undefined, enabled: boole
     }
 
     source.onmessage = (event: MessageEvent<string>) => {
+      if (parseFrameType(event.data) === 'STATUS') {
+        setStatusChangedAt(Date.now())
+        return
+      }
       const ping = parseLocationPing(event.data)
       if (ping) {
         setLocation(ping)
@@ -99,5 +124,5 @@ export function useTrackingStream(deliveryId: number | undefined, enabled: boole
     }
   }, [deliveryId, enabled])
 
-  return { status, location }
+  return { status, location, statusChangedAt }
 }

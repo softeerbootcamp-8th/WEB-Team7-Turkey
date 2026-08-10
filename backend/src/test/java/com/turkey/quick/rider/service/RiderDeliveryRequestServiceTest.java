@@ -10,6 +10,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.turkey.quick.common.exception.BusinessException;
+import com.turkey.quick.location.sse.TrackingPublisher;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
 import com.turkey.quick.order.domain.Address;
@@ -70,6 +71,9 @@ class RiderDeliveryRequestServiceTest {
     /** #42 만료 정리 호출용. 기본적으로 false(만료 아님)를 돌려주면 되므로 스텁 없이 존재만 시킨다. */
     @Mock
     private DeliveryTimeoutService deliveryTimeoutService;
+
+    @Mock
+    private TrackingPublisher trackingPublisher;
 
     private static final Long RIDER_ID = 1L;
 
@@ -644,6 +648,7 @@ class RiderDeliveryRequestServiceTest {
             assertThat(result.status()).isEqualTo(OrderStatus.ASSIGNED);
             assertThat(result.operatingStatus()).isEqualTo(OperatingStatus.BUSY);
             assertThat(result.assignedAt()).isNotNull();
+            verify(trackingPublisher).publishStatus(eq(assigned.getId()), eq(OrderStatus.ASSIGNED), any());
         }
     }
 }

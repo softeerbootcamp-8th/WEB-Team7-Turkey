@@ -210,7 +210,10 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   `application.yml`의 `spring.mvc.async.request-timeout`과 같은 값). heartbeat가 없다는 전제가
   예전(#266, heartbeat 15초)과 다르다
 - **heartbeat가 없다.** 그래서 CloudFront 등 프록시의 유휴 타임아웃에 조용한 스트림이 끊길 수
-  있다(예전에 heartbeat를 둔 이유이기도 하다)
+  있다(예전에 heartbeat를 둔 이유이기도 하다). **#401(2026-08-06)로 이 공백의 실제 영향이
+  커졌다** — WAITING 상태에서도 SSE 연결을 허용하면서, 배차 대기 시간(길면 수 분)만큼 연결이
+  완전히 침묵한 채 열려 있을 수 있다. BUSY 라이더의 5초 위치 전송과 달리 이 구간은 대기 시간
+  전체가 무음이라 프록시 유휴 타임아웃·emitter 타임아웃(5분)에 더 쉽게 걸린다
 - **끊긴 연결 탐지에는 쓰기가 최소 두 번 필요하다**(#317에서 실측). heartbeat가 없어 서버는
   클라이언트가 닫은 것을 스스로 모르고, **끊긴 연결에 대한 첫 쓰기는 소켓 버퍼에 들어가 성공하는
   경우가 많다** — 실패는 그 다음 쓰기부터 올라온다. 탭을 닫은 고객의 연결은 위치 전송 두 주기
@@ -533,10 +536,12 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   use-after-free 를 함께 막아야 한다(`complete()` 는 콜백을 동기로 돌리지 않는다) — 레지스트리 제거를
   값까지 비교하는 형태로 바꾸면 된다. 별도 이슈로 올릴지 미결
 - 추적 스냅샷(`GET /api/customer/deliveries/{deliveryId}/tracking`, #79)이 **스트림과 같은 게이트를 쓴다**
-  (사람 확인) — 그래서 WAITING·COMPLETED·CANCELED 는 409 고, **완료·취소된 배송의 추적 화면을 그릴 API 가
-  없다**(배송요청 상세 API 는 아직 스텁). 또 `estimatedArrivalAt` 은 항상 null 이며(산정 근거 없음),
-  `steps` 는 `order_status_history` 가 아니라 `delivery_order` 시각 컬럼에서 파생한다 — 그 테이블은
-  엔터티만 있고 **행을 쓰는 코드가 없어 런타임에 비어 있다**(상태 전이 API 이슈에서 작성기 필요)
+  (사람 확인) — **#401(2026-08-06)로 WAITING은 이 게이트를 통과하도록 바뀌었다**(라이더 배정 전이라도
+  상태 전이 SSE는 받을 수 있어야 하므로, `OrderStatus.isTerminal()`로 판정을 바꿈). 지금은
+  **COMPLETED·CANCELED만 409고, 완료·취소된 배송의 추적 화면을 그릴 API가 없다**(배송요청 상세 API는
+  아직 스텁). 또 `estimatedArrivalAt`은 항상 null이며(산정 근거 없음), `steps`는 `order_status_history`가
+  아니라 `delivery_order` 시각 컬럼에서 파생한다 — 그 테이블은 엔터티만 있고 **행을 쓰는 코드가 없어
+  런타임에 비어 있다**(상태 전이 API 이슈에서 작성기 필요)
 - 배차 확정(`POST /api/rider/requests/{deliveryId}/accept`, #56) 실패 사유(취소/이미 배차/라이더
   다른 배송 수행 중)를 `ApiResponse`에 에러코드 필드 없이 `message` 문자열로만 구분함(ADR-006).
   프론트가 사유별로 다른 UX를 보여줘야 하면 에러코드 체계 신설을 별도 이슈로 논의해야 함

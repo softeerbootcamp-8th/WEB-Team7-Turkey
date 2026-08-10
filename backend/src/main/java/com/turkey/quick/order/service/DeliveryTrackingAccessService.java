@@ -54,29 +54,30 @@ public class DeliveryTrackingAccessService {
                     return new BusinessException(HttpStatus.NOT_FOUND, NOT_FOUND_MESSAGE);
                 });
 
-        if (!delivery.status().isTrackable()) {
+        if (delivery.status().isTerminal()) {
             // 배송이 끝난 뒤 화면에 남아 있던 탭이 재연결하면 정상적으로 발생한다 — 그래서 info 다.
             log.info("event=TRACKING_SUBSCRIBE_REJECTED deliveryId={} customerId={} reason={} status={}",
-                    deliveryId, customerId, "NOT_TRACKABLE", delivery.status());
+                    deliveryId, customerId, "TERMINAL", delivery.status());
             throw new BusinessException(HttpStatus.CONFLICT, notTrackableMessage(delivery.status()));
         }
         return delivery;
     }
 
     /**
-     * 상태 코드는 셋 다 409 지만 메시지를 나눈다. 프론트가 코드로 분기할 수는 없지만(브라우저
+     * 상태 코드는 둘 다 409 지만 메시지를 나눈다. 프론트가 코드로 분기할 수는 없지만(브라우저
      * {@code EventSource} 는 응답 본문을 스크립트에 노출하지 않는다) 로그와 수동 확인에서
      * "왜 거부됐는지"를 즉시 알 수 있어야 한다.
+     *
+     * <p>{@code WAITING}은 더 이상 여기 오지 않는다(#401) — 라이더 배정 전에도 상태 전이 SSE를
+     * 받을 수 있도록 구독을 허용했다. 위치를 보여줄 수 없는 것과 구독할 수 없는 것은 다른 질문이다.
      */
     private static String notTrackableMessage(OrderStatus status) {
         return switch (status) {
-//            FIXME: 웨이팅도 이 화면 보고 싶어요
-            case WAITING -> "라이더가 배정되지 않아 위치를 추적할 수 없습니다.";
             case COMPLETED -> "완료된 배송은 위치를 추적할 수 없습니다.";
             case CANCELED -> "취소된 배송은 위치를 추적할 수 없습니다.";
-            // isTrackable() 이 true 인 상태는 위에서 이미 통과했으므로 여기 오지 않는다.
-            case ASSIGNED, MOVING_TO_PICKUP, PICKED_UP, DELIVERING ->
-                    throw new IllegalStateException("추적 가능한 상태를 거부 사유로 설명할 수 없습니다. status=" + status);
+            // isTerminal() 이 false 인 상태는 위에서 이미 통과했으므로 여기 오지 않는다.
+            case WAITING, ASSIGNED, MOVING_TO_PICKUP, PICKED_UP, DELIVERING ->
+                    throw new IllegalStateException("구독 가능한 상태를 거부 사유로 설명할 수 없습니다. status=" + status);
         };
     }
 }
