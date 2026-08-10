@@ -4,6 +4,7 @@ import type {
   DeliverySummaryResponse,
 } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
 import { isActiveDeliveryStatus } from '@/shared/delivery/status'
+import { formatSeoul } from '@/shared/lib/datetime'
 
 export function partitionDeliveries(deliveries: DeliverySummaryResponse[]): {
   active: DeliverySummaryResponse[]
@@ -19,22 +20,16 @@ export function partitionDeliveries(deliveries: DeliverySummaryResponse[]): {
 }
 
 export function formatDeliveryRequestedAt(requestedAt: string | undefined): string {
-  if (!requestedAt) {
-    return '요청 시각 미제공'
-  }
-  const date = new Date(requestedAt)
-  if (Number.isNaN(date.getTime())) {
-    return '요청 시각 미제공'
-  }
-  return new Intl.DateTimeFormat('ko-KR', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(date)
+  return (
+    formatSeoul(requestedAt, {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }) ?? '요청 시각 미제공'
+  )
 }
 
 export function formatDeliveryFare(totalFare: number | undefined): string {
