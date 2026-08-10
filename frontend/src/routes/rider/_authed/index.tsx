@@ -98,8 +98,6 @@ function RiderHome() {
           </div>
 
           <div className="relative mb-xl flex h-48 w-full max-w-xs items-center justify-center overflow-hidden rounded-xl bg-primary-fixed shadow-sm">
-            <div className="absolute -bottom-14 -left-10 h-36 w-36 rounded-full bg-primary-container/70" />
-            <div className="absolute -right-8 -top-10 h-32 w-32 rounded-full bg-tertiary-fixed/60" />
             <div className="relative flex h-28 w-28 items-center justify-center rounded-full bg-surface-container-lowest shadow-md">
               <span className="material-symbols-outlined text-6xl text-primary" aria-hidden="true">two_wheeler</span>
             </div>

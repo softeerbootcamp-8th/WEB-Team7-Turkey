@@ -3,11 +3,13 @@ package com.turkey.quick.rider.controller;
 import com.turkey.quick.common.response.ApiResponse;
 import com.turkey.quick.rider.auth.AuthenticatedRider;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestAcceptResponse;
+import com.turkey.quick.rider.dto.RiderDeliveryRequestCursor;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestDetailResponse;
-import com.turkey.quick.rider.dto.RiderDeliveryRequestSummaryResponse;
+import com.turkey.quick.rider.dto.RiderDeliveryRequestFilter;
+import com.turkey.quick.rider.dto.RiderDeliveryRequestPageResponse;
 import com.turkey.quick.rider.service.RiderDeliveryRequestService;
 import java.math.BigDecimal;
-import java.util.List;
+import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.RestController;
@@ -28,10 +30,16 @@ public class RiderDeliveryRequestController implements RiderDeliveryRequestApi {
     private final RiderDeliveryRequestService riderDeliveryRequestService;
 
     @Override
-    public ApiResponse<List<RiderDeliveryRequestSummaryResponse>> getDeliveryRequests(
-            AuthenticatedRider rider, BigDecimal latitude, BigDecimal longitude, int radiusMeters, String sort) {
-        return ApiResponse.ok(
-                riderDeliveryRequestService.getDeliveryRequests(rider, latitude, longitude, radiusMeters, sort));
+    public ApiResponse<RiderDeliveryRequestPageResponse> getDeliveryRequests(
+            AuthenticatedRider rider, BigDecimal latitude, BigDecimal longitude, int radiusMeters,
+            String sort, String sortDirection,
+            Long fareMin, Long fareMax, Integer distanceMin, Integer distanceMax,
+            int size, Integer afterDistanceMeters, Long afterFare, LocalDateTime afterRequestedAt, Long afterId) {
+        return ApiResponse.ok(riderDeliveryRequestService.getDeliveryRequests(
+                rider, latitude, longitude, radiusMeters, sort, sortDirection,
+                new RiderDeliveryRequestFilter(fareMin, fareMax, distanceMin, distanceMax),
+                size,
+                new RiderDeliveryRequestCursor(afterDistanceMeters, afterFare, afterRequestedAt, afterId)));
     }
 
     @Override

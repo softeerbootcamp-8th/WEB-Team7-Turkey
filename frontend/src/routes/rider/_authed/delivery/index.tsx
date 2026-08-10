@@ -110,7 +110,7 @@ function RiderDelivery() {
         <section aria-label="배송 장소" className="overflow-hidden rounded-xl border border-surface-container bg-surface-container-lowest">
           <DeliveryAddressRow
             label="픽업"
-            icon="storefront"
+            color="#3b82f6"
             address={delivery.pickup}
             contactName={delivery.sender?.name}
             phoneNumber={delivery.sender?.phoneNumber}
@@ -119,7 +119,7 @@ function RiderDelivery() {
           <div className="mx-md border-t border-dashed border-surface-container" />
           <DeliveryAddressRow
             label="도착"
-            icon="home"
+            color="#ef4444"
             address={delivery.destination}
             contactName={delivery.recipient?.name}
             phoneNumber={delivery.recipient?.phoneNumber}
@@ -134,8 +134,6 @@ function RiderDelivery() {
             <InfoCard label="예상 정산액" value={formatDeliveryAmount(delivery.expectedSettlementAmount)} icon="payments" />
           </div>
         </section>
-
-        <DeliveryTimeline delivery={delivery} />
 
         {needsCompletionProof && (
           <p role="status" className="rounded-xl bg-tertiary-fixed p-md font-body-md text-body-md text-on-tertiary-fixed-variant">
@@ -192,14 +190,14 @@ function RiderDelivery() {
 
 function DeliveryAddressRow({
   label,
-  icon,
+  color,
   address,
   contactName,
   phoneNumber,
   active,
 }: {
   label: string
-  icon: string
+  color: string
   address?: AddressResponse
   contactName?: string
   phoneNumber?: string
@@ -207,7 +205,13 @@ function DeliveryAddressRow({
 }) {
   return (
     <div className="flex gap-3 p-md">
-      <span className={`material-symbols-outlined mt-0.5 ${active ? 'text-primary' : 'text-secondary'}`} aria-hidden="true">{icon}</span>
+      <span
+        className="material-symbols-outlined mt-0.5"
+        style={{ color, fontVariationSettings: "'FILL' 1" }}
+        aria-hidden="true"
+      >
+        location_on
+      </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="font-label-sm text-label-sm text-secondary">{label}</span>
@@ -238,21 +242,6 @@ function InfoCard({ label, value, icon }: { label: string; value: string; icon: 
         <p className="truncate font-body-lg text-body-lg font-bold text-on-surface">{value}</p>
       </div>
     </div>
-  )
-}
-
-function DeliveryTimeline({ delivery }: { delivery: RiderDeliveryResponse }) {
-  return (
-    <section aria-labelledby="delivery-timeline" className="rounded-xl bg-surface-container-lowest p-md">
-      <h2 id="delivery-timeline" className="font-headline-sm text-headline-sm font-bold text-on-surface">배송 진행 단계</h2>
-      <ol className="mt-3 flex flex-wrap gap-2">
-        {(delivery.steps ?? []).map(step => (
-          <li key={`${step.status}-${step.occurredAt}`} className="rounded-full bg-surface-container-high px-3 py-1 font-label-sm text-label-sm text-secondary">
-            {getDeliveryStageContent(step.status)?.statusLabel ?? step.status}
-          </li>
-        ))}
-      </ol>
-    </section>
   )
 }
 

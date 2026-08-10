@@ -232,7 +232,7 @@ public class DeliveryService {
      *   <li>그 외 상태면 조건부 UPDATE({@link DeliveryOrderRepository#cancelIfWaiting}, ADR-006
      *       패턴 — #42/#56 이 이미 쓰는 메서드를 그대로 재사용한다)로 WAITING → CANCELED 전이를
      *       시도한다. 배차 확정(#56)과 동시에 들어와도 조건부 UPDATE 가 하나만 통과시킨다.</li>
-     *   <li>0 행이면(그 사이 배차 확정됐거나 이미 종료된 상태) 409.</li>
+     *   <li>0 행이면 {@link #handleLostRace} 로 넘겨 사유를 구분한다(#405).</li>
      *   <li>1 행이면 예상 운임(ESTIMATE) 스냅샷 금액만큼 환급한다
      *       ({@link CustomerPaymentService#refundForCancel}).</li>
      * </ol>
@@ -260,8 +260,7 @@ public class DeliveryService {
         LocalDateTime canceledAt = LocalDateTime.now(ZoneOffset.UTC);
         int updated = deliveryOrderRepository.cancelIfWaiting(deliveryId, canceledAt, reason);
         if (updated == 0) {
-            throw new BusinessException(HttpStatus.CONFLICT,
-                    "이미 배차되었거나 완료되어 취소할 수 없습니다. deliveryId=" + deliveryId);
+            return handleLostRace(deliveryId);
         }
 
         OrderFareSnapshot estimate = orderFareSnapshotRepository
@@ -276,6 +275,37 @@ public class DeliveryService {
                 deliveryId, customerId, estimate.getTotalFare(), balanceAfter);
 
         return new DeliveryCancelResponse(deliveryId, OrderStatus.CANCELED, canceledAt);
+    }
+
+    /**
+     * {@link #cancelDelivery} 의 조건부 UPDATE 가 0 행일 때 사유를 구분한다(#405).
+     *
+     * <p>도착 순서에 따라 결과가 갈리던 문제를 없애는 지점이다: 취소 요청 두 개가 거의 동시에
+     * 253 라인의 최초 조회를 통과하면, 둘 다 아직 CANCELED 를 못 보고 조건부 UPDATE 로 넘어간다.
+     * 여기서 진 요청이 곧바로 409 를 던지는 대신, {@link DeliveryOrderRepository#findByIdForShare}
+     * 로 다시 확인해 <b>같은 취소끼리 경쟁해 진 것</b>과 <b>배차 확정 등 다른 전이와 경쟁해 진 것</b>을
+     * 구분한다.
+     *
+     * <p>평범한 조회(일관된 읽기)가 아니라 잠금 읽기를 쓰는 이유: 이 트랜잭션은 방금
+     * {@code cancelIfWaiting} 으로 이 행을 검사했고, REPEATABLE READ 에서는 조건에 안 맞아
+     * 갱신하지 못했어도 검사한 행의 락은 남는다. 평범한 재조회는 이 트랜잭션이 시작할 때 고정된
+     * 스냅샷을 그대로 따르므로 방금 상대가 커밋한 값을 못 볼 수 있는 반면, 잠금 읽기는 스냅샷을
+     * 건너뛰어 항상 최신 커밋을 본다 — 그리고 이미 쥔 락이라 대기 없이 통과한다.
+     *
+     * @return CANCELED 로 확인되면 그 시각으로 200(멱등)
+     * @throws BusinessException 409(다른 상태로 전이됨) — CANCELED 가 아닌 모든 경우
+     */
+    private DeliveryCancelResponse handleLostRace(Long deliveryId) {
+        DeliveryOrder current = deliveryOrderRepository.findByIdForShare(deliveryId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "방금 조건부 UPDATE를 시도한 주문을 재조회할 수 없습니다. deliveryId=" + deliveryId));
+
+        if (current.getStatus() == OrderStatus.CANCELED) {
+            return new DeliveryCancelResponse(current.getId(), current.getStatus(), current.getCanceledAt());
+        }
+
+        throw new BusinessException(HttpStatus.CONFLICT,
+                "이미 배차되었거나 완료되어 취소할 수 없습니다. deliveryId=" + deliveryId);
     }
 
     /**

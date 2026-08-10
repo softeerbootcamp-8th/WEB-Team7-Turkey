@@ -1,0 +1,99 @@
+name: Deploy frontend to S3
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/deploy-frontend.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-production
+  # S3 동기화 도중 취소되면 일부 파일만 배포될 수 있으므로 진행 중인 배포를 중단하지 않는다.
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-northeast-2
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Test frontend
+        working-directory: ./frontend
+        run: pnpm test
+
+      - name: Build frontend
+        working-directory: ./frontend
+        run: pnpm build
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 7
+
+      - name: Upload deployment script
+        uses: actions/upload-artifact@v6
+        with:
+          name: frontend-deploy-script
+          path: frontend/scripts/deploy_to_aws.py
+          retention-days: 7
+
+  deploy:
+    needs: build
+    runs-on: self-hosted
+    steps:
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: frontend-dist
+          path: ${{ runner.temp }}/frontend-dist-${{ github.run_id }}
+
+      - name: Download deployment script
+        uses: actions/download-artifact@v7
+        with:
+          name: frontend-deploy-script
+          path: ${{ runner.temp }}/frontend-script-${{ github.run_id }}
+
+      - name: Validate deployment configuration
+        env:
+          FRONTEND_S3_BUCKET: ${{ vars.FRONTEND_S3_BUCKET }}
+          CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+        run: |
+          test -n "$FRONTEND_S3_BUCKET" || { echo "FRONTEND_S3_BUCKET repository variable is required"; exit 1; }
+          test -n "$CLOUDFRONT_DISTRIBUTION_ID" || { echo "CLOUDFRONT_DISTRIBUTION_ID repository variable is required"; exit 1; }
+          command -v python3 >/dev/null || { echo "Python 3 is required on the self-hosted runner"; exit 1; }
+          python3 -c 'import boto3' || { echo "boto3 is required on the self-hosted runner"; exit 1; }
+
+      - name: Deploy to S3 and invalidate CloudFront
+        env:
+          FRONTEND_S3_BUCKET: ${{ vars.FRONTEND_S3_BUCKET }}
+          CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+        run: >-
+          python3
+          "${{ runner.temp }}/frontend-script-${{ github.run_id }}/deploy_to_aws.py"
+          "${{ runner.temp }}/frontend-dist-${{ github.run_id }}"

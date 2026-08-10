@@ -3,6 +3,7 @@ import type {
   GetRiderPointTransactionsType,
   PointTransactionResponse,
 } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
+import { formatSeoul, getSeoulYearMonth } from '@/shared/lib/datetime'
 
 export type PointFilter = 'ALL' | GetRiderPointTransactionsType
 export type PointInfoTab = 'charge-account' | 'withdrawal-account' | 'guide'
@@ -33,23 +34,23 @@ export function shiftPointMonth(date: Date, amount: number): Date {
 }
 
 export function isSamePointMonth(value: string | undefined, selectedMonth: Date): boolean {
-  if (!value) return false
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return false
-  return date.getFullYear() === selectedMonth.getFullYear() && date.getMonth() === selectedMonth.getMonth()
+  // 거래 시각은 한국 시간 기준으로 월을 판정한다. selectedMonth 는 화면이 로컬 Date 로 만든
+  // "보고 있는 달" 표식이라 KST 브라우저(배포 환경)에서 로컬=서울로 일치한다.
+  const ym = getSeoulYearMonth(value)
+  if (!ym) return false
+  return ym.year === selectedMonth.getFullYear() && ym.month === selectedMonth.getMonth()
 }
 
 export function formatPointTransactionDate(value?: string): string {
-  if (!value) return '거래 시각 미제공'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '거래 시각 미제공'
-  return new Intl.DateTimeFormat('ko-KR', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(date)
+  return (
+    formatSeoul(value, {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }) ?? '거래 시각 미제공'
+  )
 }
 
 export function getPointTransactionLabel(type?: PointTransactionResponse['transactionType']): string {

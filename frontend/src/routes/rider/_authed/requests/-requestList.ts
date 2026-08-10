@@ -4,6 +4,7 @@ import type {
   RiderDeliveryRequestSummaryResponse,
   RiderDeliveryRequestSummaryResponseItemType,
 } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
+import { formatSeoul } from '@/shared/lib/datetime'
 
 export const DEFAULT_RADIUS_METERS = 3000
 
@@ -62,14 +63,7 @@ export function formatSettlement(amount: number | undefined): string {
 }
 
 export function formatRequestedAt(requestedAt: string | undefined): string | null {
-  if (!requestedAt) {
-    return null
-  }
-  const date = new Date(requestedAt)
-  if (Number.isNaN(date.getTime())) {
-    return null
-  }
-  return date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+  return formatSeoul(requestedAt, { hour: '2-digit', minute: '2-digit' })
 }
 
 export function getRequestListErrorMessage(error: unknown): string {

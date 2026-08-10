@@ -6,25 +6,27 @@ import com.amazonaws.services.s3.model.GeneratePresignedUrlRequest;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.PutObjectRequest;
 import com.amazonaws.services.s3.model.S3Object;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
+import org.springframework.stereotype.Component;
+import org.springframework.web.multipart.MultipartFile;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import java.util.Date;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Profile;
-import org.springframework.stereotype.Component;
-import org.springframework.web.multipart.MultipartFile;
-
-/** local 이외의 프로파일에서 배송 인증 파일을 실제 S3에 저장한다. */
+/** local 프로파일에서 배송 인증 파일을 S3 mock에 저장한다. */
 @Component
-@Profile("!local")
-public class S3RiderDeliveryProofStorage implements RiderDeliveryProofStorage {
+@Profile("local")
+@ConditionalOnProperty(name = "rider.delivery-proof.storage", havingValue = "s3mock")
+public class S3MockRiderDeliveryProofStorage implements RiderDeliveryProofStorage {
 
     private final AmazonS3 amazonS3;
     private final String bucket;
 
-    public S3RiderDeliveryProofStorage(
+    public S3MockRiderDeliveryProofStorage(
             AmazonS3 amazonS3,
             @Value("${aws.s3.bucket}") String bucket) {
         this.amazonS3 = amazonS3;
@@ -58,7 +60,7 @@ public class S3RiderDeliveryProofStorage implements RiderDeliveryProofStorage {
         // 1. URL 만료 시간 설정 (현재 시간으로부터)
         Date expiration = new Date();
         long expTimeMillis = expiration.getTime();
-        expTimeMillis += 1000 * 10; // 10초 (밀리초 단위)
+        expTimeMillis += 1000 * 10; // 10분 (밀리초 단위)
         expiration.setTime(expTimeMillis);
 
         // 2. 프리사인 URL 생성 요청서 작성
