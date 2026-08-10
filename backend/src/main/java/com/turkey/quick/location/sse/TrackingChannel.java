@@ -25,11 +25,39 @@ public final class TrackingChannel {
      */
     private static final String PREFIX = "tracking:order:";
 
+    /**
+     * 연결 종료 신호 채널(#450). 데이터 채널과 <b>완전히 다른 접두어여야 한다.</b>
+     *
+     * <p>{@code tracking:order:{id}:close} 처럼 데이터 채널 아래에 두면 안 된다 — Redis glob 의
+     * {@code *} 는 콜론을 포함해 매칭하므로 {@link #pattern()}({@code tracking:order:*})에 그대로
+     * 걸리고, {@link TrackingSubscriber} 가 종료 신호를 <b>데이터 프레임으로 브라우저에 흘려보낸다.</b>
+     *
+     * <p>채널을 나누는 이유는 {@code TrackingSubscriber} 의 확정 설계(페이로드를 파싱하지 않고
+     * 그대로 흘린다)를 지키기 위해서다. 상태 프레임에 종료 의미를 얹으면 구독자가 JSON 을 파싱해야
+     * 하지만, 채널을 나누면 <b>채널명만 보면 된다.</b>
+     */
+    private static final String CLOSE_PREFIX = "tracking:close:";
+
     private TrackingChannel() {
     }
 
     public static String of(Long deliveryId) {
         return PREFIX + deliveryId;
+    }
+
+    /** 그 배송을 구독 중인 연결을 닫으라는 신호를 보낼 채널(#450). */
+    public static String closeOf(Long deliveryId) {
+        return CLOSE_PREFIX + deliveryId;
+    }
+
+    /** 모든 배송의 종료 신호를 한 번에 구독하는 패턴. {@link #pattern()} 과 겹치지 않는다. */
+    public static String closePattern() {
+        return CLOSE_PREFIX + "*";
+    }
+
+    /** {@link #deliveryIdOf} 와 같은 규약 — 형식이 어긋나면 예외가 아니라 빈 결과다. */
+    public static Optional<Long> deliveryIdOfClose(String channel) {
+        return parseAfter(channel, CLOSE_PREFIX);
     }
 
     /**
@@ -63,11 +91,15 @@ public final class TrackingChannel {
      * 수신자까지 잃는다.</b> 잘못된 채널명은 무시하고 넘어가는 것이 맞다.
      */
     public static Optional<Long> deliveryIdOf(String channel) {
-        if (channel == null || !channel.startsWith(PREFIX)) {
+        return parseAfter(channel, PREFIX);
+    }
+
+    private static Optional<Long> parseAfter(String channel, String prefix) {
+        if (channel == null || !channel.startsWith(prefix)) {
             return Optional.empty();
         }
         try {
-            return Optional.of(Long.parseLong(channel.substring(PREFIX.length())));
+            return Optional.of(Long.parseLong(channel.substring(prefix.length())));
         } catch (NumberFormatException e) {
             return Optional.empty();
         }

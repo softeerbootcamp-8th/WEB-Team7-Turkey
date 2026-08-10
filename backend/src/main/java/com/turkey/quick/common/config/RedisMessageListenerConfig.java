@@ -1,6 +1,7 @@
 package com.turkey.quick.common.config;
 
 import com.turkey.quick.location.sse.TrackingChannel;
+import com.turkey.quick.location.sse.TrackingCloseSubscriber;
 import com.turkey.quick.location.sse.TrackingSubscriber;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
@@ -70,6 +71,7 @@ public class RedisMessageListenerConfig {
     public RedisMessageListenerContainer trackingMessageListenerContainer(
             RedisConnectionFactory connectionFactory,
             TrackingSubscriber subscriber,
+            TrackingCloseSubscriber closeSubscriber,
             ThreadPoolTaskExecutor trackingEventExecutor) {
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
         container.setConnectionFactory(connectionFactory);
@@ -77,6 +79,10 @@ public class RedisMessageListenerConfig {
         container.setErrorHandler(throwable ->
                 log.error("event=SSE_FANOUT_ERROR reason={}", throwable.getClass().getSimpleName(), throwable));
         container.addMessageListener(subscriber, new PatternTopic(TrackingChannel.pattern()));
+        // 종료 신호는 데이터와 별도 채널·별도 리스너다(#450). 접두어가 완전히 달라 위 패턴에
+        // 걸리지 않는다 — 같은 접두어 아래 두면 Redis glob 의 * 가 콜론까지 매칭해 종료 신호가
+        // 데이터 프레임으로 브라우저에 흘러간다.
+        container.addMessageListener(closeSubscriber, new PatternTopic(TrackingChannel.closePattern()));
         return container;
     }
 }
