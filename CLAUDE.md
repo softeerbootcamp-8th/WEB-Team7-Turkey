@@ -535,26 +535,51 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
   단 그때 **죽어 가는 이전 연결의 늦은 `onCompletion` 이 같은 id 를 이어받은 새 연결을 지우는**
   use-after-free 를 함께 막아야 한다(`complete()` 는 콜백을 동기로 돌리지 않는다) — 레지스트리 제거를
   값까지 비교하는 형태로 바꾸면 된다. 별도 이슈로 올릴지 미결
-- 추적 스냅샷(`GET /api/customer/deliveries/{deliveryId}/tracking`, #79)이 **스트림과 같은 게이트를 쓴다**
-  (사람 확인) — **#401(2026-08-06)로 WAITING은 이 게이트를 통과하도록 바뀌었다**(라이더 배정 전이라도
-  상태 전이 SSE는 받을 수 있어야 하므로, `OrderStatus.isTerminal()`로 판정을 바꿈). 지금은
-  **COMPLETED·CANCELED만 409고, 완료·취소된 배송의 추적 화면을 그릴 API가 없다**(배송요청 상세 API는
-  아직 스텁). ~~또 `estimatedArrivalAt`은 항상 null이며(산정 근거 없음),~~ **해소(#421/#431)**: ETA를
-  채운다(아래 항목 참조). 단 **WAITING은 라이더가 없어 ETA도 null이다** — 출발점이 없어 경로를
-  구할 수 없고, 라우팅을 호출하지도 않는다. `steps`는 `order_status_history`가
-  아니라 `delivery_order` 시각 컬럼에서 파생한다 — 그 테이블은 엔터티만 있고 **행을 쓰는 코드가 없어
-  런타임에 비어 있다**(상태 전이 API 이슈에서 작성기 필요)
-- **#401(WAITING 추적 허용)과 #421(ETA)이 만나는 지점에 함정이 하나 있다.** 추적 스냅샷이 응답 조립에
-  쓰는 `DeliveryOrderRepository.findWithAssignedRiderById`는 **반드시 `left join fetch` 여야 한다** —
-  WAITING은 `assigned_rider_id`가 NULL이라 inner join이면 주문이 존재하는데도 결과가 비어
-  `orElseThrow`가 500을 던진다. 같은 이유로 `DeliveryTrackingQueryService`는 라이더가 null이면
-  `DeliveryRouteEstimator`를 아예 호출하지 않는다(호출하면 NPE, 넘겨도 `targetOf`가 WAITING에
-  `IllegalStateException`을 던진다). `CustomerDeliveryTrackingE2ETest`의 WAITING 케이스가 이 조합을 지킨다
+- ~~추적 스냅샷(`GET /api/customer/deliveries/{deliveryId}/tracking`, #79)~~ **삭제됨(#447,
+  2026-08-10, 사람 확인).** 프론트가 #371 이후 이 API 를 쓰지 않고 상세 조회로 화면을 그려 왔다
+  (추적 스냅샷 응답에 `pickup`/`destination` 좌표가 없어 지도 마커를 그릴 수 없었다). #421 이
+  거기에 얹었던 ETA 는 **폴링 전용 API 로 옮겼다**(아래 항목). 지금 추적 화면의 데이터 출처는
+  셋이다: 화면 렌더링 = 상세 조회(`GET .../{id}`, 상태 게이트 없음), ETA = `GET .../{id}/eta`,
+  실시간 좌표·상태 전이 = SSE 스트림.
+  - **같이 사라진 것**: "이 REST 가 200 이면 SSE 스트림도 열린다"는 #79 의 보장. 그 보장은 추적
+    API 가 가진 성질이었으므로 API 와 함께 소멸했다. **스트림 실패 사유를 REST 로 알 방법이 지금은
+    없다** — 브라우저 `EventSource` 는 상태코드·본문을 스크립트에 노출하지 않아, 화면은
+    `onerror`(readyState) 로 "연결이 끊겼어요"만 표시한다. 사유별 UX 가 필요해지면 별도 설계.
+  - **존치한 것**: `DeliveryTrackingAccessService`(SSE 스트림·위치 폴링이 게이트로 쓴다),
+    인터셉터의 `/api/customer/deliveries/*/tracking/stream` 등록.
+  - `steps`는 여전히 `order_status_history`가 아니라 `delivery_order` 시각 컬럼에서 파생한다 —
+    그 테이블은 엔터티만 있고 **행을 쓰는 코드가 없어 런타임에 비어 있다**(상태 전이 API 이슈에서
+    작성기 필요).
+- **ETA 는 폴링 전용 API 로 전달한다(`GET /api/customer/deliveries/{deliveryId}/eta`, #447,
+  2026-08-10, 사람 확인).** 응답은 `estimatedArrivalAt`(UTC 절대 시각) + `status` 둘뿐이다.
+  - **`status` 를 함께 담는 것이 계약의 핵심이다.** ETA 가 픽업지 기준인지 도착지 기준인지는 상태가
+    정하므로(`DeliveryRouteEstimator.targetOf`), 프론트가 상태를 다른 조회에서 가져오면 전이 순간에
+    라벨과 값이 어긋난다.
+  - **산정 불가는 오류가 아니다.** 추적 불가 상태(WAITING·COMPLETED·CANCELED)·라이더 위치 없음·
+    경로 서버 장애를 전부 `estimatedArrivalAt = null` 인 **200** 으로 응답한다 — 1분마다 도는
+    요청이 오류를 내면 화면이 정상 상황을 실패로 처리하게 된다. **추적 게이트를 재사용하지 않는
+    이유가 이것이다**(그쪽은 종료 상태를 409 로 막는다).
+  - 프론트는 1분 주기로 폴링하고, 그 사이는 절대 시각 기준 클라이언트 카운트다운으로 채운다
+    (`-components/DeliveryEta.tsx` 폴링 1분 + tick 10초, `-eta.ts` 순수 포맷). **백엔드 호출 1회 =
+    OSRM 호출 1회**라 이 주기가 곧 경로 서버 부하다(잠정값, 부하 테스트에서 재조정).
+  - `DeliveryEtaQueryService` 에 **`@Transactional` 을 붙이면 안 된다** — OSRM 호출(최대 1초)이
+    DB 커넥션을 잡는다. 그 대가로 지연 로딩 연관을 트랜잭션 밖에서 만질 수 없어
+    `findWithAssignedRiderByIdAndCustomerId` 의 join fetch 가 한 묶음으로 따라온다.
+- **WAITING 을 다루는 조회는 `left join fetch` 여야 한다**(#401 이후). WAITING 은
+  `assigned_rider_id` 가 NULL 이라 inner join 이면 주문이 존재하는데도 결과가 비어 404/500 이 된다.
+  같은 이유로 라이더가 없으면 `DeliveryRouteEstimator` 를 **아예 호출하지 않는다**(넘기면 `targetOf`
+  가 WAITING·COMPLETED·CANCELED 에 `IllegalStateException` 을 던진다). ETA API 는 상태로 먼저
+  거르고(`OrderStatus.isTrackable()`), `DeliveryEtaQueryServiceIntegrationTest`·
+  `CustomerDeliveryEtaE2ETest` 의 WAITING 케이스가 이 조합을 지킨다.
 - 배차 확정(`POST /api/rider/requests/{deliveryId}/accept`, #56) 실패 사유(취소/이미 배차/라이더
   다른 배송 수행 중)를 `ApiResponse`에 에러코드 필드 없이 `message` 문자열로만 구분함(ADR-006).
   프론트가 사유별로 다른 UX를 보여줘야 하면 에러코드 체계 신설을 별도 이슈로 논의해야 함
 - 배송요청 생성 화면의 기사님 전달사항(#205)을 저장할 백엔드 계약과 `delivery_order` 컬럼이 없다.
   저장이 필요하면 최대 길이·라이더 노출 시점과 함께 DTO·Flyway 범위를 별도 이슈로 정해야 함
+- **#60(콜 목록 keyset 페이지네이션)의 프론트 연동이 빠져 있다.** 백엔드만 `dev`에 머지되고 Orval을
+  다시 돌리지 않아 응답이 배열 → `{items, hasNext}`로 바뀐 것이 화면에 반영돼 있지 않았다. #447의
+  재생성에서 타입 에러로 드러나 **첫 페이지만 그리는 최소 수정**만 했다 — 커서 페이지네이션·운임/
+  배송거리 범위 필터·정렬 방향은 여전히 화면에 없다. 별도 프론트 이슈 필요.
 - 라이더 출금 최소 금액이 잠정값(#68, 사람 확인): `RiderPaymentService.MIN_WITHDRAWAL_AMOUNT` 5,000P.
   충전 최소 단위(#32, 1,000원)와는 별개 상수이며 화면 프리셋·이체 수수료 정책이 확정되면 재검토
   필요. 계좌 미등록·잔액 부족은 둘 다 409 로 응답한다(`RiderPointApi` 문서에서 이미 확정).
