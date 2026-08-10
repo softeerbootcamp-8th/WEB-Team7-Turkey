@@ -10,8 +10,8 @@ import com.turkey.quick.order.dto.DeliveryCancelResponse;
 import com.turkey.quick.order.dto.DeliveryCreateRequest;
 import com.turkey.quick.order.dto.DeliveryCreateResponse;
 import com.turkey.quick.order.dto.DeliveryDetailResponse;
+import com.turkey.quick.order.dto.DeliveryEtaResponse;
 import com.turkey.quick.order.dto.DeliveryListResponse;
-import com.turkey.quick.order.dto.DeliveryTrackingResponse;
 import com.turkey.quick.order.dto.FareQuoteRequest;
 import com.turkey.quick.order.dto.FareQuoteResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -207,34 +207,33 @@ public interface CustomerDeliveryApi {
             AuthenticatedCustomer customer);
 
     /**
-     * 실패 응답이 SSE 스트림({@code GET .../tracking/stream})과 정확히 같은 판정을 쓴다 — 즉
-     * <b>이 API 가 200 이면 그 스트림도 열린다.</b> 프론트가 이 보장에 기대는 이유는 브라우저
-     * {@code EventSource} 가 상태코드·본문을 스크립트에 노출하지 않아, 스트림이 왜 실패했는지 알 수
-     * 있는 통로가 이 REST 뿐이라는 것이다({@code docs/04-frontend-api-map.md} §7).
+     * 추적 화면이 <b>주기적으로</b> 부르는 경로다(#447, 프론트 1분 주기). 그래서 응답에 변하는 값만
+     * 담고, 실패도 담지 않는다 — 라이더 위치 없음·경로 서버 장애·추적 불가 상태를 전부
+     * {@code estimatedArrivalAt = null} 인 200 으로 응답한다(사람 확인, 2026-08-10).
      *
-     * <p>{@code steps} 는 {@code delivery_order} 의 단계별 시각 컬럼에서 파생한다.
-     *
-     * <p>{@code estimatedArrivalAt} 은 <b>라이더 최신 위치와 경로 탐색 결과가 둘 다 있을 때만</b>
-     * 채워진다(#421, 경로 탐색은 OSRM(#420, #431)).
-     * 둘 중 하나라도 없으면 그 필드만 null 이고 나머지는 그대로 내려간다 — 경로 서버 장애가 추적 화면
-     * 자체를 못 여는 장애로 번지면 안 된다. 예상 경로 좌표는 싣지 않는다(사람 확인, 2026-08-07).
+     * <p><b>추적 스냅샷(위)과 판정이 다르다.</b> 그쪽은 SSE 스트림과 게이트를 공유해 종료 상태를
+     * 409 로 막지만, 이쪽은 200 + null 이다. 1분마다 도는 요청이 오류를 내면 화면이 정상 상황
+     * (배차 대기 중, 배송 완료 직후)을 실패로 다루게 된다.
      */
-    @Operation(summary = "배송 추적 스냅샷",
-            description = "추적 화면 진입 시 한 번 그릴 상태·타임라인·라이더 정보와, 지금 향하는 지점까지의 "
-                    + "도착 예정 시각을 조회한다. 라이더 실시간 좌표는 location 도메인의 SSE 스트림이 밀어 주고, "
-                    + "ETA 는 이 API 재조회로만 갱신된다(상태 전이 SSE 신호 또는 약 1분 백업 폴링). "
-                    + "ETA 를 산정할 수 없으면(라이더 위치 없음·경로 서버 장애) 그 필드만 null 인 200 이다. "
-                    + "실패 판정은 스트림과 동일하다: 404(없거나 타인 주문), 409(WAITING·COMPLETED·CANCELED).")
+    @Operation(operationId = "getCustomerDeliveryEta",
+            summary = "배송 도착 예정 시각(폴링)",
+            description = "라이더 현재 위치에서 지금 향하는 지점까지의 도착 예정 시각을 조회한다. "
+                    + "픽업 전(ASSIGNED·MOVING_TO_PICKUP)은 픽업지, 픽업 후(PICKED_UP·DELIVERING)는 "
+                    + "도착지 기준이며 어느 쪽인지는 함께 내려주는 status 로 판단한다. "
+                    + "추적 화면이 주기적으로 호출하는 경량 엔드포인트라 변하는 값만 담는다 — "
+                    + "상태 타임라인·주소·라이더 정보는 배송요청 상세 API 를 쓴다. "
+                    + "산정할 수 없으면(배차 전·완료·취소, 라이더 위치 없음, 경로 서버 장애) "
+                    + "오류가 아니라 estimatedArrivalAt 이 null 인 200 이다.")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "200", description = "조회 성공"),
+                    responseCode = "200", description = "조회 성공(산정 불가 시 estimatedArrivalAt=null)"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "404", description = "배송요청이 없거나 본인 것이 아님"),
+                    responseCode = "401", description = "미로그인 또는 세션 만료"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "409", description = "추적할 수 없는 상태(배차 전·완료·취소)")
+                    responseCode = "404", description = "배송요청이 없거나 본인 것이 아님")
     })
-    @GetMapping("/{deliveryId}/tracking")
-    ApiResponse<DeliveryTrackingResponse> getDeliveryTracking(
+    @GetMapping("/{deliveryId}/eta")
+    ApiResponse<DeliveryEtaResponse> getDeliveryEta(
             @Parameter(description = "배송요청 식별자", example = "1234")
             @PathVariable Long deliveryId,
 

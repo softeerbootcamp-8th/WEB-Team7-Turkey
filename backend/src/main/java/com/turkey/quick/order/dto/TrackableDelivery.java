@@ -15,7 +15,7 @@ import com.turkey.quick.order.domain.OrderStatus;
  *
  * <p>그래서 조회 단계에서 필요한 세 값만 뽑아 나온다. 여기 필드를 늘리려는 생각이 들면
  * <b>정말 스트림 수명 동안 들고 있어야 하는 값인지</b> 먼저 따진다 — 화면 초기 렌더에 필요한
- * 타임라인·라이더 연락처·요금은 {@code DeliveryTrackingResponse}(REST 스냅샷, #79)의 몫이다.
+ * 타임라인·라이더 연락처·요금은 {@code DeliveryDetailResponse}(REST 상세, #46)의 몫이다.
  *
  * @param orderId 배송요청 식별자
  * @param riderId 배정된 라이더의 {@code member_id}. Redis 최신 위치 저장 키와 같은 축이다.

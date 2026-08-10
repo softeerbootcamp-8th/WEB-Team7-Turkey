@@ -6,9 +6,9 @@ import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.*;
 import com.turkey.quick.order.service.ActiveDeliveryQueryService;
 import com.turkey.quick.order.service.DeliveryDetailQueryService;
+import com.turkey.quick.order.service.DeliveryEtaQueryService;
 import com.turkey.quick.order.service.DeliveryListQueryService;
 import com.turkey.quick.order.service.DeliveryService;
-import com.turkey.quick.order.service.DeliveryTrackingQueryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.annotation.Validated;
@@ -22,10 +22,10 @@ import org.springframework.web.bind.annotation.RestController;
 public class CustomerDeliveryController implements CustomerDeliveryApi {
 
     private final DeliveryService deliveryService;
-    private final DeliveryTrackingQueryService deliveryTrackingQueryService;
     private final DeliveryListQueryService deliveryListQueryService;
     private final DeliveryDetailQueryService deliveryDetailQueryService;
     private final ActiveDeliveryQueryService activeDeliveryQueryService;
+    private final DeliveryEtaQueryService deliveryEtaQueryService;
 
     @Override
     public ApiResponse<FareQuoteResponse> quoteFare(FareQuoteRequest request) {
@@ -61,9 +61,8 @@ public class CustomerDeliveryController implements CustomerDeliveryApi {
     }
 
     @Override
-    public ApiResponse<DeliveryTrackingResponse> getDeliveryTracking(
-            Long deliveryId, AuthenticatedCustomer customer) {
-        return ApiResponse.ok(deliveryTrackingQueryService.getTracking(deliveryId, customer.memberId()));
+    public ApiResponse<DeliveryEtaResponse> getDeliveryEta(Long deliveryId, AuthenticatedCustomer customer) {
+        return ApiResponse.ok(deliveryEtaQueryService.getEta(deliveryId, customer.memberId()));
     }
 
     @Override

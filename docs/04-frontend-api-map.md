@@ -53,7 +53,9 @@ WAITING → ASSIGNED → MOVING_TO_PICKUP → PICKED_UP → DELIVERING → COMPL
 | POST | `/api/orders` | 배송요청 생성+결제 | [구현] new.tsx "결제하기". **고객 진행중 1건 제한** 검증 |
 | GET | `/api/customer/deliveries?page=&size=&status=` | 로그인한 고객의 배송 목록(최신순) | [구현] deliveries/index. 진행 중/지난 배송 구분, 상세·추적 진입 |
 | GET | `/api/customer/deliveries/{deliveryId}` | 주문 스냅샷(상태·주소·연락처·물품·운임·타임라인) 상세 조회 | [구현] deliveries/$deliveryId |
-| GET | `/api/customer/deliveries/{deliveryId}/tracking` | 추적 뷰 스냅샷: 상태·단계 타임라인·라이더 이름·연락처·요금. **#79 구현 완료(2026-07-31)** | [구현] $deliveryId/tracking. 초안 경로 `/api/orders/{id}` 는 폐기 |
+| GET | `/api/customer/deliveries/{deliveryId}/eta` | 도착 예정 시각 폴링(약 1분 주기): `estimatedArrivalAt` + `status` 만. **#447 구현 완료(2026-08-10)** | [구현] $deliveryId/tracking. 산정 불가는 오류가 아니라 `estimatedArrivalAt=null` 인 200 |
+
+> **폐지**: 추적 스냅샷 `GET /api/customer/deliveries/{deliveryId}/tracking`(#79)은 **#447(2026-08-10)에서 삭제**했다. 추적 화면이 #371 이후 그 API 를 쓰지 않고 상세 조회로 화면을 그려 왔고(추적 스냅샷 응답에 `pickup`/`destination` 좌표가 없어 지도 마커를 그릴 수 없었다), ETA 는 위 전용 폴링 API 로 옮겼다. 화면 렌더링은 상세 조회, ETA 는 `/eta`, 실시간 좌표·상태 전이는 SSE 스트림이 담당한다.
 | PATCH | `/api/customer/deliveries/{deliveryId}/cancel` | 배송요청 취소 → CANCELED. **WAITING(배차 전)만 허용**, 409 시 상세 재조회 | [구현] deliveries/$deliveryId |
 
 **주요 응답 필드**
@@ -164,8 +166,7 @@ WAITING → ASSIGNED → MOVING_TO_PICKUP → PICKED_UP → DELIVERING → COMPL
   - **`retry: 3000` 을 서버가 지정한다.** `EventSource` 를 쓰면 이 값이 재연결 간격이 되므로, #196 의 백오프(1→2→4→…30s)는 `EventSource` 를 직접 쓰는 한 적용되지 않는다. 둘 중 서버 값을 정본으로 한다.
   - **프론트가 반드시 둘 것**: `measuredAt` 이 마지막으로 그린 값보다 <b>뒤로 가는 이벤트는 버린다.</b> 팬아웃 디스패치가 4스레드라 같은 채널 메시지의 순서가 뒤집힐 수 있고, 재연결 시 스냅샷이 진행 중 이벤트보다 늦게 도착하면 화면이 과거로 되돌아간다. 세 줄짜리 가드로 둘 다 막힌다.
   - **오류는 화면에서 구분할 수 없다.** 서버는 401·404(없는 주문 또는 타인 주문)·409(추적 불가 상태)·429(연결 한도 3개 초과)·503 을 `ApiResponse` JSON 으로 주지만, 브라우저 `EventSource` 는 상태코드와 본문을 스크립트에 노출하지 않는다(`onerror` 만 발생). 그래서 **판정은 #79 스냅샷 REST 로 하고 스트림은 붙이기만 한다.** 대신 200 이 아닌 응답에는 자동 재연결하지 않으므로 무한 루프는 생기지 않는다.
-  - **스냅샷 REST(`GET .../tracking`, #79 구현 완료 2026-07-31)가 그 판정을 대신한다.** 401/404/409 를 스트림과 **같은 코드**로 판정하므로 이 REST 가 200 이면 스트림도 열린다. 화면 진입 순서는 「스냅샷 REST → 스트림 연결」이다. 다만 429·503 은 스트림 전용(연결 한도·저장소 장애)이라 REST 로는 알 수 없다.
-    - 응답 주의: `estimatedArrivalAt` 은 **항상 null** 이다(산정 근거 없음, 사람 확인 2026-07-31 — 지도·경로 API 가 붙을 때 채운다). `steps` 는 `delivery_order` 의 단계별 시각 컬럼에서 파생하며 **도달한 단계만** 담는다(`order_status_history` 는 아직 행을 쓰는 코드가 없어 비어 있다). `riderName`·`riderPhoneNumber` 는 추적 가능 상태에서는 항상 값이 있다.
+  - ~~**스냅샷 REST(`GET .../tracking`, #79)가 그 판정을 대신한다.**~~ **무효(#447, 2026-08-10)**: 그 API 를 삭제해 이 보장이 사라졌다. 애초에 프론트가 #371 이후 그것을 쓰지 않고 상세 조회로 화면을 그려 왔으므로 실질 회귀는 없지만, **스트림 실패 사유를 REST 로 알 방법이 지금은 없다.** 화면은 `EventSource` 의 `onerror`(`readyState` 로 CLOSED/CONNECTING 만 구분)에 의존해 "연결이 끊겼어요"만 표시한다. 사유 구분이 필요해지면 별도 이슈로 다시 설계해야 한다.
   - **재연결은 스냅샷 복구다**(#79 성공조건). 서버는 `id:` 를 보내지 않으므로 재생이 없고, 재연결 시 `init` 이 현재 상태 + Redis 최신 위치를 다시 준다. 단 **연결 자리 정리(흐름 ①)는 구현하지 않았다** — 45초 안에 3번 이상 끊겼다 붙으면 429 가 나고 `EventSource` 는 그때 재연결을 포기한다(수동 새로고침 필요). 사람 결정으로 이번 범위에서 뺐다.
   - `id:` 를 보내지 않는다. `Last-Event-ID` 재생을 지원하지 않기로 정했으므로(재연결은 스냅샷 복구) 보내면 지키지 못할 약속이 된다.
   - 같은 배송에 동시 연결은 **3개**까지다(탭 2개 + 재연결 중복 1).

@@ -110,32 +110,33 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
     Optional<DeliveryOrder> findByIdAndCustomer_Id(Long id, Long customerId);
 
     /**
-     * 추적 스냅샷(#79)이 응답을 조립하는 데 필요한 것을 <b>한 번에</b> 읽는다(#421에서 추가).
+     * ETA 폴링(#447)이 필요한 것만 <b>한 번에</b> 읽는다.
      *
-     * <p><b>{@code left} join fetch 여야 한다.</b> #401 이후 WAITING 도 이 경로로 들어오는데 그 상태는
-     * {@code assigned_rider_id} 가 NULL 이라, inner join 이면 주문이 존재하는데도 결과가 비어
-     * 호출자의 {@code orElseThrow} 가 500 을 던진다.
+     * <p><b>{@code left} join fetch 여야 한다.</b> WAITING 주문은 {@code assigned_rider_id} 가 NULL
+     * 이라 inner join 이면 주문이 존재하는데도 결과가 비어 404 가 된다 — ETA API 는 그 상태를 404 가
+     * 아니라 200 + null 로 응답해야 한다.
      *
-     * <p>배정 라이더와 그 회원까지 fetch 하는 이유는 <b>호출자가 트랜잭션 밖에서 응답을
-     * 조립하기 때문이다.</b> #421 이 이 경로에 경로 탐색 호출(OSRM 기준 최대 1초)을 넣으면서
-     * {@code DeliveryTrackingQueryService.getTracking} 의 트랜잭션을 걷어냈다 — 외부 HTTP 호출이
-     * 끝날 때까지 DB 커넥션을 붙잡고 있으면 백업 폴링(1분 주기, #422) × 동시 추적 수만큼 커넥션이
-     * 잠긴다. 그 대신 엔터티가 곧바로 준영속이 되므로, 지연 로딩된 연관을 만지는 순간
-     * {@code LazyInitializationException} 이다(OSIV 가 꺼져 있다). 여기서 미리 채워 그 상황을 없앤다.
-     * ({@code join fetch} 를 걷어내려면 트랜잭션을 되살려야 하고, 그러면 외부 호출이 커넥션을 잡는
-     * 원래 문제로 돌아간다 — 둘은 한 묶음이다.)
+     * <p>배정 라이더를 fetch 하는 이유는 <b>호출자가 트랜잭션 밖에서 경로를 산정하기 때문이다.</b>
+     * OSRM 호출(최대 1초)이 DB 커넥션을 잡지 않도록 조회를 먼저 끝내는데, 그러면 엔터티가 곧바로
+     * 준영속이 되어 지연 로딩 연관을 만지는 순간 {@code LazyInitializationException} 이다
+     * (OSIV 가 꺼져 있다). {@code DeliveryRouteEstimator} 가 {@code assignedRider.memberId} 를
+     * 읽으므로 여기서 미리 채운다. 회원({@code r.member})까지는 fetch 하지 않는다 — ETA 응답에
+     * 라이더 이름·연락처가 없다.
      *
-     * <p>고객 조건이 없는 것은 이 조회 앞에 {@code DeliveryTrackingAccessService} 의 소유권·상태
-     * 판정이 반드시 오기 때문이다(그쪽이 404/409 를 담당한다).
+     * <p><b>고객 조건이 쿼리에 있다.</b> ETA API 는 추적 게이트
+     * ({@code DeliveryTrackingAccessService})를 쓰지 않기 때문이다 —
+     * 그 게이트는 종료 상태를 409 로 막는데, 폴링 응답은 200 + null 이어야 한다(사람 확인).
+     * 소유권 판정을 여기서 하고, 결과가 비면 없음·타인 것을 같은 404 로 응답한다.
      */
     @Query("""
             select o
             from DeliveryOrder o
-            left join fetch o.assignedRider r
-            left join fetch r.member
+            left join fetch o.assignedRider
             where o.id = :deliveryId
+              and o.customer.id = :customerId
             """)
-    Optional<DeliveryOrder> findWithAssignedRiderById(@Param("deliveryId") Long deliveryId);
+    Optional<DeliveryOrder> findWithAssignedRiderByIdAndCustomerId(@Param("deliveryId") Long deliveryId,
+                                                                   @Param("customerId") Long customerId);
 
     /**
      * 라이더 본인의 운행 기록 상세 조회(#71)용. 목록({@link #findByAssignedRider_MemberIdAndStatus})과

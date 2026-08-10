@@ -155,26 +155,20 @@ export interface ApiResponseDeliveryDetailResponse {
   success?: boolean;
 }
 
+export interface ApiResponseDeliveryEtaResponse {
+  data?: DeliveryEtaResponse;
+  message?: string;
+  success?: boolean;
+}
+
 export interface ApiResponseDeliveryListResponse {
   data?: DeliveryListResponse;
   message?: string;
   success?: boolean;
 }
 
-export interface ApiResponseDeliveryTrackingResponse {
-  data?: DeliveryTrackingResponse;
-  message?: string;
-  success?: boolean;
-}
-
 export interface ApiResponseFareQuoteResponse {
   data?: FareQuoteResponse;
-  message?: string;
-  success?: boolean;
-}
-
-export interface ApiResponseListRiderDeliveryRequestSummaryResponse {
-  data?: RiderDeliveryRequestSummaryResponse[];
   message?: string;
   success?: boolean;
 }
@@ -265,6 +259,12 @@ export interface ApiResponseRiderDeliveryRequestDetailResponse {
   success?: boolean;
 }
 
+export interface ApiResponseRiderDeliveryRequestPageResponse {
+  data?: RiderDeliveryRequestPageResponse;
+  message?: string;
+  success?: boolean;
+}
+
 export interface ApiResponseRiderDeliveryResponse {
   data?: RiderDeliveryResponse;
   message?: string;
@@ -301,10 +301,8 @@ export interface ApiResponseSettlementListResponse {
   success?: boolean;
 }
 
-export type ApiResponseVoidData = { [key: string]: unknown };
-
 export interface ApiResponseVoid {
-  data?: ApiResponseVoidData;
+  data?: unknown;
   message?: string;
   success?: boolean;
 }
@@ -372,15 +370,22 @@ export const CustomerDeliveryLocationResponseStatus = {
 export interface CustomerDeliveryLocationResponse {
   /** 배송요청 식별자 */
   deliveryId?: number;
+  /** 라이더의 마지막으로 알려진 위치. 없으면 null */
   location?: LocationPayload;
   /** 현재 배송 상태 */
   status?: CustomerDeliveryLocationResponseStatus;
 }
 
 export interface CustomerLoginRequest {
-  /** 로그인 ID */
+  /**
+   * 로그인 ID
+   * @minLength 1
+   */
   loginId: string;
-  /** 비밀번호 */
+  /**
+   * 비밀번호
+   * @minLength 1
+   */
   password: string;
 }
 
@@ -417,16 +422,26 @@ export interface CustomerSignupRequest {
    * @maxLength 50
    */
   name: string;
-  /** 비밀번호 */
+  /**
+   * 비밀번호
+   * @minLength 1
+   */
   password: string;
-  /** 비밀번호 확인 */
+  /**
+   * 비밀번호 확인
+   * @minLength 1
+   */
   passwordConfirm: string;
   /**
    * 휴대전화 번호(하이픈 선택)
+   * @minLength 1
    * @pattern ^01(?:0|1|[6-9])-?\d{3,4}-?\d{4}$
    */
   phoneNumber: string;
-  /** 휴대전화 인증 완료 토큰(/api/phone-verifications/confirm 응답) */
+  /**
+   * 휴대전화 인증 완료 토큰(/api/phone-verifications/confirm 응답)
+   * @minLength 1
+   */
   phoneVerificationToken: string;
 }
 
@@ -501,12 +516,15 @@ export const DeliveryCreateRequestItemType = {
  * 배송요청 생성 요청
  */
 export interface DeliveryCreateRequest {
+  /** 도착지 */
   destination: AddressRequest;
   /** 화면이 사용자에게 안내한 예상 요금(원). 서버 재계산 결과와 다르면 주문을 만들지 않는다. 이 값이 결제 금액으로 쓰이지는 않는다. */
   estimatedFare: number;
   /** 물품 종류 */
   itemType: DeliveryCreateRequestItemType;
+  /** 픽업지 */
   pickup: AddressRequest;
+  /** 받는 사람 */
   recipient: ContactRequest;
   /**
    * 요청 멱등키(클라이언트 생성 UUID). 재전송 시 같은 값을 보낸다.
@@ -514,6 +532,7 @@ export interface DeliveryCreateRequest {
    * @maxLength 36
    */
   requestKey: string;
+  /** 보내는 사람 */
   sender: ContactRequest;
 }
 
@@ -540,6 +559,7 @@ export const DeliveryCreateResponseStatus = {
 export interface DeliveryCreateResponse {
   /** 배송요청 식별자 */
   deliveryId?: number;
+  /** 주문 시점에 확정된 예상 운임(ESTIMATE 스냅샷) */
   estimatedFare?: FareBreakdownResponse;
   /** 요청 멱등키(요청에 실린 값 그대로) */
   requestKey?: string;
@@ -606,15 +626,19 @@ export interface DeliveryDetailResponse {
   completedAt?: string;
   /** 배송요청 식별자 */
   deliveryId?: number;
+  /** 도착지 */
   destination?: AddressResponse;
+  /** 운임. 완료 주문은 FINAL, 그 전이면 ESTIMATE 스냅샷이다. */
   fare?: FareBreakdownResponse;
   /** 물품 종류 */
   itemType?: DeliveryDetailResponseItemType;
+  /** 픽업지 */
   pickup?: AddressResponse;
   /** 배송 완료 인증 방식. 완료 전이면 null. */
   proofType?: DeliveryDetailResponseProofType;
   /** 배송 완료 인증 참조값. proofType=PHOTO 면 저장소에서 해석한 실제 경로(로컬은 절대경로, S3는 객체 URL), 그 외 타입이면 등록값을 그대로 담는다. 완료 전이면 null. */
   proofValue?: string;
+  /** 받는 사람 */
   recipient?: ContactResponse;
   /** 요청 시각(UTC) */
   requestedAt?: string;
@@ -622,6 +646,7 @@ export interface DeliveryDetailResponse {
   riderName?: string;
   /** 배정된 라이더 연락처. 배차 전이면 null. */
   riderPhoneNumber?: string;
+  /** 보내는 사람 */
   sender?: ContactResponse;
   /** 배송 상태 */
   status?: DeliveryDetailResponseStatus;
@@ -629,6 +654,35 @@ export interface DeliveryDetailResponse {
   steps?: DeliveryStatusStepResponse[];
   /** 픽업지-도착지 직선거리(m) */
   straightDistanceMeters?: number;
+}
+
+/**
+ * 현재 배송 상태. estimatedArrivalAt 이 어느 지점 기준인지 판단하는 근거다.
+ */
+export type DeliveryEtaResponseStatus = typeof DeliveryEtaResponseStatus[keyof typeof DeliveryEtaResponseStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const DeliveryEtaResponseStatus = {
+  WAITING: 'WAITING',
+  ASSIGNED: 'ASSIGNED',
+  MOVING_TO_PICKUP: 'MOVING_TO_PICKUP',
+  PICKED_UP: 'PICKED_UP',
+  DELIVERING: 'DELIVERING',
+  COMPLETED: 'COMPLETED',
+  CANCELED: 'CANCELED',
+} as const;
+
+/**
+ * 배송 도착 예정 시각(폴링 전용)
+ */
+export interface DeliveryEtaResponse {
+  /** 배송요청 식별자 */
+  deliveryId?: number;
+  /** 현재 향하는 지점의 도착 예정 시각(UTC). 픽업 전(ASSIGNED·MOVING_TO_PICKUP)에는 픽업지, 픽업 후(PICKED_UP·DELIVERING)에는 도착지 기준이다 — 어느 쪽인지는 status 로 판단한다. 산정할 수 없으면(배차 전·완료·취소, 라이더 위치 없음, 경로 서버 장애) null. */
+  estimatedArrivalAt?: string;
+  /** 현재 배송 상태. estimatedArrivalAt 이 어느 지점 기준인지 판단하는 근거다. */
+  status?: DeliveryEtaResponseStatus;
 }
 
 /**
@@ -727,43 +781,6 @@ export interface DeliverySummaryResponse {
 }
 
 /**
- * 현재 배송 상태
- */
-export type DeliveryTrackingResponseStatus = typeof DeliveryTrackingResponseStatus[keyof typeof DeliveryTrackingResponseStatus];
-
-
-// eslint-disable-next-line @typescript-eslint/no-redeclare
-export const DeliveryTrackingResponseStatus = {
-  WAITING: 'WAITING',
-  ASSIGNED: 'ASSIGNED',
-  MOVING_TO_PICKUP: 'MOVING_TO_PICKUP',
-  PICKED_UP: 'PICKED_UP',
-  DELIVERING: 'DELIVERING',
-  COMPLETED: 'COMPLETED',
-  CANCELED: 'CANCELED',
-} as const;
-
-/**
- * 배송 추적 스냅샷
- */
-export interface DeliveryTrackingResponse {
-  /** 배송요청 식별자 */
-  deliveryId?: number;
-  /** 현재 향하는 지점의 도착 예정 시각(UTC). 산정 불가하면 null. 픽업 전(ASSIGNED·MOVING_TO_PICKUP)에는 픽업지, 픽업 후(PICKED_UP·DELIVERING)에는 도착지 기준이다 — 어느 쪽인지는 status 로 판단한다. */
-  estimatedArrivalAt?: string;
-  /** 배차된 라이더 이름. 배차 전이면 null. */
-  riderName?: string;
-  /** 배차된 라이더 연락처. 배차 전이면 null. */
-  riderPhoneNumber?: string;
-  /** 현재 배송 상태 */
-  status?: DeliveryTrackingResponseStatus;
-  /** 상태 전이 타임라인(도달한 단계만) */
-  steps?: DeliveryStatusStepResponse[];
-  /** 결제 금액(원) */
-  totalFare?: number;
-}
-
-/**
  * 운임 분해(기본 + 거리 + 물품 할증)
  */
 export interface FareBreakdownResponse {
@@ -800,9 +817,11 @@ export const FareQuoteRequestItemType = {
  * 요금 견적 요청
  */
 export interface FareQuoteRequest {
+  /** 도착지 */
   destinationAddress: AddressRequest;
   /** 물품 종류(할증 기준) */
   itemType: FareQuoteRequestItemType;
+  /** 픽업지 */
   pickupAddress: AddressRequest;
 }
 
@@ -812,12 +831,10 @@ export interface FareQuoteRequest {
 export interface FareQuoteResponse {
   /** 예상 소요 시간(분). 화면의 도착 예정 문구에 쓴다. */
   estimatedMinutes?: number;
+  /** 견적 운임 분해 */
   fare?: FareBreakdownResponse;
 }
 
-/**
- * 라이더의 마지막으로 알려진 위치. 없으면 null
- */
 export interface LocationPayload {
   /** 측정 정확도(미터). 없으면 null */
   accuracyMeters?: number;
@@ -827,6 +844,8 @@ export interface LocationPayload {
   longitude?: number;
   /** 측정 시각(UTC) */
   measuredAt?: string;
+  /** 프레임 판별자, 항상 "location" */
+  type?: string;
 }
 
 export interface LoginIdAvailabilityResponse {
@@ -851,11 +870,13 @@ export const PhoneVerificationConfirmRequestPurpose = {
 export interface PhoneVerificationConfirmRequest {
   /**
    * 6자리 인증번호
+   * @minLength 1
    * @pattern ^\d{6}$
    */
   code: string;
   /**
    * 휴대전화 번호(하이픈 선택)
+   * @minLength 1
    * @pattern ^01(?:0|1|[6-9])-?\d{3,4}-?\d{4}$
    */
   phoneNumber: string;
@@ -885,6 +906,7 @@ export const PhoneVerificationRequestPurpose = {
 export interface PhoneVerificationRequest {
   /**
    * 휴대전화 번호(하이픈 선택)
+   * @minLength 1
    * @pattern ^01(?:0|1|[6-9])-?\d{3,4}-?\d{4}$
    */
   phoneNumber: string;
@@ -1207,10 +1229,13 @@ export const RiderDeliveryHistoryDetailResponseProofType = {
 export interface RiderDeliveryHistoryDetailResponse {
   /** 배송요청 식별자 */
   deliveryId?: number;
+  /** 도착지 */
   destination?: AddressResponse;
+  /** 고객에게 청구된 최종 운임(FINAL 스냅샷) */
   finalFare?: FareBreakdownResponse;
   /** 물품 종류 */
   itemType?: RiderDeliveryHistoryDetailResponseItemType;
+  /** 픽업지 */
   pickup?: AddressResponse;
   /** 배송 완료 인증 방식 */
   proofType?: RiderDeliveryHistoryDetailResponseProofType;
@@ -1357,7 +1382,9 @@ export const RiderDeliveryRequestDetailResponseItemType = {
 export interface RiderDeliveryRequestDetailResponse {
   /** 배송요청 식별자 */
   deliveryId?: number;
+  /** 도착지(상세 주소는 수락 전까지 비어 있다) */
   destination?: AddressResponse;
+  /** 고객에게 청구된 예상 운임 분해 */
   estimatedFare?: FareBreakdownResponse;
   /** 예상 소요시간(분) */
   estimatedMinutes?: number;
@@ -1365,11 +1392,22 @@ export interface RiderDeliveryRequestDetailResponse {
   expectedSettlementAmount?: number;
   /** 물품 종류 */
   itemType?: RiderDeliveryRequestDetailResponseItemType;
+  /** 픽업지(상세 주소는 수락 전까지 비어 있다) */
   pickup?: AddressResponse;
   /** 요청 시각(UTC) */
   requestedAt?: string;
   /** 픽업지-도착지 직선거리(m) */
   straightDistanceMeters?: number;
+}
+
+/**
+ * 배차 대기 콜 목록 한 페이지
+ */
+export interface RiderDeliveryRequestPageResponse {
+  /** 다음 페이지 존재 여부 */
+  hasNext?: boolean;
+  /** 이 페이지의 배송요청 목록 */
+  items?: RiderDeliveryRequestSummaryResponse[];
 }
 
 /**
@@ -1463,6 +1501,7 @@ export interface RiderDeliveryResponse {
   assignedAt?: string;
   /** 배송요청 식별자 */
   deliveryId?: number;
+  /** 도착지 */
   destination?: AddressResponse;
   /** 예상 정산액(원) */
   expectedSettlementAmount?: number;
@@ -1470,8 +1509,11 @@ export interface RiderDeliveryResponse {
   itemType?: RiderDeliveryResponseItemType;
   /** 현재 배송 상태에서 수행 가능한 다음 행동 */
   nextAction?: RiderDeliveryResponseNextAction;
+  /** 픽업지 */
   pickup?: AddressResponse;
+  /** 받는 사람 */
   recipient?: ContactResponse;
+  /** 보내는 사람 */
   sender?: ContactResponse;
   /** 배송 상태 */
   status?: RiderDeliveryResponseStatus;
@@ -1518,9 +1560,15 @@ export interface RiderLocationUpdateRequest {
 }
 
 export interface RiderLoginRequest {
-  /** 로그인 ID */
+  /**
+   * 로그인 ID
+   * @minLength 1
+   */
   loginId: string;
-  /** 비밀번호 */
+  /**
+   * 비밀번호
+   * @minLength 1
+   */
   password: string;
 }
 
@@ -1632,16 +1680,26 @@ export interface RiderSignupRequest {
    * @maxLength 50
    */
   name: string;
-  /** 비밀번호 */
+  /**
+   * 비밀번호
+   * @minLength 1
+   */
   password: string;
-  /** 비밀번호 확인 */
+  /**
+   * 비밀번호 확인
+   * @minLength 1
+   */
   passwordConfirm: string;
   /**
    * 휴대전화 번호(하이픈 선택)
+   * @minLength 1
    * @pattern ^01(?:0|1|[6-9])-?\d{3,4}-?\d{4}$
    */
   phoneNumber: string;
-  /** 휴대전화 인증 완료 토큰(/api/phone-verifications/confirm 응답) */
+  /**
+   * 휴대전화 인증 완료 토큰(/api/phone-verifications/confirm 응답)
+   * @minLength 1
+   */
   phoneVerificationToken: string;
 }
 
@@ -1812,6 +1870,9 @@ export const GetCustomerPointTransactionsType = {
 } as const;
 
 export type CheckLoginIdAvailabilityParams = {
+/**
+ * @minLength 1
+ */
 loginId: string;
 };
 
@@ -1917,6 +1978,46 @@ radiusMeters?: number;
  * 정렬 기준
  */
 sort?: GetRiderDeliveryRequestsSort;
+/**
+ * 정렬 방향(선택, 생략하면 기준별 기본값 — FARE는 내림차순, 나머지는 오름차순)
+ */
+sortDirection?: GetRiderDeliveryRequestsSortDirection;
+/**
+ * 예상 정산액(운임) 최소값, 원(선택)
+ */
+fareMin?: number;
+/**
+ * 예상 정산액(운임) 최대값, 원(선택)
+ */
+fareMax?: number;
+/**
+ * 배송거리(픽업→도착지) 최소값, m(선택)
+ */
+distanceMin?: number;
+/**
+ * 배송거리(픽업→도착지) 최대값, m(선택)
+ */
+distanceMax?: number;
+/**
+ * 페이지 크기(1~100)
+ */
+size?: number;
+/**
+ * 커서: 이전 페이지 마지막 항목의 라이더→픽업지 거리(m). sort=DISTANCE일 때만 채운다
+ */
+afterDistanceMeters?: number;
+/**
+ * 커서: 이전 페이지 마지막 항목의 예상 정산액. sort=FARE일 때만 채운다
+ */
+afterFare?: number;
+/**
+ * 커서: 이전 페이지 마지막 항목의 요청 시각. sort=REQUESTED_AT일 때만 채운다
+ */
+afterRequestedAt?: string;
+/**
+ * 커서: 이전 페이지 마지막 항목의 배송요청 식별자(정렬값이 같을 때 tiebreaker). 첫 페이지면 생략
+ */
+afterId?: number;
 };
 
 export type GetRiderDeliveryRequestsSort = typeof GetRiderDeliveryRequestsSort[keyof typeof GetRiderDeliveryRequestsSort];
@@ -1927,5 +2028,14 @@ export const GetRiderDeliveryRequestsSort = {
   DISTANCE: 'DISTANCE',
   FARE: 'FARE',
   REQUESTED_AT: 'REQUESTED_AT',
+} as const;
+
+export type GetRiderDeliveryRequestsSortDirection = typeof GetRiderDeliveryRequestsSortDirection[keyof typeof GetRiderDeliveryRequestsSortDirection];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const GetRiderDeliveryRequestsSortDirection = {
+  ASC: 'ASC',
+  DESC: 'DESC',
 } as const;
 

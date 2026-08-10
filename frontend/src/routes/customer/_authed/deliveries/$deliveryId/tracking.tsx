@@ -11,6 +11,7 @@ import type {
 } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
 import { getCustomerDeliveryStatusLabel, isActiveDeliveryStatus, isTrackableDeliveryStatus } from '@/shared/delivery/status'
 import { useTrackingStream, type TrackingConnectionStatus } from '@/shared/hooks/useTrackingStream'
+import { DeliveryEta } from './-components/DeliveryEta'
 import { TrackingMap } from './-components/TrackingMap'
 
 export const Route = createFileRoute('/customer/_authed/deliveries/$deliveryId/tracking')({
@@ -161,6 +162,8 @@ function DeliveryTracking() {
             <h1 className="text-[26px] font-bold leading-tight text-gray-900 mb-1">
               {HEADLINE_BY_STATUS[detail.status ?? 'WAITING']}
             </h1>
+            {/* ETA 는 전용 폴링 API 가 담당한다(#447) — 상세 조회 응답에는 없다. */}
+            <DeliveryEta deliveryId={deliveryId} enabled={isTrackable} />
           </section>
 
           {/* BEGIN: Progress Tracker */}
