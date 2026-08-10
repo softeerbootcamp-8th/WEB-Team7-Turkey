@@ -35,7 +35,9 @@ function RiderRequests() {
   )
   const operatingStatusMutation = useChangeRiderOperatingStatus()
 
-  const requests = requestsQuery.data?.data ?? []
+  // #60 에서 응답이 배열에서 {items, hasNext} 로 바뀌었다. 커서 페이지네이션 자체는 아직
+  // 붙이지 않았고(별도 프론트 이슈), 여기서는 첫 페이지만 그대로 그린다.
+  const requests = requestsQuery.data?.data?.items ?? []
   const visibleRequests = filterRequestsByItem(requests, itemFilter)
 
   function openRequest(deliveryId: number) {

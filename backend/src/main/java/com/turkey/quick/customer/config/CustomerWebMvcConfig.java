@@ -41,8 +41,8 @@ public class CustomerWebMvcConfig implements WebMvcConfigurer {
                         "/api/customer/deliveries",                              // #37 (정확 경로)
                         "/api/customer/deliveries/*",                            // #46 (상세 조회)
                         "/api/customer/deliveries/*/cancel",                     // #47
-                        "/api/customer/deliveries/*/tracking",                   // #79
                         "/api/customer/deliveries/*/tracking/stream",            // #77
+                        "/api/customer/deliveries/*/eta",                        // #447(ETA 폴링)
                         "/api/customer/deliveries/*/location",                   // #311(폴링 arm)
                         "/api/customer/points/**"
                 )

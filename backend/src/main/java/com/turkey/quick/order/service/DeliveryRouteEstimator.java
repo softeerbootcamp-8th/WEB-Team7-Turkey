@@ -104,7 +104,7 @@ public class DeliveryRouteEstimator {
      *                              ({@code WAITING}·{@code COMPLETED}·{@code CANCELED}).
      *                              <b>게이트가 다 걸러 주지 않는다</b> — #401 이후 {@code WAITING} 은
      *                              추적 게이트를 통과하므로, 호출자가 배정 라이더 유무로 먼저 걸러야 한다
-     *                              ({@code DeliveryTrackingQueryService} 참고)
+     *                              ({@code DeliveryEtaQueryService} 참고)
      */
     static Coordinate targetOf(OrderStatus status, DeliveryOrder order) {
         Address target = switch (status) {

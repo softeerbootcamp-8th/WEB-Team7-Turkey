@@ -1,6 +1,6 @@
 import { isAxiosError } from 'axios'
 import type {
-  ApiResponseListRiderDeliveryRequestSummaryResponse,
+  ApiResponseRiderDeliveryRequestPageResponse,
   RiderDeliveryRequestSummaryResponse,
   RiderDeliveryRequestSummaryResponseItemType,
 } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
@@ -67,7 +67,7 @@ export function formatRequestedAt(requestedAt: string | undefined): string | nul
 }
 
 export function getRequestListErrorMessage(error: unknown): string {
-  if (!isAxiosError<ApiResponseListRiderDeliveryRequestSummaryResponse>(error)) {
+  if (!isAxiosError<ApiResponseRiderDeliveryRequestPageResponse>(error)) {
     return '콜 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'
   }
   if (!error.response) {

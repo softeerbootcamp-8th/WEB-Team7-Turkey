@@ -24,7 +24,7 @@ public record DeliveryStatusStepResponse(
      * 타임라인을 {@code delivery_order} 의 단계별 시각 컬럼에서 파생한다(도달한 단계만, 선언 순서가
      * 곧 시간 순서). {@code order_status_history} 는 엔터티만 있고 행을 쓰는 코드가 없어 런타임에
      * 비어 있으므로 시각 컬럼이 지금 신뢰할 수 있는 유일한 출처다 —
-     * {@code DeliveryTrackingQueryService.steps}·{@code DeliveryDetailResponse.steps}와 같은 판단이며,
+     * {@code DeliveryDetailResponse.steps}와 같은 판단이며,
      * 세 번째 사용처인 라이더 운행 기록 상세(#71)가 복제 대신 이 공용 팩토리를 쓴다.
      * 완료 배송 기록에는 CANCELED 가 실제로 나오지 않지만, 취소 단계까지 포함해 두어도 무해하다.
      */

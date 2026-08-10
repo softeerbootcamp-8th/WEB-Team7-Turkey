@@ -19,7 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 배송요청 상세 조회(#46). 추적 스냅샷(#79, {@link DeliveryTrackingQueryService})과 달리 상태를
+ * 배송요청 상세 조회(#46). 상태를
  * 가리지 않는다 — WAITING 부터 CANCELED 까지 고객 본인 주문이면 전부 200 이다.
  */
 @Service
@@ -73,7 +73,7 @@ public class DeliveryDetailQueryService {
     /**
      * 완료 주문은 FINAL, 그 외는 ESTIMATE 스냅샷을 쓴다(DTO 계약). 없으면 400 이 아니라 500 이다 —
      * 클라이언트가 고칠 수 있는 문제가 아니라 데이터 불변식이 깨진 상태이기 때문이다
-     * (DeliveryTrackingQueryService.totalFare 와 같은 판단).
+     * (DeliveryListQueryService.fare 와 같은 판단).
      */
     private FareBreakdownResponse fare(DeliveryOrder order) {
         FareType fareType = order.getStatus() == OrderStatus.COMPLETED ? FareType.FINAL : FareType.ESTIMATE;
