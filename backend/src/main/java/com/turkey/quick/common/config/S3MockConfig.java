@@ -1,15 +1,18 @@
 package com.turkey.quick.common.config;
 
-import com.amazonaws.auth.AWSStaticCredentialsProvider;
-import com.amazonaws.auth.BasicAWSCredentials;
-import com.amazonaws.client.builder.AwsClientBuilder;
-import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.S3Configuration;
+
+import java.net.URI;
+import java.time.Duration;
 
 @Configuration
 @Profile("local")
@@ -29,13 +32,21 @@ public class S3MockConfig {
     private String secretKey;
 
     @Bean
-    public AmazonS3 amazonS3() {
-        BasicAWSCredentials credentials = new BasicAWSCredentials(accessKey, secretKey);
+    public S3Client s3Client() {
+        // 1. 자격 증명 설정 (v2 방식)
+        AwsBasicCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
 
-        return AmazonS3ClientBuilder.standard()
-                .withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(endpoint, region))
-                .withCredentials(new AWSStaticCredentialsProvider(credentials))
-                .withPathStyleAccessEnabled(true)
+        // 2. Path-Style Access 활성화 설정 (v2 방식)
+        S3Configuration s3Configuration = S3Configuration.builder()
+                .pathStyleAccessEnabled(true)
+                .build();
+
+        // 4. 최종 S3Client 빈 생성
+        return S3Client.builder()
+                .endpointOverride(URI.create(endpoint))   // 커스텀 엔드포인트 지정 (MinIO, LocalStack 등)
+                .region(Region.of(region))
+                .credentialsProvider(StaticCredentialsProvider.create(credentials))
+                .serviceConfiguration(s3Configuration)
                 .build();
     }
 }

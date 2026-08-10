@@ -2,7 +2,6 @@ package com.turkey.quick.location.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.turkey.quick.common.response.ApiResponse;
 import com.turkey.quick.location.dto.LocationPayload;
 import com.turkey.quick.location.repository.RiderLocationRepository;
@@ -16,13 +15,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
+import tools.jackson.databind.JsonNode;
 
 /**
  * #311 완료 조건을 사용자 시나리오로 검증한다(고객 위치 폴링, 부하테스트용 실험 arm).
@@ -32,6 +33,7 @@ import org.springframework.test.context.ActiveProfiles;
  * 추가로 보는 것은 이 경로만의 것 — <b>Redis 위치 유무에 따른 응답 분기</b>와
  * <b>{@code CustomerWebMvcConfig} 경로 등록 여부</b>(쿠키 없이 401)다.
  */
+@AutoConfigureTestRestTemplate
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
                 properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")

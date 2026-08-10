@@ -2,7 +2,6 @@ package com.turkey.quick.common.openapi;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.turkey.quick.support.IntegrationTestSupport;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -12,9 +11,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.context.ActiveProfiles;
+import tools.jackson.databind.JsonNode;
 
 /**
  * /v3/api-docs 의 operationId 계약을 검증한다.
@@ -27,6 +28,7 @@ import org.springframework.test.context.ActiveProfiles;
  *
  * 스펙만 읽으므로 Redis 를 쓰는 엔드포인트를 호출하지 않는다(테스트 대체 빈이 필요 없다).
  */
+@AutoConfigureTestRestTemplate
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")
 class OpenApiOperationIdE2ETest extends IntegrationTestSupport {

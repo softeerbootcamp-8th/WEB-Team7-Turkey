@@ -28,7 +28,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpEntity;
@@ -44,6 +45,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * #55 「퀵 요청 목록 보기」·#57 「퀵 요청 상세사항 보기」·#56 「배달 확정하기」의 완료 조건
  * (정상 흐름 + 예외 흐름)을 실제 HTTP 로 검증한다.
  */
+@AutoConfigureTestRestTemplate
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")
 class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {

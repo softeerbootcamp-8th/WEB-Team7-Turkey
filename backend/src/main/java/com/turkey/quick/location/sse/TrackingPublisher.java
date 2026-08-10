@@ -1,7 +1,6 @@
 package com.turkey.quick.location.sse;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.turkey.quick.location.dto.LocationPayload;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,8 +39,7 @@ public class TrackingPublisher {
             // 흘리므로, 페이로드 계약이 이 한 줄에만 존재한다.
             redisTemplate.convertAndSend(TrackingChannel.of(deliveryId),
                     objectMapper.writeValueAsString(location));
-        } catch (JsonProcessingException | RuntimeException e) {
-            // 검사 예외(직렬화)와 런타임 예외(Redis)를 함께 잡는다 — 처리 방식이 같다.
+        } catch (RuntimeException e) {
             log.warn("event=SSE_PUBLISH_FAILED deliveryId={} reason={}",
                     deliveryId, e.getClass().getSimpleName(), e);
         }

@@ -2,7 +2,6 @@ package com.turkey.quick.order.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.turkey.quick.common.response.ApiResponse;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.support.IntegrationTestSupport;
@@ -12,13 +11,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
+import tools.jackson.databind.JsonNode;
 
 /**
  * #79 완료 조건을 사용자 시나리오로 검증한다. 실제 HTTP + 실제 Docker MySQL 을 지난다.
@@ -27,6 +28,7 @@ import org.springframework.test.context.ActiveProfiles;
  * Spring Security 를 쓰지 않아 인증이 선언적으로 걸리지 않으므로, 등록을 빠뜨리면 이 API 가
  * <b>인증 없이 열린 채로</b> 배포된다. 그래서 "쿠키 없이 401" 을 회귀 테스트로 둔다.
  */
+@AutoConfigureTestRestTemplate
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
                 properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")
