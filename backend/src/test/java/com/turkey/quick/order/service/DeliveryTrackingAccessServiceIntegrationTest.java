@@ -25,8 +25,9 @@ import org.springframework.test.context.ActiveProfiles;
  *       ({@code @Transactional} 을 붙이지 않았다). 엔터티를 반환하는 구현으로 바꾸면 여기서
  *       {@code LazyInitializationException} 이 난다.</li>
  *   <li><b>라이더가 없는 행이 조회에서 사라지지 않는지</b> — 조회가 FK 컬럼만 읽어 조인이 없으므로
- *       {@code WAITING} 주문도 결과에 남는다. 조인하는 형태로 다시 쓰이면 그 행이 빠져 404 와
- *       409 가 뒤바뀐다.</li>
+ *       {@code WAITING} 주문도 결과에 남는다. 조인하는 형태로 다시 쓰이면 그 행이 빠져 404 가
+ *       된다(#401 이후로는 WAITING 이 허용이라 200 이 나와야 할 자리에 404 가 나오는 형태로
+ *       드러난다).</li>
  *   <li><b>픽스처가 DDL CHECK 를 통과하는지</b> — {@code ck_delivery_assignment} 등이
  *       전이 메서드가 채우는 필드 조합과 어긋나면 INSERT 가 깨진다.</li>
  * </ul>
@@ -87,6 +88,21 @@ class DeliveryTrackingAccessServiceIntegrationTest extends IntegrationTestSuppor
         }
 
         @Test
+        @DisplayName("배차 전(WAITING) 주문도 구독을 허용하되, 라이더는 아직 없다(#401)")
+        void allowsWaitingDeliveryWithoutRider() {
+            // 조회가 라이더를 조인하지 않고 FK 컬럼만 읽으므로 라이더 없는 행도 결과에 남는다.
+            // 조인하거나 상태를 쿼리에서 거르는 형태로 다시 쓰면 이 행이 빠져 404 가 되고,
+            // 고객은 자기 주문이 사라진 것으로 보게 된다. 그 회귀를 잡는 케이스다.
+            var scenario = fixture.deliveryWithStatus(OrderStatus.WAITING);
+
+            TrackableDelivery delivery =
+                    accessService.authorizeTracking(scenario.deliveryId(), scenario.customerId());
+
+            assertThat(delivery.status()).isEqualTo(OrderStatus.WAITING);
+            assertThat(delivery.riderId()).as("배차 전이라 라이더가 없다").isNull();
+        }
+
+        @Test
         @DisplayName("반환값을 트랜잭션 밖에서 읽어도 예외가 없다")
         void survivesOutsideTransaction() {
             // 이 테스트에 @Transactional 이 없다는 것이 검증의 핵심이다. SSE 는 emitter 콜백
@@ -131,21 +147,6 @@ class DeliveryTrackingAccessServiceIntegrationTest extends IntegrationTestSuppor
                     accessService.authorizeTracking(target.deliveryId(), intruder.customerId()));
 
             assertThat(thrown.getStatus()).isEqualTo(HttpStatus.NOT_FOUND);
-        }
-
-        @Test
-        @DisplayName("배차 전 주문은 404가 아니라 409다")
-        void rejectsWaitingDeliveryAsConflict() {
-            // 조회가 라이더를 조인하지 않고 FK 컬럼만 읽으므로 라이더 없는 행도 결과에 남는다.
-            // 조인하거나 상태를 쿼리에서 거르는 형태로 다시 쓰면 이 행이 빠져 404 가 되고,
-            // 고객은 자기 주문이 사라진 것으로 보게 된다. 그 회귀를 잡는 케이스다.
-            var scenario = fixture.deliveryWithStatus(OrderStatus.WAITING);
-
-            BusinessException thrown = businessExceptionOf(() ->
-                    accessService.authorizeTracking(scenario.deliveryId(), scenario.customerId()));
-
-            assertThat(thrown.getStatus()).isEqualTo(HttpStatus.CONFLICT);
-            assertThat(thrown.getMessage()).contains("배정");
         }
 
         @Test

@@ -3,6 +3,7 @@ package com.turkey.quick.location.sse;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.BDDMockito.never;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
 
@@ -10,6 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.turkey.quick.location.dto.LocationPayload;
+import com.turkey.quick.order.domain.OrderStatus;
 import java.math.BigDecimal;
 import java.time.Instant;
 import org.junit.jupiter.api.DisplayName;
@@ -20,6 +22,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionSynchronizationUtils;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("TrackingPublisher")
@@ -59,6 +63,7 @@ class TrackingPublisherTest {
         // 구독자는 이 문자열을 파싱하지 않고 SSE data: 로 그대로 흘린다. 그래서 프론트
         // parseLocationPing 이 요구하는 형식이 여기서 결정된다 — measuredAt 은 반드시 문자열이다.
         assertThat((String) body.getValue())
+                .contains("\"type\":\"location\"")
                 .contains("\"latitude\":37.4979")
                 .contains("\"longitude\":127.0276")
                 .contains("\"measuredAt\":\"2026-08-03T01:02:03.456Z\"")
@@ -74,5 +79,49 @@ class TrackingPublisherTest {
                 .given(redisTemplate).convertAndSend(anyString(), anyString());
 
         assertThatCode(() -> publisher().publish(1L, LOCATION)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("같은 배송 채널로 직렬화된 상태 전이를 발행한다(#398)")
+    void publishesSerializedStatusToDeliveryChannel() {
+        publisher().publishStatus(1024L, OrderStatus.PICKED_UP, Instant.parse("2026-08-03T01:02:03.456Z"));
+
+        ArgumentCaptor<String> channel = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Object> body = ArgumentCaptor.forClass(Object.class);
+        then(redisTemplate).should().convertAndSend(channel.capture(), body.capture());
+
+        assertThat(channel.getValue()).isEqualTo("tracking:order:1024");
+        assertThat((String) body.getValue())
+                .contains("\"type\":\"status\"")
+                .contains("\"status\":\"PICKED_UP\"")
+                .contains("\"occurredAt\":\"2026-08-03T01:02:03.456Z\"");
+    }
+
+    @Test
+    @DisplayName("상태 발행도 Redis 실패 시 예외를 밖으로 내지 않는다")
+    void swallowsRedisFailureForStatus() {
+        willThrow(new RedisConnectionFailureException("down"))
+                .given(redisTemplate).convertAndSend(anyString(), anyString());
+
+        assertThatCode(() -> publisher().publishStatus(1L, OrderStatus.COMPLETED, Instant.now()))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("트랜잭션 안에서는 커밋 전까지 상태 발행을 미룬다 — 이른 재조회 경쟁 방지")
+    void deferStatusPublishUntilCommit() {
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            publisher().publishStatus(1024L, OrderStatus.COMPLETED,
+                    Instant.parse("2026-08-03T01:02:03.456Z"));
+
+            then(redisTemplate).should(never()).convertAndSend(anyString(), anyString());
+
+            TransactionSynchronizationUtils.triggerAfterCommit();
+
+            then(redisTemplate).should().convertAndSend(anyString(), anyString());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 }

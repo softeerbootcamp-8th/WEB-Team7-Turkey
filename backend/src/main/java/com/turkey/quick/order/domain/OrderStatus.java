@@ -85,6 +85,20 @@ public enum OrderStatus {
     }
 
     /**
+     * 배송이 끝나 더 이상 어떤 갱신도 오지 않는 상태인가(#401).
+     *
+     * <p>{@link #isTrackable()}과 다른 질문이다 — 이건 "위치를 보여줄 수 있는가"이고 이건
+     * "이 배송에 관심 가질 이유가 남아 있는가"다. {@code WAITING}은 위치는 없지만(라이더 없음)
+     * 상태 전이 SSE(#398)를 받을 이유는 있다 — 그래서 트래커블은 아니지만 터미널도 아니다.
+     */
+    public boolean isTerminal() {
+        return switch (this) {
+            case COMPLETED, CANCELED -> true;
+            case WAITING, ASSIGNED, MOVING_TO_PICKUP, PICKED_UP, DELIVERING -> false;
+        };
+    }
+
+    /**
      * {@link #isTrackable()} 인 상태들. 쿼리의 {@code in} 절에 넣기 위한 것이다.
      *
      * <p><b>목록을 다시 적지 않고 위 switch 에서 파생시킨다.</b> 두 곳에 적으면 상태가 늘었을 때

@@ -39,7 +39,9 @@ public class CustomerLocationQueryService {
     public CustomerDeliveryLocationResponse getLocation(Long deliveryId, Long customerId) {
         TrackableDelivery delivery = accessService.authorizeTracking(deliveryId, customerId);
 
-        LocationPayload location = findLocationOrFail(delivery.riderId());
+        // WAITING은 구독은 허용되지만(#401) 라이더가 아직 없어 riderId가 null이다 — 조회할
+        // 대상이 없으니 Redis를 보지 않고 바로 "위치 없음"으로 답한다.
+        LocationPayload location = delivery.riderId() == null ? null : findLocationOrFail(delivery.riderId());
 
         return new CustomerDeliveryLocationResponse(delivery.orderId(), delivery.status(), location);
     }

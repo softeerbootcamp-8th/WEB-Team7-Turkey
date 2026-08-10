@@ -38,7 +38,7 @@ public class DeliveryTrackingQueryService {
     /**
      * @param deliveryId 조회할 배송요청
      * @param customerId 세션에서 얻은 고객 식별자
-     * @throws BusinessException 404(없음·타인 것) / 409(WAITING·COMPLETED·CANCELED) /
+     * @throws BusinessException 404(없음·타인 것) / 409(COMPLETED·CANCELED, #401 이후 WAITING 제외) /
      *                           500(예상 운임 스냅샷 없음)
      */
     @Transactional(readOnly = true)
@@ -50,16 +50,17 @@ public class DeliveryTrackingQueryService {
                 .orElseThrow(() -> new IllegalStateException(
                         "추적 게이트를 통과한 주문을 다시 조회할 수 없습니다. deliveryId=" + deliveryId));
 
-        // 추적 가능 상태에서는 라이더가 반드시 있다(DDL ck_delivery_assignment). 지연 로딩이지만
+        // 추적 가능 상태(ASSIGNED~DELIVERING)에서는 라이더가 반드시 있다(DDL ck_delivery_assignment).
+        // WAITING은 게이트를 통과하지만(#401) 라이더가 없다 — 그래서 null 일 수 있다. 지연 로딩이지만
         // 이 메서드가 트랜잭션 경계라 안전하다 — OSIV 가 꺼져 있어 응답 조립을 여기서 끝내야 한다.
-        Member rider = order.getAssignedRider().getMember();
+        Member rider = order.getAssignedRider() == null ? null : order.getAssignedRider().getMember();
 
         return new DeliveryTrackingResponse(
                 order.getId(),
                 order.getStatus(),
                 DeliveryStatusStepResponse.timelineOf(order),
-                rider.getName(),
-                rider.getPhoneNumber(),
+                rider == null ? null : rider.getName(),
+                rider == null ? null : rider.getPhoneNumber(),
                 // 산정 근거가 없어 항상 null 이다(사람 확인, 2026-07-31). 지도·경로 API 가 붙을 때 채운다.
                 null,
                 totalFare(order));

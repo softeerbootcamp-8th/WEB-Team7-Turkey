@@ -112,6 +112,22 @@ class DeliveryTrackingQueryServiceIntegrationTest extends IntegrationTestSupport
         }
 
         @Test
+        @DisplayName("배차 전(WAITING)도 조회되지만 라이더는 null이다(#401)")
+        void returnsSnapshotForWaitingWithoutRider() {
+            var scenario = fixture.deliveryWithStatus(OrderStatus.WAITING);
+
+            DeliveryTrackingResponse response =
+                    queryService.getTracking(scenario.deliveryId(), scenario.customerId());
+
+            assertThat(response.status()).isEqualTo(OrderStatus.WAITING);
+            assertThat(response.riderName()).isNull();
+            assertThat(response.riderPhoneNumber()).isNull();
+            assertThat(response.steps())
+                    .extracting(DeliveryStatusStepResponse::status)
+                    .containsExactly(OrderStatus.WAITING);
+        }
+
+        @Test
         @DisplayName("추적 가능한 네 상태 모두 조회된다")
         void returnsSnapshotForEveryTrackableStatus() {
             for (OrderStatus status : OrderStatus.values()) {
@@ -146,12 +162,11 @@ class DeliveryTrackingQueryServiceIntegrationTest extends IntegrationTestSupport
         }
 
         @Test
-        @DisplayName("배차 전·완료·취소는 스트림과 같은 409다")
-        void rejectsNotTrackableStatuses() {
+        @DisplayName("완료·취소는 스트림과 같은 409다(#401부터 WAITING 제외)")
+        void rejectsTerminalStatuses() {
             // 스트림과 판정이 갈리면 "REST 는 200 인데 스트림은 열리지 않는" 조합이 생기고,
             // 프론트는 EventSource 오류의 사유를 알 방법이 없어진다.
-            for (OrderStatus status : new OrderStatus[]{
-                    OrderStatus.WAITING, OrderStatus.COMPLETED, OrderStatus.CANCELED}) {
+            for (OrderStatus status : new OrderStatus[]{OrderStatus.COMPLETED, OrderStatus.CANCELED}) {
                 var scenario = fixture.deliveryWithStatus(status);
 
                 BusinessException thrown = businessExceptionOf(() ->

@@ -86,6 +86,22 @@ class CustomerDeliveryTrackingE2ETest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("배차 전(WAITING)도 200을 주지만 라이더 정보는 없다(#401)")
+    void returnsSnapshotWithoutRiderWhenWaiting() {
+        var scenario = fixture.deliveryWithStatus(OrderStatus.WAITING);
+        String cookie = loginAndGetSessionCookie(CUSTOMER_LOGIN, scenario.customerLoginId());
+
+        var response = get(scenario.deliveryId(), cookie);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode data = response.getBody().get("data");
+        assertThat(data.get("status").asText()).isEqualTo("WAITING");
+        assertThat(data.get("riderName").isNull()).isTrue();
+        assertThat(data.get("riderPhoneNumber").isNull()).isTrue();
+        assertThat(data.get("steps")).hasSize(1);
+    }
+
+    @Test
     @DisplayName("세션 쿠키가 없으면 401 이다")
     void rejectsRequestWithoutSessionCookie() {
         // 이 테스트가 실패하면 CustomerWebMvcConfig 등록이 빠졌다는 뜻이다 — 인증 없이 남의 주문
