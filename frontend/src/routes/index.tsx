@@ -53,7 +53,7 @@ function LandingPage() {
           <p className="landing-home__description">
             가까운 라이더를 빠르게 연결하고
             <br />
-            배송 위치를 끝까지 확인하세요.
+            배송 위치를 끝까지 확인하세요.!!!
           </p>
         </section>
 
