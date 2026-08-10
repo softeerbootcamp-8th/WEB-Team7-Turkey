@@ -71,7 +71,7 @@ public class TrackingPublisher {
             // 직렬화를 여기서 한 번만 한다. 구독자는 파싱하지 않고 이 문자열을 SSE data: 로 그대로
             // 흘리므로, 페이로드 계약이 이 한 줄에만 존재한다.
             redisTemplate.convertAndSend(TrackingChannel.of(deliveryId),
-                    objectMapper.writeValueAsString(location));
+                    objectMapper.writeValueAsString(payload));
         } catch (RuntimeException e) {
             log.warn("event=SSE_PUBLISH_FAILED deliveryId={} reason={}",
                     deliveryId, e.getClass().getSimpleName(), e);
