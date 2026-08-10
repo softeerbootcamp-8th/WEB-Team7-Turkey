@@ -7,9 +7,6 @@ import static org.mockito.BDDMockito.never;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.turkey.quick.location.dto.LocationPayload;
 import com.turkey.quick.order.domain.OrderStatus;
 import java.math.BigDecimal;
@@ -22,6 +19,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.cfg.DateTimeFeature;
+import tools.jackson.databind.json.JsonMapper;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionSynchronizationUtils;
 
@@ -42,9 +42,9 @@ class TrackingPublisherTest {
      * 프론트 {@code parseLocationPing} 은 {@code measuredAt} 이 문자열이 아니면 프레임을 버린다.
      * 기본값으로 두면 이 테스트가 운영과 다른 형식을 검증하게 된다.
      */
-    private final ObjectMapper objectMapper = new ObjectMapper()
-            .registerModule(new JavaTimeModule())
-            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+    private final ObjectMapper objectMapper = JsonMapper.builder()
+            .disable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS)
+            .build();
 
     private TrackingPublisher publisher() {
         return new TrackingPublisher(redisTemplate, objectMapper);

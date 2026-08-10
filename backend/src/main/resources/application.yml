@@ -1,6 +1,9 @@
 spring:
   application:
     name: quick-delivery
+  threads:
+    virtual:
+      enabled: true
 
   # --- DB 연결 (MySQL 8.4 / 스키마명 turkey) ---
   # 접속 정보는 환경 변수로 주입한다(비밀정보 커밋 금지).
@@ -13,6 +16,13 @@ spring:
     url: ${DB_URL:jdbc:mysql://localhost:3306/turkey?tinyInt1isBit=false}
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:}
+    hikari:
+      # 최대 커넥션 개수
+      maximum-pool-size: 10
+      # 풀에 여유 커넥션이 없을 때 대기하는 시간 (밀리초 단위, 30000ms = 30초)
+      connection-timeout: 30000
+      # 커넥션의 최소 유휴 개수 (기본적으로 maximum-pool-size와 동일하게 맞추는 것을 권장)
+      minimum-idle: 10
 
   # --- Redis: 세션 저장 / 라이더 최신 위치(TTL 10분) / GEO 배차 후보 검색 /
   #            휴대전화 인증번호(TTL) / SSE 이벤트 팬아웃(Pub/Sub, #317) ---
@@ -50,6 +60,8 @@ spring:
     properties:
       hibernate:
         format_sql: true
+      hibernate.dialect: org.hibernate.dialect.MySQLDialect
+
 
   # --- 배송 완료 인증 사진 업로드(#61 후속) ---
   # 의도적으로 넉넉하게 열어 둔다 — docs/worklog/2026-08-04-61-delivery-completion-proof.md 참고.

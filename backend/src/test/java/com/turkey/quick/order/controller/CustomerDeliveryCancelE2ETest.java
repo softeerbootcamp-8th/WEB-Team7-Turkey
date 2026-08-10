@@ -33,7 +33,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpEntity;
@@ -61,6 +62,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p>주문 픽스처는 생성 API의 HTTP 경로가 아니라 {@link DeliveryService#createDelivery}를 직접
  * 호출해 만든다 — 생성 자체의 HTTP 계약은 {@code CustomerDeliveryCreateE2ETest}가 이미 검증한다.
  */
+@AutoConfigureTestRestTemplate
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")

@@ -36,7 +36,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -56,6 +57,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 덮으므로 E2E 는 계약(상태 코드·응답 형태·인증)만 확인한다. 쿠키 없이 401 을 덮는 이유는 목록 E2E 와
  * 같다 — 인증이 {@code RiderWebMvcConfig.addPathPatterns} 등록에 달려 있다({@code /history/**} 커버).
  */
+@AutoConfigureTestRestTemplate
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")
 class RiderDeliveryHistoryDetailE2ETest extends IntegrationTestSupport {

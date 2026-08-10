@@ -8,13 +8,27 @@
 # 아래 계정은 docker-compose.yml 의 로컬 컨테이너 전용 계정이다(배포 접속 정보 아님).
 # dialect 는 드라이버가 실제 서버 버전을 보고 결정하므로 따로 고정하지 않는다.
 spring:
+  threads:
+    virtual:
+      enabled: true
   datasource:
     # tinyInt1isBit=false: TINYINT(1) 을 BIT 이 아닌 TINYINT 으로 받게 한다(배포 URL 과 동일 설정).
     # env var 로 override 가능하게 한다 — 로컬 bootRun 은 기본값(localhost) 그대로 쓰고,
     # docker-compose 로 앱까지 컨테이너로 띄울 때는 DB_URL 등을 서비스명(mysql)으로 넘긴다.
+    driver-class-name: com.mysql.cj.jdbc.Driver
     url: ${DB_URL:jdbc:mysql://localhost:3306/turkey?tinyInt1isBit=false}
     username: ${DB_USERNAME:turkey}
     password: ${DB_PASSWORD:local}
+    hikari:
+      # 최대 커넥션 개수
+      maximum-pool-size: 10
+      # 풀에 여유 커넥션이 없을 때 대기하는 시간 (밀리초 단위, 30000ms = 30초)
+      connection-timeout: 30000
+      # 커넥션의 최소 유휴 개수 (기본적으로 maximum-pool-size와 동일하게 맞추는 것을 권장)
+      minimum-idle: 10
+  jpa:
+    properties:
+      hibernate.dialect: org.hibernate.dialect.MySQLDialect
 
   flyway:
     enabled: true
@@ -30,7 +44,7 @@ app:
 rider:
   delivery-proof:
     # local: 호스트 파일시스템, s3mock: 로컬 S3 mock 컨테이너
-    storage: ${RIDER_DELIVERY_PROOF_STORAGE:local}
+    storage: ${RIDER_DELIVERY_PROOF_STORAGE:s3mock}
     local-root: ${RIDER_DELIVERY_PROOF_LOCAL_ROOT:../data}
 
 logging:
@@ -40,11 +54,10 @@ logging:
 
 aws:
   s3:
-    # 1. 기존 상용 버킷 이름 대신, 로컬 테스트용 버킷 이름(예: my-test-bucket)으로 덮어씁니다.
-    bucket: web-team7-turkey-data-962895253643-ap-northeast-2-an
+    # Docker S3Mock이 시작할 때 같은 이름의 로컬 전용 버킷을 생성한다.
+    bucket: ${AWS_S3_BUCKET:turkey-delivery-proof-local}
     region: ${AWS_REGION:ap-northeast-2}
-
-    # 2. 로컬 테스트 여부를 판별할 엔드포인트 주소를 새로 추가합니다.
-    endpoint: http://localhost:9090
-    access-key: foo
-    secret-key: bar
+    # 호스트 bootRun은 localhost, app 컨테이너는 AWS_S3_ENDPOINT=http://s3mock:9090을 쓴다.
+    endpoint: ${AWS_S3_ENDPOINT:http://localhost:9090}
+    access-key: ${AWS_ACCESS_KEY_ID:foo}
+    secret-key: ${AWS_SECRET_ACCESS_KEY:bar}

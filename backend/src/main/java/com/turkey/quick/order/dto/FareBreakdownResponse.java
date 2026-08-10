@@ -1,6 +1,5 @@
 package com.turkey.quick.order.dto;
 
-import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import com.turkey.quick.order.domain.OrderFareSnapshot;
 import io.swagger.v3.oas.annotations.media.Schema;
 
