@@ -15,7 +15,7 @@ import java.util.Optional;
  *
  * <p><b>패키지 위치가 {@code common} 인 이유</b>: {@code PaymentGateway}·{@code SmsSender} 는 소비자와
  * 같은 도메인 패키지에 두는 관례지만, 이 포트는 시그니처에 도메인 타입이 하나도 없는 순수 인프라
- * 어댑터다. 게다가 첫 소비자는 {@code order}({@code DeliveryTrackingQueryService}, #421)인데
+ * 어댑터다. 게다가 첫 소비자는 {@code order}({@code DeliveryEtaQueryService}, #421·#447)인데
  * {@code location → order} 방향 의존이 이미 있어, 어느 도메인 패키지에 넣어도 방향이 엇갈린다.
  * {@code common/config/S3Config} 가 특정 도메인에 속하지 않는 것과 같은 자리다.
  *
