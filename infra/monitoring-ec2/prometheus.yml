@@ -41,3 +41,8 @@ scrape_configs:
   - job_name: mysql
     static_configs:
       - targets: ["mysqld-exporter:9104"]
+
+  # DB EC2 호스트 지표(CPU, 메모리, 디스크, 네트워크)
+  - job_name: node-db
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/node-db.yml]

@@ -28,16 +28,35 @@ Grafana→데이터소스 질의, 대시보드 프로비저닝.
 ## 처음 띄울 때
 
 ```bash
-cp .env.example .env               # GRAFANA_ADMIN_PASSWORD, SITE_ADDRESS(필수)
+cp .env.example .env               # GRAFANA_ADMIN_PASSWORD, (선택) SITE_ADDRESS
 cp .my.cnf.example .my.cnf         # mysqld-exporter 접속정보(읽기전용 계정)
 vi prometheus.yml targets/*.yml    # 사설 IP 채우기
 ./fetch-dashboards.sh              # grafana.com 대시보드 JSON 내려받기(커밋 안 함)
 docker compose up -d
 ```
 
-Grafana: `.env` 의 `SITE_ADDRESS` 주소 (자체서명이라 최초 1회 "고급 > 계속 진행").
-**`SITE_ADDRESS` 는 팀원이 브라우저에 실제로 입력하는 주소여야 한다** — 이 값이 자체서명
-인증서의 주체이고, 비어 있으면 Caddy 는 TLS 핸드셰이크 자체를 실패한다(그래서 기동을 거부하게 해뒀다).
+Grafana 는 Caddy 뒤에서 HTTPS 로 열린다(자체서명이라 최초 1회 "고급 > 계속 진행"). 예시
+`Caddyfile`(`{$SITE_ADDRESS:https://localhost} { tls internal ... }`)은 **도메인이 있을 때만**
+그대로 쓴다.
+
+**IP 로 접속하면(도메인 없이) 이 예시로는 TLS 핸드셰이크가 "internal error"로 끊긴다.** IP 는
+SNI 에 담을 수 없어서(RFC 6066) Caddy 가 어떤 이름의 인증서를 찾아야 할지 몰라 컨테이너 내부
+주소로 잘못 찾기 때문이다. 실제로 이 문제를 겪고 고친 운영 사례의 패턴:
+
+```caddyfile
+{
+        default_sni 3.38.124.24        # 팀 Elastic IP. 바뀌면 이 값도 같이 바꾼다.
+}
+
+https://3.38.124.24 {
+        tls internal
+        reverse_proxy grafana:3000
+}
+```
+
+이 경우 `.env` 의 `SITE_ADDRESS` 는 안 쓴다(Caddyfile 이 주소를 직접 갖고 있다) — 비워 둬도
+된다. `docker-compose.yml` 은 이 값을 `${SITE_ADDRESS:-}` 로 optional 하게 받으므로 비어 있어도
+`docker compose` 명령 자체는 실패하지 않는다.
 
 ## 고친 뒤 반영하는 법
 

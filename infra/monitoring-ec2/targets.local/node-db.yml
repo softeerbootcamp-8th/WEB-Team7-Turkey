@@ -1,0 +1,3 @@
+# 로컬에는 호스트가 하나뿐이라 DB 호스트 지표도 같은 exporter 를 본다.
+- targets:
+    - "node-exporter:9100"

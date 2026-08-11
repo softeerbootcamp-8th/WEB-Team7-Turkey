@@ -73,9 +73,14 @@ services:
   caddy:
     image: caddy:2.8-alpine
     environment:
-      # 팀원이 브라우저에 실제로 입력하는 주소(IP 든 도메인이든). Caddyfile 주석 참고 —
-      # 이 값이 곧 자체서명 인증서의 주체라 비워 두면 HTTPS 가 붙지 않는다.
-      SITE_ADDRESS: ${SITE_ADDRESS:?SITE_ADDRESS 를 .env 에 설정할 것}
+      # 팀원이 브라우저에 실제로 입력하는 주소(IP 든 도메인이든). 예시 Caddyfile 이 이 값을
+      # 쓰지만, IP 로 접속하는 경우 SNI 가 비어 오므로(RFC 6066, SNI 는 IP 를 못 담는다)
+      # `default_sni` 를 같이 지정해야 한다 — 실제 운영에서 이 문제로 핸드셰이크가
+      # "internal error"로 끊긴 적이 있다. 자세한 Caddyfile 패턴은 README 참고.
+      # required(:?)로 두지 않는다 — Caddyfile 을 다른 방식(하드코딩 주소 등)으로 이미
+      # 구성했다면 이 값이 없어도 되는데, required 로 두면 그 경우에도 `docker compose`
+      # 명령 자체가 매번 실패한다(파일 전체를 파싱할 때 검증하므로 caddy 를 안 건드려도 걸린다).
+      SITE_ADDRESS: ${SITE_ADDRESS:-}
     ports:
       - "443:443"
     volumes:
