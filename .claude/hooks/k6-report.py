@@ -3,11 +3,19 @@
 
 왜 훅인가: 지표 수집을 잊는 것이 가장 흔한 실패다. 스킬 절차를 따르지 않고 k6 를 직접 돌린
 경우에도 이게 붙는다. 반대로 **사용자가 자기 터미널에서 돌린 k6 에는 붙지 않는다**(훅은 이
-세션의 tool 호출에만 발동한다) — 그때는 사람이 collect.py 를 직접 부른다.
+세션의 tool 호출에만 발동) — 그때는 사람이 collect.py 를 직접 부른다.
 
-측정 구간은 상태 파일 없이 k6 자신의 출력에서 얻는다. 마지막 진행 줄이
-`running (1m36.1s), 00/20 VUs, ...` 라 여기서 실행 시간을 뽑고, 끝을 now 로 잡아 역산한다.
-그래서 훅은 k6 실행과 별개의 어떤 상태도 관리하지 않는다.
+── 첫 설계가 실패한 이유 (2026-08-11, 실사용 세션에서 발동 0회) ──────────────
+처음에는 k6 출력에서 `running (1m36s)` 를 파싱해 측정 구간을 역산했다. 실제로 써 보니
+**한 번도 발동하지 않았다**:
+  1. 계단 런은 `run_in_background` 로 돌렸다 — 부하 중에 `docker stats` 를 병행 샘플링해야
+     하는 정당한 이유가 있었다. 그런데 훅이 백그라운드를 건너뛰게 되어 있었다.
+  2. 포그라운드 런은 출력을 `| tail -30` 으로 잘라서 `running (…)` 줄이 사라졌다.
+게다가 그 실행 시간에는 **setup(계정별 bcrypt 로그인)이 포함**돼, 계정이 많으면 창의 대부분이
+setup 이 되어 수치가 왜곡됐다(요청당 왕복 수가 13.0 대신 14~20).
+
+그래서 출력 파싱을 전부 버렸다. 구간은 `collect.py --latest` 가 Prometheus 의 VU 타임라인에서
+도출한다 — 백그라운드·출력 필터링·긴 setup 에 모두 영향받지 않는다.
 """
 import json
 import re
@@ -16,18 +24,17 @@ import sys
 import time
 from pathlib import Path
 
-# k6 의 duration 표기: 1h2m3.4s / 1m36.1s / 45.2s
-_DUR = re.compile(r"running \((?:(\d+)h)?(?:(\d+)m)?([\d.]+)s\)")
-_TESTID = re.compile(r"testid=([\w.\-]+)")
+# 런이 이 시간 안에 끝났을 때만 보고한다. 명령문에 `k6 run` 이라는 **문자열만** 들어 있는 경우
+# (문서 수정, grep, 이 훅 자체의 테스트)에 옛 런의 표를 올리지 않기 위한 가드다.
+FRESH_SECONDS = 600
 
 
-def parse_duration(text):
-    """가장 마지막 `running (...)` 표기를 초로. 못 찾으면 None."""
-    last = None
-    for m in _DUR.finditer(text):
-        h, mi, s = m.group(1), m.group(2), m.group(3)
-        last = int(h or 0) * 3600 + int(mi or 0) * 60 + float(s)
-    return last
+def find_collect(cwd):
+    for base in (Path(cwd), Path(cwd) / "backend", Path(cwd).parent):
+        candidate = base / "loadtest" / "collect.py"
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 def main():
@@ -38,78 +45,58 @@ def main():
 
     tool_input = payload.get("tool_input") or {}
     command = tool_input.get("command") or ""
-
-    # k6 실행이 아니면 통과. `k6 --help`, collect.py 호출 등은 제외한다.
-    if "k6" not in command or not re.search(r"\bk6\b.*\brun\b", command):
-        return
-    # 백그라운드 실행이면 이 훅은 '시작' 시점에 불린다 — 그때 지표를 모으면 빈 표가 나온다.
-    if tool_input.get("run_in_background"):
+    if not re.search(r"\bk6\b.*\brun\b", command):
         return
 
-    response = payload.get("tool_response")
-    if isinstance(response, dict):
-        output = (response.get("stdout") or "") + (response.get("stderr") or "")
-    else:
-        output = str(response or "")
-
-    duration = parse_duration(output)
-    end = int(time.time())
-    if duration is None:
-        # 여기까지 왔는데 실행 시간이 없는 경우는 둘이다:
-        #  (a) k6 가 초기화 단계에서 죽었다(스크립트 오류, 로그인 실패) → 알려야 한다.
-        #  (b) 애초에 k6 실행이 아니었다. 명령문에 `k6 run` 이라는 **문자열만** 들어 있는 경우
-        #      (문서 수정, grep, 이 훅 자체의 테스트)가 실제로 발생한다 → 조용히 빠져야 한다.
-        # 출력에 k6 특유의 흔적이 있는지로 둘을 가른다.
-        if not any(k in output for k in ("k6", "scenarios:", "execution:", "level=error")):
-            return
-        emit("k6 실행 시간을 출력에서 찾지 못했다(초기화 실패로 보인다). "
-             "지표 수집을 건너뛴다 — k6 출력의 오류를 먼저 볼 것.")
-        return
-    # 램프업 전 여유 5초. collect.py 의 구간이 짧으면 increase() 가 표본을 못 채운다.
-    start = end - int(duration) - 5
-
-    testid = None
-    m = _TESTID.search(command)
-    if m:
-        testid = m.group(1)
-
-    project = Path(payload.get("cwd") or ".")
-    collect = None
-    for base in (project, project / "backend", Path(payload.get("cwd") or ".").parent):
-        candidate = base / "loadtest" / "collect.py"
-        if candidate.is_file():
-            collect = candidate
-            break
+    collect = find_collect(payload.get("cwd") or ".")
     if collect is None:
         emit("collect.py 를 못 찾았다 — backend/loadtest/collect.py 위치를 확인할 것.")
         return
 
-    argv = [sys.executable, str(collect), str(start), str(end)]
-    if testid:
-        argv.append(testid)
-    # 표는 구간을 한 숫자로 접는다. 시계열을 리포트와 같이 남겨 두면 나중에 "언제 꺾였나"를
-    # 다시 물을 수 있다 — collect.py 가 testid 로 파일명을 만든다.
+    # 백그라운드 실행이면 이 훅은 '시작' 시점에 불린다. 그때는 아직 데이터가 없으니 표를 만들 수
+    # 없고, 대신 끝난 뒤 무엇을 부르면 되는지 알려 준다(백그라운드는 금지 사항이 아니다 —
+    # 컨테이너 CPU 를 병행 샘플링하려면 필요하다).
+    if tool_input.get("run_in_background"):
+        emit("k6 를 백그라운드로 돌렸다. 런이 끝난 뒤 아래를 실행해 지표를 모을 것 "
+             "— 측정 구간은 Prometheus 에서 자동으로 도출된다(인자로 시각을 넘기지 않는다):\n"
+             f"    {collect} --latest --steps --raw docs/loadtest --panels")
+        return
+
+    argv = [sys.executable, str(collect), "--latest", "--steps"]
     raw_dir = collect.parents[2] / "docs" / "loadtest"
     if raw_dir.is_dir():
-        # --panels: Grafana 대시보드가 정의해 둔 패널 쿼리까지 같은 파일에 담는다. 화면에서
-        # 보는 값과 리포트의 값이 같아진다. 범위 질의 100여 개라 몇 초 더 걸린다.
+        # 표는 구간을 한 숫자로 접는다. 시계열과 대시보드 패널 값을 리포트와 같이 남겨 두면
+        # 나중에 "언제 꺾였나"를 다시 물을 수 있다.
         argv += ["--raw", str(raw_dir), "--panels"]
     try:
-        done = subprocess.run(argv, capture_output=True, text=True, timeout=120)
+        done = subprocess.run(argv, capture_output=True, text=True, timeout=300)
     except subprocess.TimeoutExpired:
-        emit("collect.py 가 120초 안에 끝나지 않았다(Prometheus 응답 지연?).")
+        emit("collect.py 가 300초 안에 끝나지 않았다(Prometheus 응답 지연?).")
         return
 
     if done.returncode != 0:
         emit("지표 수집 실패:\n" + (done.stdout + done.stderr).strip())
         return
 
-    # testid 를 못 넘겨도 collect.py 가 구간의 데이터에서 되찾는다(명령문이 셸 변수를 쓰면
-    # 훅은 확장 전 문자열만 본다). 그래서 여기서 경고하지 않는다 — 표의 머리글이 결과를 밝힌다.
-    head = ("부하테스트가 끝났다. 아래는 Prometheus 에서 모은 이 런의 지표다.\n"
-            "이 표를 그대로 쓰고 해석을 붙여 `docs/loadtest/<날짜>-<testid>.md` 로 남긴다. "
-            "런 단위 p95/p99 는 위 k6 summary 값이 정본이다.\n\n")
-    emit(head + done.stdout.strip())
+    # 최신 런이 오래전에 끝났으면 이 명령은 실제 k6 실행이 아니었다고 보고 조용히 빠진다.
+    fresh = re.search(r"epoch (\d+)~(\d+)", done.stdout)
+    if fresh and time.time() - int(fresh.group(2)) > FRESH_SECONDS:
+        return
+
+    # 같은 런을 두 번 보고하지 않는다. 명령문에 `k6 run` 이라는 문자열만 들어 있는 경우
+    # (문서 수정 등)가 방금 끝난 런의 신선도 창 안에 들어오면 표가 중복으로 올라온다.
+    seen = collect.parent / ".reported-runs"
+    run_id = re.search(r"testid=`([^`]+)`", done.stdout)
+    if run_id:
+        already = seen.read_text(encoding="utf-8").split() if seen.is_file() else []
+        if run_id.group(1) in already:
+            return
+        seen.write_text(" ".join(already[-49:] + [run_id.group(1)]), encoding="utf-8")
+
+    emit("부하테스트가 끝났다. 아래는 Prometheus 에서 모은 이 런의 지표다.\n"
+         "이 표를 그대로 쓰고 해석을 붙여 `docs/loadtest/<날짜>-<testid>.md` 로 남긴다. "
+         "런 단위 p95/p99 는 k6 가 종료할 때 찍는 summary 가 정본이다.\n\n"
+         + done.stdout.strip())
 
 
 def emit(context):

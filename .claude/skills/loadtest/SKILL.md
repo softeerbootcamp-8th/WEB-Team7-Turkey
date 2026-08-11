@@ -95,7 +95,12 @@ description: Turkey 저장소에서 k6 부하테스트를 목적만 듣고 끝�
 
 ## 2. 시나리오 작성
 
-`backend/loadtest/local/rider-location-update.js` 를 템플릿으로 복제한다. 그 파일이 지키는 규칙:
+**같은 엔드포인트면 복제하지 말고 기존 시나리오에 파라미터를 더한다**(하위호환 유지). 실사용
+세션이 계단 램프를 그렇게 붙였다 — `STEPS`/`HOLD_SECONDS`/`RAMP_SECONDS` 를 추가하고, 안 주면
+기존 4단 램프가 그대로 돌아 **이전 런과 비교가 유지된다**. 복제하면 두 벌이 갈라져 한쪽만
+고쳐진다. 새 엔드포인트일 때만 `backend/loadtest/local/rider-location-update.js` 를 복제한다.
+
+그 파일이 지키는 규칙:
 
 - **로그인은 `setup()` 에서 계정당 1회.** 반환한 세션 쿠키를 VU 가 나눠 쓴다. 측정 구간에 bcrypt 가
   섞이면 그게 지연을 지배한다(로그인 p95 63ms vs 위치 갱신 4.4ms).
@@ -106,7 +111,12 @@ description: Turkey 저장소에서 k6 부하테스트를 목적만 듣고 끝�
   경고를 찍는다(그대로 유지할 것). 더 큰 VU 가 필요하면 **먼저 `@n` 을 올려 계정을 늘린다.**
 - VU→계정 배분은 `(__VU - 1) % 계정수`.
 - 요청에 `tags: { api: '<이름>' }` 을 달아 임계값을 그 태그로 건다.
-- `setupTimeout` 은 계정 수 × bcrypt 비용을 고려해 넉넉히(100개면 `180s`).
+- **`setupTimeout` 은 계정 수에 비례한다.** setup 은 계정마다 순차로 로그인하고 bcrypt 가
+  계정당 수십 ms 라, **계정 수 × 약 1초** 로 잡는다(실측 1.76s/쌍). 계정 1000개면 `900s` 가
+  필요하다 — 「VU 를 계정 수에 맞춘다」가 계정을 늘리게 만들므로 이 값을 같이 올려야 한다.
+  `SETUP_TIMEOUT` 환경변수로 받게 두는 편이 낫다.
+- **계단 램프는 한 단을 90초 이상 유지한다.** Prometheus 스크레이프가 15초라 그보다 짧으면
+  단계별 서버 지표가 조용히 빈다(`references/preconditions.md` 「부하 패턴」).
 - `summaryTrendStats` 에 `p(95)`, `p(99)` 를 포함한다(기본값에는 없다).
 
 ## 3. 실행
@@ -142,9 +152,19 @@ docker compose exec -T mysql mysql -uturkey -plocal turkey -e "
 # 필요한 데이터셋이 이미 있으면 시드를 건너뛴다. 없으면 해당 스크립트만 돌린다.
 docker compose exec -T mysql mysql -uturkey -plocal turkey < scripts/seed-loadtest-riders.sql
 
-# (4) 실행. --tag testid= 는 필수다(Grafana 대시보드와 리포트가 이걸로 런을 특정한다).
+# (4) **다른 부하테스트가 돌고 있지 않은지 확인한다.** 0 이 아니면 멈추고 사람에게 묻는다 —
+#     로컬 스택도 공용일 수 있다(다른 세션·다른 사람). 이걸 안 보고 실행해 남의 계단 테스트를
+#     망친 적이 있다. 관측 스택 재생성·앱 재빌드도 같은 이유로 먼저 확인해야 한다.
+curl -s --get 'localhost:9099/api/v1/query' --data-urlencode 'query=sum(k6_vus)' \
+  | python3 -c "import sys,json;r=json.load(sys.stdin)['data']['result'];print('활성 VU:', r[0]['value'][1] if r else 0)"
+
+# (5) 컨테이너 CPU·메모리 샘플러를 **부하와 병행** 띄운다. Prometheus 에 없는 값이고,
+#     병목이 앱 CPU 인지 DB 인지 가르는 결정적 근거다. 규약 경로에 쓰므로 collect.py 가 알아서 읽는다.
+./loadtest/sample-stats.sh &
+
+# (6) 실행. --tag testid= 는 필수다(Grafana 대시보드가 이걸로 런을 구분한다).
 ID=<대상약칭>-$(date +%Y%m%d-%H%M%S)
-docker compose run --rm -e BASE_URL=http://app:8080 -e RIDER_COUNT=100 -e MAX_VU=200 \
+docker compose run --rm -e BASE_URL=http://app:8080 -e RIDER_COUNT=200 -e MAX_VU=200 \
   k6 run --tag testid=$ID /scripts/local/<시나리오>.js
 ```
 
@@ -176,14 +196,19 @@ docker compose run --rm -e BASE_URL=http://app:8080 -e RIDER_COUNT=100 -e MAX_VU
   `collect.py` 의 "exporter 가 부하 대상을 보고 있는지 확인" 안내로는 이 상태를 못 짚는다.
 - **`BASE_URL=http://app:8080`** 을 쓴다(docker 네트워크 내부 주소). 호스트 포트로 돌리지 말 것.
 - 시드가 DB 를 전부 지운다. 사용자가 로컬에서 작업 중인 데이터가 있는지 모르겠으면 먼저 알린다.
-- **백그라운드로 돌리지 말 것.** 훅이 종료 시점에 붙어야 지표가 자동으로 올라온다.
-- 앱 컨테이너 CPU·메모리는 Prometheus 에 없다(node-exporter 는 호스트 전체를 본다). 필요하면
-  실행 중 `docker stats --no-stream backend-app-1` 을 한 번 찍어 둔다.
+- **백그라운드 실행·출력 필터링 모두 괜찮다.** 훅은 k6 출력을 파싱하지 않고 측정 구간을
+  Prometheus 에서 도출한다. 단 백그라운드면 훅이 시작 시점에 붙으므로 표가 안 나온다 —
+  끝난 뒤 `./loadtest/collect.py --latest --steps` 를 직접 부른다(훅이 그렇게 안내한다).
+- **5xx 가 0 이어도 앱 로그의 예외·경고를 확인한다.** 조용히 실패하는 경로가 있다
+  (예: 시드가 `order_fare_snapshot` 을 빠뜨려 배차 만료 스캐너가 계속 죽던 사례):
+  `docker compose logs app --since 60m 2>&1 | grep -iE 'exception|error|warn' | sort | uniq -c`
 
 ## 4. 리포트
 
-k6 가 끝나면 훅(`.claude/hooks/k6-report.py`)이 `collect.py` 를 돌려 지표 표를 컨텍스트로
-올려 준다. 그 표를 그대로 쓰고 **해석을 붙여** 파일로 남긴다:
+k6 가 끝나면 훅(`.claude/hooks/k6-report.py`)이 `collect.py --latest --steps` 를 돌려 지표 표를
+컨텍스트로 올려 준다(백그라운드 실행이면 직접 부른다). **측정 구간을 인자로 넘기지 않는다** —
+Prometheus 의 VU 타임라인에서 도출하므로 setup 이 자동으로 빠진다. 그 표를 그대로 쓰고
+**해석을 붙여** 파일로 남긴다:
 
 ```
 docs/loadtest/<YYYY-MM-DD>-<testid>.md
@@ -202,8 +227,11 @@ docs/loadtest/<YYYY-MM-DD>-<testid>.md
 - 병목 판정과 근거. CPU·Hikari 대기·GC 정지·요청당 왕복 수를 함께 보고 **하나만 보고 단정하지
   않는다** — 과거에 Hikari 대기만 보고 "커넥션 풀이 병목"이라고 결론 냈다가 CPU 가 원인이었음이
   드러나 철회한 이력이 있다.
-- **요청당 왕복 수는 상한이다**(분자에 exporter 스크레이프·백그라운드 스케줄러가 섞인다).
-  순수 비용이 필요하면 부하 없이 같은 길이의 구간을 재서 바닥값을 뺀다.
+- **계단 런이면 단계별 표가 판정의 본체다.** 창 하나로 접은 값은 "어느 VU 에서 꺾였나"를
+  못 보여 준다. `--steps` 가 VU 타임라인에서 유지 구간을 찾아 열로 세운다.
+- **컨테이너 CPU 배분을 함께 적는다**(앱/MySQL/Redis). 2코어 제한이면 200% 가 만석이고,
+  이 배분이 없으면 "앱 CPU 가 천장"인지 "DB 가 천장"인지 구분할 수 없다. k6 컨테이너 CPU 도
+  적어 부하 생성기가 측정을 흐리지 않았다는 근거로 삼는다.
 
 여러 런을 비교해 얻은 판단(포화점, 결론, 측정 이력)은 `backend/loadtest/README.md` 에 누적한다.
 `docs/loadtest/` 는 런 하나의 원본 수치다.

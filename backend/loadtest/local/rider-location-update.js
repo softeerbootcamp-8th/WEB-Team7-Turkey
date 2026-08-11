@@ -36,9 +36,29 @@ const RIDERS = __ENV.RIDER_COUNT
 // (계정 수 = 의미 있는 VU 상한. README 참고).
 const MAX_VU = Number(__ENV.MAX_VU || 60);
 
+// 계단 램프. STEPS=n 을 주면 MAX_VU/n 간격으로 n 단을 만들고 각 단을 HOLD_SECONDS 만큼
+// 유지한다(예: MAX_VU=1000 STEPS=10 → 100,200,…,1000). 기존 4단 램프와 달리 **유지 구간이
+// 있어야** 단계별로 서버측 지표를 따로 뽑을 수 있다 — Prometheus 스크레이프가 15초라
+// increase()/rate() 창에 표본을 채우려면 한 단이 90초 이상이어야 한다(preconditions.md).
+// STEPS 를 주지 않으면 기존 램프 그대로라 이전 런과 비교가 유지된다.
+const STEPS = Number(__ENV.STEPS || 0);
+const HOLD = Number(__ENV.HOLD_SECONDS || 90);
+const RAMP = Number(__ENV.RAMP_SECONDS || 10);
+
+const staircase = () => {
+  const stages = [];
+  for (let i = 1; i <= STEPS; i += 1) {
+    const target = Math.max(1, Math.round((MAX_VU * i) / STEPS));
+    stages.push({ duration: `${RAMP}s`, target });
+    stages.push({ duration: `${HOLD}s`, target });
+  }
+  stages.push({ duration: '10s', target: 0 });
+  return stages;
+};
+
 export const options = {
   // 닫힌 모델로 VU 를 올려 포화점(지연이 꺾이는 지점)을 본다. MAX_VU 에 비례해 램프한다.
-  stages: [
+  stages: STEPS > 0 ? staircase() : [
     { duration: '20s', target: Math.max(1, Math.round(MAX_VU / 6)) },
     { duration: '30s', target: Math.max(1, Math.round(MAX_VU / 2)) },
     { duration: '30s', target: MAX_VU },
@@ -51,9 +71,9 @@ export const options = {
     'http_req_duration{api:location}': ['p(95)<300'],
   },
   summaryTrendStats: ['avg', 'min', 'med', 'p(95)', 'p(99)', 'max'],
-  // 계정 수만큼 로그인하고 들어간다. bcrypt 해시 검증이 계정당 수십 ms 라 100개면 기본 60초에
-  // 걸릴 수 있다.
-  setupTimeout: '180s',
+  // 계정 수만큼 로그인하고 들어간다. bcrypt 해시 검증이 계정당 수십 ms(순차 실행)라 100개면
+  // 기본 60초에 걸린다. 1000개면 1분 넘게 걸리므로 계정 수에 맞춰 넉넉히 둔다.
+  setupTimeout: __ENV.SETUP_TIMEOUT || '900s',
 };
 
 // 로그인은 계정당 1회만 하고, VU 는 그 세션 쿠키를 받아 쓴다. 측정 대상(위치 갱신)에 로그인
@@ -79,6 +99,9 @@ export function setup() {
   if (MAX_VU > RIDERS.length) {
     console.warn(`주의: MAX_VU(${MAX_VU}) > 계정 수(${RIDERS.length}) — VU 여러 개가 한 라이더를 공유해 수치가 왜곡된다`);
   }
+  // 계단 램프의 단계별 구간을 나중에 초 단위로 잘라내려면 램프 시작 시각이 필요하다.
+  // setup 은 계정 수에 따라 수십 초~수 분이라 런 시작 시각으로 역산할 수 없다.
+  console.log(`RAMP_START_EPOCH=${Math.floor(Date.now() / 1000)}`);
   return { sessions };
 }
 

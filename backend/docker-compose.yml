@@ -10,6 +10,15 @@ services:
   mysql:
     image: mysql:8.4
     container_name: turkey-mysql-local
+    # 배포 DB EC2(t3.micro = 2 vCPU / 1 GiB)와 같은 자원으로 묶는다(CLAUDE.md 「인프라·배포」).
+    # 앱만 묶고 DB·Redis 를 풀어 두면 부하테스트가 **DB 쪽 병목을 구조적으로 과소평가한다** —
+    # 개발 PC 의 11코어/8.8GiB 를 DB 가 다 쓰기 때문이다(2026-08-11 실측으로 확인해 추가).
+    # 로컬 개발(bootRun)만 할 때도 이 제한이 걸리지만, 배포와 같은 조건이라 문제가 아니다.
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1g
     ports:
       - "3306:3306"
     environment:
@@ -37,6 +46,14 @@ services:
   redis:
     image: redis:7.4
     container_name: turkey-redis-local
+    # 위 mysql 과 같은 이유. Redis EC2 의 인스턴스 타입은 CLAUDE.md 에 적혀 있지 않은데,
+    # micro 계열(t3/t4g)은 어느 쪽이든 2 vCPU / 1 GiB 라 값 자체는 같다 — 타입이 확정되면
+    # 이 주석만 고치면 된다.
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1g
     ports:
       - "6379:6379"
     # 주의: 개발 PC 에 Redis 를 직접 설치하지 않는다(Homebrew 등). 호스트 Redis 는
