@@ -15,14 +15,21 @@ import com.turkey.quick.payment.dto.PointChargeConfirmRequest;
 import com.turkey.quick.payment.dto.PointChargeConfirmResponse;
 import com.turkey.quick.payment.dto.PointChargeRequest;
 import com.turkey.quick.payment.dto.PointChargeResponse;
+import com.turkey.quick.payment.dto.PointTransactionListResponse;
+import com.turkey.quick.payment.dto.PointTransactionResponse;
 import com.turkey.quick.payment.repository.PointChargeRepository;
 import com.turkey.quick.payment.repository.PointTransactionRepository;
 import com.turkey.quick.payment.repository.PointWalletRepository;
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -67,6 +74,48 @@ public class CustomerPaymentService {
                 .orElseThrow(() -> new IllegalStateException("계좌 정보가 없습니다."));
 
         return new PointBalanceResponse(pointWallet.getBalance(), pointWallet.getUpdatedAt());
+    }
+
+    /**
+     * 포인트 거래 내역 조회(CUS-POINT-005, #35). 라이더 쪽 {@code RiderPaymentService#getPointTransactions}
+     * (#69)와 같은 구조다 — 원장(point_transaction)을 최신순으로 페이지 조회하고, 화면 상단 카드용
+     * 현재 잔액을 같은 응답에 함께 담는다.
+     */
+    public PointTransactionListResponse getPointTransactions(Long customerId, PointTransactionType type,
+                                                              int page, int size) {
+        PointWallet wallet = pointWalletRepository.findByMemberId(customerId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "지갑 정보가 없습니다. memberId=" + customerId));
+
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<PointTransaction> result = type == null
+                ? pointTransactionRepository.findByWallet_MemberId(customerId, pageable)
+                : pointTransactionRepository.findByWallet_MemberIdAndTransactionType(customerId, type, pageable);
+
+        List<PointTransactionResponse> items = result.getContent().stream()
+                .map(this::toResponse)
+                .toList();
+
+        return new PointTransactionListResponse(
+                wallet.getBalance(), items, page, size, result.getTotalElements());
+    }
+
+    /**
+     * 소스 FK는 유형별로 정확히 하나만 채워진다(ck_point_transaction_source). 나머지는 lazy 프록시라도
+     * null이면 그대로 null이고, non-null이면 식별자 접근만으로는 추가 조회가 일어나지 않는다.
+     */
+    private PointTransactionResponse toResponse(PointTransaction transaction) {
+        return new PointTransactionResponse(
+                transaction.getId(),
+                transaction.getTransactionType(),
+                transaction.getDirection(),
+                transaction.getAmount(),
+                transaction.getBalanceAfter(),
+                transaction.getDeliveryOrder() != null ? transaction.getDeliveryOrder().getId() : null,
+                transaction.getPointCharge() != null ? transaction.getPointCharge().getId() : null,
+                transaction.getRiderSettlement() != null ? transaction.getRiderSettlement().getId() : null,
+                transaction.getRiderWithdrawal() != null ? transaction.getRiderWithdrawal().getId() : null,
+                transaction.getCreatedAt());
     }
 
     /**
