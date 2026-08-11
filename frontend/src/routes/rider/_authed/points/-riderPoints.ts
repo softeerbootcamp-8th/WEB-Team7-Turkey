@@ -7,6 +7,14 @@ import { formatSeoul, getSeoulYearMonth } from '@/shared/lib/datetime'
 
 export type PointFilter = 'ALL' | GetRiderPointTransactionsType
 export type PointInfoTab = 'charge-account' | 'withdrawal-account' | 'guide'
+export type WithdrawalFormValues = {
+  amount: number
+  bankCode: string
+  accountNumber: string
+  accountHolderName: string
+}
+
+export const MIN_WITHDRAWAL_AMOUNT = 5_000
 
 export const pointFilterOptions: { value: PointFilter; label: string }[] = [
   { value: 'ALL', label: '전체' },
@@ -68,6 +76,23 @@ export function getPointTransactionLabel(type?: PointTransactionResponse['transa
 
 export function getSignedPointAmount(item: PointTransactionResponse): number {
   return (item.direction === 'DEBIT' ? -1 : 1) * (item.amount ?? 0)
+}
+
+export function getWithdrawalValidation(
+  values: { amount: string; bankCode: string; accountNumber: string; accountHolderName: string },
+  balance: number,
+): string | null {
+  const amount = Number(values.amount)
+  if (!Number.isInteger(amount) || amount < MIN_WITHDRAWAL_AMOUNT) {
+    return `출금 금액은 ${formatPoints(MIN_WITHDRAWAL_AMOUNT)} 이상이어야 합니다.`
+  }
+  if (amount > balance) return '출금 가능 포인트를 초과했습니다.'
+  if (!values.bankCode.trim()) return '은행 코드를 입력해 주세요.'
+  if (values.bankCode.trim().length > 20) return '은행 코드는 20자 이내로 입력해 주세요.'
+  if (!/^\d{6,20}$/.test(values.accountNumber)) return '계좌번호는 6~20자리 숫자로 입력해 주세요.'
+  if (!values.accountHolderName.trim()) return '예금주명을 입력해 주세요.'
+  if (values.accountHolderName.trim().length > 50) return '예금주명은 50자 이내로 입력해 주세요.'
+  return null
 }
 
 export function getPointErrorMessage(error: unknown): string {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   formatPoints,
   getPointTransactionLabel,
+  getWithdrawalValidation,
   getSignedPointAmount,
   isSamePointMonth,
   shiftPointMonth,
@@ -24,5 +25,28 @@ describe('포인트 내역 표시값', () => {
     const august = new Date(2026, 7, 31)
     expect(shiftPointMonth(august, -1).getMonth()).toBe(6)
     expect(isSamePointMonth('2026-08-03T05:30:00Z', august)).toBe(true)
+  })
+})
+
+describe('출금 신청 입력 검증', () => {
+  const valid = {
+    amount: '5000',
+    bankCode: '004',
+    accountNumber: '12345678901234',
+    accountHolderName: '홍길동',
+  }
+
+  it('백엔드 계약에 맞는 계좌정보를 허용한다', () => {
+    expect(getWithdrawalValidation(valid, 10_000)).toBeNull()
+  })
+
+  it('최소 출금액과 잔액을 검증한다', () => {
+    expect(getWithdrawalValidation({ ...valid, amount: '4999' }, 10_000)).toContain('5,000P')
+    expect(getWithdrawalValidation({ ...valid, amount: '10001' }, 10_000)).toBe('출금 가능 포인트를 초과했습니다.')
+  })
+
+  it('계좌번호를 6~20자리 숫자로 제한한다', () => {
+    expect(getWithdrawalValidation({ ...valid, accountNumber: '123-456' }, 10_000)).toContain('6~20자리')
+    expect(getWithdrawalValidation({ ...valid, accountNumber: '12345' }, 10_000)).toContain('6~20자리')
   })
 })
