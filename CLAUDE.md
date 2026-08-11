@@ -53,7 +53,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 
 ## 기술 스택
 
-- Backend: Java 21, Spring Boot 3.4.x, Gradle, Lombok, JPA, JUnit + AssertJ, SSE, Flyway
+- Backend: Java 21, Spring Boot 4.1.0(#373 작업 중 확인 — 이 문서가 오래 3.4.x로 적혀 있었음), Gradle, Lombok, JPA, JUnit + AssertJ, SSE, Flyway(4.0부터 `spring-boot-starter-flyway` 명시 필요 — 아래 「인프라」 항목 참고)
 - Data: MySQL 8.4, Redis
 - Infra: AWS EC2(백엔드), S3(프론트 빌드 산출물), CloudFront(CDN), GitHub Actions
 - Frontend: React, TanStack Router(파일 기반 라우팅, `routeTree.gen.ts` 자동 생성), TanStack Query, Orval(OpenAPI 기반 API 클라이언트 자동 생성), axios, shadcn/ui
@@ -241,3 +241,10 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - 라이더 콜 목록 `radiusMeters` 상한 없음(#55). 좌표 미전송 요청은 WAITING 전체를 훑어, WAITING이 크게 늘면 계약을 다시 열어야 한다.
 - 러시아워 배수(×1.3)·시간대(07-09, 18-20시)가 실측 없는 잠정값. 실제 배송 데이터로 재조정.
 - 외부 SMS 발송 연동(현재 로그만 남기는 모킹) — 벤더 선정 시 `SmsSender` 구현체 교체(#20).
+- **배포(EC2) 환경에서 Flyway가 실제로 자동 적용되는지 미확인**(#373에서 발견, 2026-08-11).
+  로컬에서 Spring Boot 4.0 모듈화로 `spring-boot-autoconfigure`에서 `FlywayAutoConfiguration`이
+  빠져(`spring-boot-flyway` 별도 모듈로 이동) `flyway-core`만으로는 기동 시 자동 마이그레이션이
+  전혀 안 되는 것을 재현·확인하고 `spring-boot-starter-flyway`를 추가해 로컬에서 고쳤다(전체
+  테스트 643개 통과 확인). 운영 배포도 같은 `build.gradle`을 쓰므로, 이 프로젝트가 Boot 4로
+  올라간 뒤의 배포부터는 신규 마이그레이션이 자동 적용되지 않았을 가능성이 있다 — 배포 환경
+  점검 필요(별도 이슈 등록은 아직 안 함).
