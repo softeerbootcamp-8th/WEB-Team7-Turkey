@@ -51,6 +51,7 @@ class DeliveryTimeoutServiceTest {
     private CustomerPaymentService customerPaymentService;
 
     /** #444 CANCELED SSE 발행용. */
+    /** #450: 자동 취소된 배송의 SSE 연결을 정리한다. 발행 자체는 아래 전용 테스트가 검증한다. */
     @Mock
     private TrackingPublisher trackingPublisher;
 
