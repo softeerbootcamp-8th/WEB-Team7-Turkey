@@ -18,6 +18,10 @@
 #
 # 정리: 다 쓴 뒤에는 backend/loadtest/cleanup-seed.sql 을 운영 DB에도 그대로 실행하면 된다
 #   (login_id LIKE 'lt\_%' 조건이라 로컬용과 동일하게 동작).
+#
+# fare_policy: 활성 요금 정책은 더 이상 Flyway(V19)가 보장하지 않는다(#373, PR #460 리뷰 반영 —
+#   운영 확정 정책이 아니라 별도 seed로 분리). 이 스크립트가 seed-fare-policy.sql을 계정 시딩보다
+#   먼저 실행해 존재를 보장한다.
 
 set -euo pipefail
 
@@ -35,6 +39,7 @@ PASSWORD_HASH='$2a$10$4d5LgvscIbN0TaAuQ9Afk.0HA9JxCDlL6f02CC9k/3Vtiq4EBXMA6'
 
 {
   echo "SET @hash = '${PASSWORD_HASH}';"
+  cat "${SCRIPT_DIR}/seed-fare-policy.sql"
   echo "SELECT fare_policy_id, base_fare, distance_unit_meters, distance_unit_fare"
   echo "  INTO @fp_id, @base, @unit_m, @unit_fare FROM fare_policy WHERE status='ACTIVE' LIMIT 1;"
 
@@ -79,12 +84,12 @@ WHERE c.login_id = '${cust}';
 SQL
   done
 
-  cat <<'SQL'
+  cat <<SQL
 SELECT o.order_id, c.login_id, c.password_hash IS NOT NULL, r.login_id
 FROM delivery_order o
 JOIN member c ON c.member_id = o.customer_id
 JOIN member r ON r.member_id = o.assigned_rider_id
-WHERE c.name LIKE 'lt cust %'
+WHERE c.login_id LIKE 'lt\_cust\_${RUN_ID}\_%'
 ORDER BY o.order_id;
 SQL
 } > "$SQL_FILE"

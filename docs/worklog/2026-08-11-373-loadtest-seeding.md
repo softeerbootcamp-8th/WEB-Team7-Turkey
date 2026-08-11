@@ -159,6 +159,17 @@ k6 run seed.js 검증(임시 인스턴스, N=2):
 - k6 arm 스크립트(SSE/Polling)에서 `seed.js`를 실제로 import해 쓰는 통합 시나리오는 아직 없다
   (arm 스크립트 자체가 미작성이라 이 시딩 모듈 단독으로만 검증했다).
 
+## 추가 반영 (PR #460 리뷰)
+
+- **`fare_policy` 조달 방법을 (B) Flyway 마이그레이션에서 (A) 별도 SQL 파일로 뒤집었다.** githings
+  리뷰: 이 값이 "확정된 운영 기본 정책"인지 먼저 확인해야 하고, 테스트·부하테스트용이면 공용
+  Flyway가 아니라 별도 seed로 분리하는 게 맞다는 지적을 수용(사람 확인). codex가 지적한
+  "기존 INACTIVE v1과 충돌" 문제(WHERE NOT EXISTS가 활성 정책만 보고 버전 UNIQUE는 못 막음)도
+  Flyway 경로 자체를 없애면서 같이 해소됐다.
+- V19 마이그레이션은 삭제했다(main/dev에 머지된 적 없어 되돌리기 문제 없음). 대체:
+  `backend/loadtest/seed-fare-policy.sql` — 로컬은 직접 실행, EC2는 `ec2-seed.sh`가 계정 시딩
+  전에 자동 실행.
+
 ## 새로 생긴 미결 사항
 
 - **배포 환경(EC2)의 Flyway 자동 적용 여부를 확인해야 한다.** `spring-boot-starter-flyway`

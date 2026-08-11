@@ -23,8 +23,9 @@
 //    /api/terms 같은 조회 API가 생기는 대로 갱신해야 한다(#373 관련 미결).
 // 3. MockPaymentGateway.confirm 은 authToken 이 "mock_decline" 이 아니면 무조건 승인한다.
 //
-// fare_policy 활성 정책은 V19 마이그레이션(#373)이 항상 보장한다 — 이 스크립트는 그 존재를
-// 전제하고 별도로 만들지 않는다.
+// fare_policy 활성 정책은 이 스크립트가 만들지 않는다 — 실행 전에 별도로 보장해야 한다
+// (PR #460 리뷰 반영으로 Flyway V19에서 뺐다, #373). 로컬 DB는
+// backend/loadtest/seed-fare-policy.sql을 먼저 실행해 둔다.
 
 import http from 'k6/http';
 
@@ -39,7 +40,7 @@ const CHARGE_AMOUNT = 100000; // MIN_CHARGE_AMOUNT~MAX_CHARGE_AMOUNT, CHARGE_AMO
 const ITEM_TYPE = 'DOCUMENT';
 
 // 서울 내 좌표 두 쌍(강남 → 송파, backend/loadtest/smoke.js 와 동일 좌표) — 최대 배송거리(30km,
-// V19)를 넘지 않는 임의의 고정 경로. 여러 쌍을 만들 때 좌표를 다양화하지 않는 이유는 #259 의
+// seed-fare-policy.sql)를 넘지 않는 임의의 고정 경로. 여러 쌍을 만들 때 좌표를 다양화하지 않는 이유는 #259 의
 // 종속변인(지연·용량)이 좌표가 아니라 동시 연결 수 N 에 달려 있어서다.
 const PICKUP = { roadAddress: '서울 강남구 테헤란로 152', detailAddress: '5층', postalCode: '06236', latitude: 37.5006, longitude: 127.0366 };
 const DESTINATION = { roadAddress: '서울 송파구 올림픽로 300', detailAddress: '1동', postalCode: '05551', latitude: 37.5145, longitude: 127.1059 };
