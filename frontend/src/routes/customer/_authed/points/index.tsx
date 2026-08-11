@@ -1,56 +1,101 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
+import { useGetCustomerPointBalance } from '@/api/generated/customer-point/customer-point'
+import { formatCustomerPoints, getCustomerPointErrorMessage } from './-customerPoints'
+import { PointHistoryTable } from './-components/PointHistoryTable'
 
-export const Route = createFileRoute('/customer/_authed/points/')({ component: PointsUse })
+export const Route = createFileRoute('/customer/_authed/points/')({ component: CustomerPoints })
 
-function PointsUse() {
+function CustomerPoints() {
+  const router = useRouter()
+  const balanceQuery = useGetCustomerPointBalance({
+    query: { retry: false, refetchOnMount: 'always' },
+  })
+  const balance = balanceQuery.data?.data?.balance
+  const hasInvalidBalance = balanceQuery.isSuccess && balance == null
+
   return (
-    <>
-      {/* TopAppBar Semantic Mapping: Intent -> Transactional (Point Recharge context, but usage screen) */}
-      {/* Content logic: Keep it minimal. */}
-      <header className="w-full top-0 sticky bg-surface dark:bg-on-surface flex items-center px-container-margin h-14 w-full z-10 flat no shadows">
-        <button aria-label="Go back" className="flex items-center justify-center w-10 h-10 -ml-2 text-primary dark:text-primary-fixed hover:opacity-80 transition-opacity active:scale-95 transition-transform">
-          <span className="material-symbols-outlined">arrow_back</span>
+    <div className="mx-auto flex min-h-screen w-full max-w-md flex-col bg-surface text-on-surface shadow-sm">
+      <header className="sticky top-0 z-20 flex h-16 items-center border-b border-outline-variant bg-surface-container-lowest px-4">
+        <button
+          type="button"
+          aria-label="고객 홈으로 돌아가기"
+          onClick={() => void router.navigate({ to: '/customer' })}
+          className="flex h-11 w-11 items-center justify-center rounded-full text-on-surface transition-colors hover:bg-surface-container-low"
+        >
+          <span aria-hidden="true" className="material-symbols-outlined">arrow_back</span>
         </button>
-        <h1 className="ml-2 font-headline-md text-headline-md font-bold text-on-surface dark:text-surface">포인트 사용</h1>
+        <h1 className="flex-1 text-center text-headline-md font-bold">포인트</h1>
+        <button
+          type="button"
+          aria-label="포인트 잔액 다시 불러오기"
+          onClick={() => void balanceQuery.refetch()}
+          disabled={balanceQuery.isFetching}
+          className="flex h-11 w-11 items-center justify-center rounded-full text-on-surface transition-colors hover:bg-surface-container-low disabled:opacity-50"
+        >
+          <span
+            aria-hidden="true"
+            className={`material-symbols-outlined ${balanceQuery.isFetching ? 'animate-spin' : ''}`}
+          >
+            refresh
+          </span>
+        </button>
       </header>
-      <main className="flex-1 px-container-margin pt-lg pb-32">
-        {/* Current Points Card */}
-        <section className="bg-surface-container-lowest rounded-xl p-md shadow-sm border border-outline-variant/30 mb-lg flex justify-between items-center">
-          <div>
-            <p className="font-body-md text-body-md text-secondary">보유 포인트</p>
-            <p className="font-headline-lg text-headline-lg text-on-surface">500 <span className="font-headline-sm text-headline-sm text-secondary">P</span></p>
-          </div>
-          <div className="w-12 h-12 bg-primary-container rounded-full flex items-center justify-center">
-            <span className="material-symbols-outlined text-on-primary-container">payments</span>
-          </div>
-        </section>
-        {/* Input Area (Insufficient Balance State) */}
-        <section className="bg-surface-container-lowest rounded-xl p-md shadow-sm border border-outline-variant/30 mb-lg">
-          <label className="block font-label-lg text-label-lg text-on-surface mb-sm" htmlFor="point-input">사용할 포인트 입력</label>
-          <div className="relative">
-            <input className="w-full h-[52px] px-md rounded-xl border border-error bg-error-container/10 font-body-lg text-body-lg text-on-surface focus:outline-none focus:ring-2 focus:ring-error focus:border-transparent transition-all" disabled id="point-input" placeholder="0" type="number" defaultValue="1500" />
-            <span className="absolute right-md top-1/2 -translate-y-1/2 font-body-lg text-body-lg text-secondary">P</span>
-          </div>
-          {/* Error Message & Chip */}
-          <div className="mt-sm flex items-start gap-xs">
-            <span className="material-symbols-outlined text-error text-[18px]">error</span>
-            <div>
-              <p className="font-body-md text-body-md text-error">포인트가 부족합니다. 충전 후 이용해주세요.</p>
-              <p className="font-label-sm text-label-sm text-secondary mt-1">부족한 금액: 1,000 P</p>
+
+      <main aria-label="고객 포인트" className="flex flex-1 flex-col bg-surface-container-low">
+        <section className="bg-surface-container-lowest px-5 py-6">
+          <div className="rounded-2xl bg-primary-container p-5 text-on-primary-container">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-body-md">보유 포인트</p>
+                {balanceQuery.isPending ? (
+                  <p role="status" className="mt-2 text-body-lg">잔액을 불러오고 있어요…</p>
+                ) : balanceQuery.isError || hasInvalidBalance ? (
+                  <div className="mt-2">
+                    <p role="alert" className="text-body-md font-bold text-error">
+                      {balanceQuery.isError
+                        ? getCustomerPointErrorMessage(
+                            balanceQuery.error,
+                            '포인트 잔액을 불러오지 못했습니다.',
+                          )
+                        : '포인트 잔액을 불러오지 못했습니다.'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void balanceQuery.refetch()}
+                      className="mt-3 rounded-lg bg-surface-container-lowest px-4 py-2 text-label-md font-bold text-on-surface"
+                    >
+                      다시 시도
+                    </button>
+                  </div>
+                ) : (
+                  <p className="mt-1 text-display-sm font-bold tracking-tight">
+                    {formatCustomerPoints(balance)}
+                  </p>
+                )}
+              </div>
+              <span
+                aria-hidden="true"
+                className="material-symbols-outlined flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface-container-lowest/80 text-2xl text-primary"
+              >
+                account_balance_wallet
+              </span>
             </div>
+            <p className="mt-4 text-label-md opacity-75">표시된 잔액은 조회 시점 기준입니다.</p>
           </div>
-        </section>
-        {/* Action Button (Recharge) */}
-        <section className="mt-xl">
-          <button className="w-full h-[48px] bg-primary-container text-on-primary-container font-label-lg text-label-lg rounded-xl flex items-center justify-center gap-sm active:scale-[0.98] transition-transform shadow-sm">
-            <span className="material-symbols-outlined">add_circle</span>
+
+          <Link
+            to="/customer/points/charge"
+            className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary-container text-label-lg font-bold text-on-primary-container transition-transform active:scale-[0.98]"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined">add_circle</span>
             포인트 충전하기
-          </button>
-          <button className="w-full h-[48px] bg-surface-container-lowest border border-outline-variant text-on-surface font-label-lg text-label-lg rounded-xl flex items-center justify-center mt-sm active:scale-[0.98] transition-transform" disabled>
-            결제하기
-          </button>
+          </Link>
         </section>
+
+        <div className="mt-2">
+          <PointHistoryTable />
+        </div>
       </main>
-    </>
+    </div>
   )
 }
