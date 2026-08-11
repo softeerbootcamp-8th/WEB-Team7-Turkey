@@ -33,6 +33,7 @@ import type {
   GetRiderPointTransactionsParams,
   GetRiderSettlementsParams,
   GetRiderWithdrawalsParams,
+  WithdrawalProcessRequest,
   WithdrawalRequest
 } from '../turkeyQuickDeliveryAPI.schemas';
 
@@ -232,7 +233,7 @@ export function useGetRiderSettlements<TData = Awaited<ReturnType<typeof getRide
 
 
 /**
- * 라이더 지갑의 원장을 최신순으로 조회한다. 라이더에게 나타나는 유형은 SETTLEMENT·WITHDRAWAL·WITHDRAWAL_REFUND 다.
+ * 라이더 지갑의 원장을 최신순으로 조회한다. 라이더에게 나타나는 유형은 SETTLEMENT·WITHDRAWAL·WITHDRAWAL_REFUND 다. WITHDRAWAL·WITHDRAWAL_REFUND 행은 withdrawalStatus 로 그 출금이 대기 중(PENDING)인지 완료(COMPLETED)됐는지 구분할 수 있다(#90 후속) — 화면이 항상 같은 라벨로 보여 대기 중과 완료를 구분하지 못했던 문제를 이 필드로 고친다.
  * @summary 포인트 거래 내역
  */
 export const getRiderPointTransactions = (
@@ -481,6 +482,72 @@ export const useRequestRiderWithdrawal = <TError = ErrorType<ApiResponseWithdraw
       > => {
 
       const mutationOptions = getRequestRiderWithdrawalMutationOptions(options);
+
+      return useMutation(mutationOptions, queryClient);
+    }
+    /**
+ * 모의 은행 이체(PayoutGateway)를 호출해 PENDING 인 출금을 COMPLETED 또는 FAILED 로 확정한다 — 결제 승인(PaymentGateway)과 같은 구조다. 성공·실패는 이체를 받는 쪽(모의 게이트웨이)이 판단하므로 요청은 결제창을 통과해 받아 온 것과 같은 불투명한 토큰만 보낸다. 실패 시 선차감했던 포인트를 같은 트랜잭션에서 복구하고 WITHDRAWAL_REFUND 원장을 남긴다. 이미 처리된 요청을 다시 처리하려 하면 409 로 거부한다(멱등 응답이 아니다 — 재처리는 오류다).
+ * @summary 출금 모의 처리
+ */
+export const processRiderWithdrawal = (
+    withdrawalId: number,
+    withdrawalProcessRequest: BodyType<WithdrawalProcessRequest>,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+      
+      
+      return customInstance<ApiResponseWithdrawalResponse>(
+      {url: `/api/rider/points/withdrawals/${withdrawalId}/process`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: withdrawalProcessRequest, signal
+    },
+      options);
+    }
+  
+
+
+export const getProcessRiderWithdrawalMutationOptions = <TError = ErrorType<ApiResponseWithdrawalResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof processRiderWithdrawal>>, TError,{withdrawalId: number;data: BodyType<WithdrawalProcessRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof processRiderWithdrawal>>, TError,{withdrawalId: number;data: BodyType<WithdrawalProcessRequest>}, TContext> => {
+
+const mutationKey = ['processRiderWithdrawal'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof processRiderWithdrawal>>, {withdrawalId: number;data: BodyType<WithdrawalProcessRequest>}> = (props) => {
+          const {withdrawalId,data} = props ?? {};
+
+          return  processRiderWithdrawal(withdrawalId,data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ProcessRiderWithdrawalMutationResult = NonNullable<Awaited<ReturnType<typeof processRiderWithdrawal>>>
+    export type ProcessRiderWithdrawalMutationBody = BodyType<WithdrawalProcessRequest>
+    export type ProcessRiderWithdrawalMutationError = ErrorType<ApiResponseWithdrawalResponse>
+
+    /**
+ * @summary 출금 모의 처리
+ */
+export const useProcessRiderWithdrawal = <TError = ErrorType<ApiResponseWithdrawalResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof processRiderWithdrawal>>, TError,{withdrawalId: number;data: BodyType<WithdrawalProcessRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof processRiderWithdrawal>>,
+        TError,
+        {withdrawalId: number;data: BodyType<WithdrawalProcessRequest>},
+        TContext
+      > => {
+
+      const mutationOptions = getProcessRiderWithdrawalMutationOptions(options);
 
       return useMutation(mutationOptions, queryClient);
     }

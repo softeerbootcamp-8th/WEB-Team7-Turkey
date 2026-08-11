@@ -7,6 +7,8 @@ import {
   getPointErrorMessage,
   getPointTransactionLabel,
   getSignedPointAmount,
+  getWithdrawalStatusClassName,
+  getWithdrawalStatusLabel,
   pointFilterOptions,
   shiftPointMonth,
   type PointFilter,
@@ -31,10 +33,24 @@ function RiderPoints() {
   const [activeTab, setActiveTab] = useState<PointInfoTab>('charge-account')
   const [withdrawalOpen, setWithdrawalOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [processingWithdrawalId, setProcessingWithdrawalId] = useState<number | null>(null)
   const points = useRiderPoints(selectedMonth, filter)
   const isLoading = points.balanceQuery.isPending || points.transactionsQuery.isPending
   const error = points.balanceQuery.error ?? points.transactionsQuery.error
   const monthlyTotal = points.transactions.reduce((sum, item) => sum + getSignedPointAmount(item), 0)
+
+  async function handleProcess(withdrawalId: number, approve: boolean) {
+    setProcessingWithdrawalId(withdrawalId)
+    setNotice(null)
+    try {
+      await points.processWithdrawal(withdrawalId, approve)
+      setNotice(approve ? '모의 송금을 완료 처리했습니다.' : '모의 송금을 실패 처리하고 포인트를 복구했습니다.')
+    } catch (processError) {
+      setNotice(getPointErrorMessage(processError))
+    } finally {
+      setProcessingWithdrawalId(null)
+    }
+  }
 
   return (
     <main aria-label="라이더 포인트 내역" className="min-h-screen bg-background pb-20 text-on-background">
@@ -186,24 +202,67 @@ function RiderPoints() {
             >
               {points.transactions.map((item, index) => {
                 const signedAmount = getSignedPointAmount(item)
+                const withdrawalStatusLabel = getWithdrawalStatusLabel(item.withdrawalStatus)
+                const canProcess =
+                  item.transactionType === 'WITHDRAWAL' &&
+                  item.withdrawalStatus === 'PENDING' &&
+                  item.withdrawalId != null
+                const isProcessingThis =
+                  points.processMutation.isPending && processingWithdrawalId === item.withdrawalId
                 return (
                   <li
                     key={item.transactionId ?? `${item.createdAt}-${index}`}
-                    className="flex items-center justify-between gap-md py-md"
+                    className="flex flex-col gap-2 py-md"
                   >
-                    <div className="min-w-0">
-                      <p className="font-label-lg text-on-surface">{getPointTransactionLabel(item.transactionType)}</p>
-                      <time className="mt-1 block font-body-md text-secondary">
-                        {formatPointTransactionDate(item.createdAt)}
-                      </time>
+                    <div className="flex items-center justify-between gap-md">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-label-lg text-on-surface">{getPointTransactionLabel(item.transactionType)}</p>
+                          {withdrawalStatusLabel && (
+                            <span
+                              className={`rounded-full px-2 py-0.5 font-label-sm ${getWithdrawalStatusClassName(item.withdrawalStatus)}`}
+                            >
+                              {withdrawalStatusLabel}
+                            </span>
+                          )}
+                        </div>
+                        <time className="mt-1 block font-body-md text-secondary">
+                          {formatPointTransactionDate(item.createdAt)}
+                        </time>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className={`font-label-lg ${signedAmount > 0 ? 'text-tertiary' : 'text-on-surface'}`}>
+                          {signedAmount > 0 ? '+' : ''}
+                          {formatPoints(signedAmount)}
+                        </p>
+                        <p className="mt-1 font-label-sm text-secondary">잔액 {formatPoints(item.balanceAfter)}</p>
+                      </div>
                     </div>
-                    <div className="shrink-0 text-right">
-                      <p className={`font-label-lg ${signedAmount > 0 ? 'text-tertiary' : 'text-on-surface'}`}>
-                        {signedAmount > 0 ? '+' : ''}
-                        {formatPoints(signedAmount)}
-                      </p>
-                      <p className="mt-1 font-label-sm text-secondary">잔액 {formatPoints(item.balanceAfter)}</p>
-                    </div>
+                    {canProcess && (
+                      <div className="flex items-center gap-2">
+                        <span className="font-label-sm text-secondary">
+                          {isProcessingThis ? '처리 중…' : '(모의 처리 — 실 은행 API 연동 전 임시)'}
+                        </span>
+                        <div className="ml-auto flex gap-2">
+                          <button
+                            type="button"
+                            disabled={points.processMutation.isPending}
+                            onClick={() => void handleProcess(item.withdrawalId!, true)}
+                            className="min-h-8 rounded-lg bg-tertiary-container px-3 font-label-sm text-on-tertiary-container disabled:opacity-40"
+                          >
+                            모의 승인
+                          </button>
+                          <button
+                            type="button"
+                            disabled={points.processMutation.isPending}
+                            onClick={() => void handleProcess(item.withdrawalId!, false)}
+                            className="min-h-8 rounded-lg bg-error-container px-3 font-label-sm text-on-error-container disabled:opacity-40"
+                          >
+                            모의 거절
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </li>
                 )
               })}

@@ -37,7 +37,9 @@ class RiderPaymentServiceTest {
         riderPaymentService = new RiderPaymentService(pointWalletRepository,
                 mock(com.turkey.quick.rider.repository.RiderPayoutAccountRepository.class),
                 mock(com.turkey.quick.rider.repository.RiderWithdrawalRepository.class),
-                mock(com.turkey.quick.payment.repository.PointTransactionRepository.class));
+                mock(com.turkey.quick.payment.repository.PointTransactionRepository.class),
+                mock(PayoutGateway.class),
+                mock(WithdrawalProcessor.class));
     }
 
     private PointWallet walletWith(long balance) {

@@ -7,17 +7,21 @@ import com.turkey.quick.payment.domain.PointWallet;
 import com.turkey.quick.payment.dto.PointBalanceResponse;
 import com.turkey.quick.payment.dto.PointTransactionListResponse;
 import com.turkey.quick.payment.dto.PointTransactionResponse;
+import com.turkey.quick.payment.dto.WithdrawalProcessRequest;
 import com.turkey.quick.payment.dto.WithdrawalRequest;
 import com.turkey.quick.payment.dto.WithdrawalResponse;
 import com.turkey.quick.payment.repository.PointTransactionRepository;
 import com.turkey.quick.payment.repository.PointWalletRepository;
 import com.turkey.quick.rider.domain.RiderPayoutAccount;
 import com.turkey.quick.rider.domain.RiderWithdrawal;
+import com.turkey.quick.rider.domain.WithdrawalStatus;
 import com.turkey.quick.rider.repository.RiderPayoutAccountRepository;
 import com.turkey.quick.rider.repository.RiderWithdrawalRepository;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -46,6 +50,8 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class RiderPaymentService {
 
+    private static final Logger log = LoggerFactory.getLogger(RiderPaymentService.class);
+
     /**
      * 출금 최소 금액(사람 확인, #68). 이보다 적은 금액은 출금 요청 자체를 만들지 않는다.
      * 충전 최소 단위(#32, 1,000원)와는 별개 정책이라 값을 공유하지 않는다 — 출금은 은행 이체
@@ -57,6 +63,11 @@ public class RiderPaymentService {
     private final RiderPayoutAccountRepository riderPayoutAccountRepository;
     private final RiderWithdrawalRepository riderWithdrawalRepository;
     private final PointTransactionRepository pointTransactionRepository;
+
+    /** 실 은행 API 를 붙이면 이 빈만 갈아끼운다. MVP 는 {@code MockPayoutGateway}. */
+    private final PayoutGateway payoutGateway;
+
+    private final WithdrawalProcessor withdrawalProcessor;
 
     /**
      * 출금 가능 포인트 잔액 조회(이슈 처리 흐름 ②③).
@@ -127,7 +138,15 @@ public class RiderPaymentService {
      * 소스 FK는 유형별로 정확히 하나만 채워진다(ck_point_transaction_source). 나머지는 lazy 프록시라도
      * null이면 그대로 null이고, non-null이면 식별자 접근만으로는 추가 조회가 일어나지 않는다.
      */
+    /**
+     * WITHDRAWAL·WITHDRAWAL_REFUND 행은 {@code withdrawalStatus}도 함께 채운다(#90 후속) — 화면이
+     * "포인트 출금"이라는 라벨만으로는 대기 중인지 완료됐는지 구분하지 못했던 문제를 고치기 위해서다.
+     * {@code getRiderWithdrawal()}에 접근해도 추가 쿼리가 나가지 않는다 — 호출자
+     * ({@link #getPointTransactions})가 이미 fetch join 으로 함께 읽어 왔다
+     * ({@code PointTransactionRepository} 주석 참조).
+     */
     private PointTransactionResponse toResponse(PointTransaction transaction) {
+        RiderWithdrawal withdrawal = transaction.getRiderWithdrawal();
         return new PointTransactionResponse(
                 transaction.getId(),
                 transaction.getTransactionType(),
@@ -137,7 +156,8 @@ public class RiderPaymentService {
                 transaction.getDeliveryOrder() != null ? transaction.getDeliveryOrder().getId() : null,
                 transaction.getPointCharge() != null ? transaction.getPointCharge().getId() : null,
                 transaction.getRiderSettlement() != null ? transaction.getRiderSettlement().getId() : null,
-                transaction.getRiderWithdrawal() != null ? transaction.getRiderWithdrawal().getId() : null,
+                withdrawal != null ? withdrawal.getId() : null,
+                withdrawal != null ? withdrawal.getStatus() : null,
                 transaction.getCreatedAt());
     }
 
@@ -212,6 +232,80 @@ public class RiderPaymentService {
                 request.requestKey(), withdrawal));
 
         return toResponse(withdrawal);
+    }
+
+    /**
+     * 출금 모의 처리(RIDE-POINT-006, #90). {@code CustomerPaymentService#confirmPointCharge} 와
+     * 같은 구조다 — 실제 은행 이체 API 를 부르는 것처럼 {@link PayoutGateway} 를 거쳐 결과를 받고,
+     * 그 결과로 PENDING → COMPLETED/FAILED 를 확정한다. 이 메서드에는 {@code @Transactional} 이
+     * 없다: 트랜잭션 안에서 외부 호출을 하면 응답을 기다리는 동안 커넥션과 행 잠금을 함께 쥔다.
+     *
+     * <p>흐름은 세 구간이다.
+     * <ol>
+     *   <li><b>사전 검증</b>(잠금 없는 읽기) — 소유·상태. 명백한 오류를 이체 호출 전에 걸러낸다.
+     *       존재하지 않는 요청과 타인의 요청은 같은 404 로 응답한다({@code RiderDeliveryHistoryService},
+     *       #71 과 같은 판단).
+     *   <li><b>이체 실행</b>(트랜잭션 밖) — 성공·실패는 {@link PayoutGateway} 가 결정한다. 호출자가
+     *       "성공/실패"를 직접 통보하지 않는다({@code MockPayoutGateway} 주석 참조).
+     *   <li><b>이체 식별자 선커밋</b> — {@link WithdrawalProcessor#recordTransferReceived}(V19).
+     *       뒤가 실패해도 "이체는 됐다"는 사실이 DB 에 남는다({@code PointChargeApprover} 와 동일).
+     *   <li><b>확정</b> — {@link WithdrawalProcessor#complete}·{@link WithdrawalProcessor#fail} 이
+     *       상태·(실패 시)잔액·원장을 한 트랜잭션에 반영한다. 여기서 잠금을 다시 잡고 PENDING 을
+     *       재확인하므로, 중복 처리 요청이 동시에 들어와도 하나만 반영된다(처리 흐름 ②③).
+     * </ol>
+     *
+     * <p><b>TIMEOUT 은 확정하지 않는다.</b> 이체가 성사됐는지 알 수 없는 상태에서 FAILED 로 확정하면
+     * 실제로는 이체된 건의 포인트를 다시 내주는 이중 지급이 될 수 있다({@code confirmPointCharge}
+     * 와 같은 판단) — PENDING 을 유지하고 502 로 응답한다.
+     *
+     * @param riderId      세션에서 확인된 라이더 식별자
+     * @param withdrawalId 처리할 출금 식별자
+     * @param request      모의 이체 결과를 통제하는 토큰
+     * @throws BusinessException 요청 없음/타인 것 (→ 404), 이미 처리됨 (→ 409), 이체 결과 불명 (→ 502)
+     */
+    public WithdrawalResponse processWithdrawal(Long riderId, Long withdrawalId,
+                                                 WithdrawalProcessRequest request) {
+        RiderWithdrawal withdrawal = riderWithdrawalRepository
+                .findByIdAndRider_MemberId(withdrawalId, riderId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
+                        "존재하지 않는 출금 요청입니다."));
+        if (withdrawal.getStatus() != WithdrawalStatus.PENDING) {
+            throw new BusinessException(HttpStatus.CONFLICT,
+                    "이미 처리된 출금 요청입니다. status=" + withdrawal.getStatus());
+        }
+
+        PayoutGateway.Transfer transfer;
+        try {
+            transfer = payoutGateway.transfer(new PayoutGateway.TransferCommand(
+                    withdrawal.getRequestKey(),
+                    withdrawal.getBankCodeSnapshot(),
+                    withdrawal.getMaskedAccountNumberSnapshot(),
+                    withdrawal.getAccountHolderNameSnapshot(),
+                    withdrawal.getAmount(),
+                    request.authToken()));
+        } catch (PayoutGateway.PayoutGatewayException e) {
+            if (e.getFailureType() == PayoutGateway.PayoutGatewayException.FailureType.TIMEOUT) {
+                throw new BusinessException(HttpStatus.BAD_GATEWAY,
+                        "송금 결과를 확인할 수 없습니다. 잠시 후 출금 내역을 확인해 주세요.");
+            }
+            return toResponse(
+                    withdrawalProcessor.fail(withdrawalId, riderId, failureReasonOf(e)));
+        }
+
+        log.info("[출금-모의처리] 이체 성공 withdrawalId={}, providerTransferKey={}",
+                withdrawalId, transfer.providerTransferKey());
+
+        // 뒤가 실패해도 이체 사실이 남도록 식별자만 먼저 커밋한다.
+        withdrawalProcessor.recordTransferReceived(withdrawalId, riderId, transfer.providerTransferKey());
+
+        return toResponse(withdrawalProcessor.complete(withdrawalId, riderId));
+    }
+
+    private String failureReasonOf(PayoutGateway.PayoutGatewayException e) {
+        String reason = e.getProviderErrorCode() == null
+                ? e.getMessage()
+                : e.getProviderErrorCode() + ": " + e.getMessage();
+        return reason.length() > 255 ? reason.substring(0, 255) : reason;
     }
 
     private WithdrawalResponse toResponse(RiderWithdrawal withdrawal) {

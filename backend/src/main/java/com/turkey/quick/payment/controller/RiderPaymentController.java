@@ -6,6 +6,7 @@ import com.turkey.quick.payment.dto.PointBalanceResponse;
 import com.turkey.quick.payment.dto.PointTransactionListResponse;
 import com.turkey.quick.payment.dto.SettlementListResponse;
 import com.turkey.quick.payment.dto.WithdrawalListResponse;
+import com.turkey.quick.payment.dto.WithdrawalProcessRequest;
 import com.turkey.quick.payment.dto.WithdrawalRequest;
 import com.turkey.quick.payment.dto.WithdrawalResponse;
 import com.turkey.quick.payment.service.RiderPaymentService;
@@ -15,6 +16,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -74,6 +76,19 @@ public class RiderPaymentController implements RiderPointApi {
 
             @Valid @RequestBody WithdrawalRequest request) {
         return ApiResponse.ok(riderPaymentService.requestWithdrawal(rider.memberId(), request));
+    }
+
+    @Override
+    @PostMapping("/withdrawals/{withdrawalId}/process")
+    public ApiResponse<WithdrawalResponse> processWithdrawal(
+            @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
+            AuthenticatedRider rider,
+
+            @PathVariable Long withdrawalId,
+
+            @Valid @RequestBody WithdrawalProcessRequest request) {
+        return ApiResponse.ok(
+                riderPaymentService.processWithdrawal(rider.memberId(), withdrawalId, request));
     }
 
     @Override

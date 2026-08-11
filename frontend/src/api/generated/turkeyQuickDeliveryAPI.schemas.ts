@@ -835,6 +835,23 @@ export interface FareQuoteResponse {
   fare?: FareBreakdownResponse;
 }
 
+/**
+ * 발행 시점의 배송 상태. SSE 팬아웃에서만 채워지고, Redis 최신 위치에서 복원한 값에는 없다(null)
+ */
+export type LocationPayloadStatus = typeof LocationPayloadStatus[keyof typeof LocationPayloadStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const LocationPayloadStatus = {
+  WAITING: 'WAITING',
+  ASSIGNED: 'ASSIGNED',
+  MOVING_TO_PICKUP: 'MOVING_TO_PICKUP',
+  PICKED_UP: 'PICKED_UP',
+  DELIVERING: 'DELIVERING',
+  COMPLETED: 'COMPLETED',
+  CANCELED: 'CANCELED',
+} as const;
+
 export interface LocationPayload {
   /** 측정 정확도(미터). 없으면 null */
   accuracyMeters?: number;
@@ -844,6 +861,8 @@ export interface LocationPayload {
   longitude?: number;
   /** 측정 시각(UTC) */
   measuredAt?: string;
+  /** 발행 시점의 배송 상태. SSE 팬아웃에서만 채워지고, Redis 최신 위치에서 복원한 값에는 없다(null) */
+  status?: LocationPayloadStatus;
   /** 프레임 판별자, 항상 "location" */
   type?: string;
 }
@@ -1124,6 +1143,19 @@ export const PointTransactionResponseTransactionType = {
 } as const;
 
 /**
+ * 연관 출금의 현재 상태(WITHDRAWAL·WITHDRAWAL_REFUND 만). WITHDRAWAL 행은 PENDING(처리 대기)·COMPLETED(송금 완료) 로 갈릴 수 있고, WITHDRAWAL_REFUND 행은 그 출금이 실패해 포인트가 돌아왔다는 뜻이라 항상 FAILED 다.
+ */
+export type PointTransactionResponseWithdrawalStatus = typeof PointTransactionResponseWithdrawalStatus[keyof typeof PointTransactionResponseWithdrawalStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PointTransactionResponseWithdrawalStatus = {
+  PENDING: 'PENDING',
+  COMPLETED: 'COMPLETED',
+  FAILED: 'FAILED',
+} as const;
+
+/**
  * 포인트 거래 내역 항목
  */
 export interface PointTransactionResponse {
@@ -1147,6 +1179,8 @@ export interface PointTransactionResponse {
   transactionType?: PointTransactionResponseTransactionType;
   /** 연관 출금 식별자(WITHDRAWAL·WITHDRAWAL_REFUND 만) */
   withdrawalId?: number;
+  /** 연관 출금의 현재 상태(WITHDRAWAL·WITHDRAWAL_REFUND 만). WITHDRAWAL 행은 PENDING(처리 대기)·COMPLETED(송금 완료) 로 갈릴 수 있고, WITHDRAWAL_REFUND 행은 그 출금이 실패해 포인트가 돌아왔다는 뜻이라 항상 FAILED 다. */
+  withdrawalStatus?: PointTransactionResponseWithdrawalStatus;
 }
 
 /**
@@ -1756,6 +1790,18 @@ export interface WithdrawalListResponse {
   size?: number;
   /** 전체 건수 */
   totalElements?: number;
+}
+
+/**
+ * 출금 모의 처리 요청
+ */
+export interface WithdrawalProcessRequest {
+  /**
+   * 모의 이체 결과를 통제하는 토큰. MockPayoutGateway.DECLINE_TOKEN 이면 거절.
+   * @minLength 0
+   * @maxLength 200
+   */
+  authToken: string;
 }
 
 /**
