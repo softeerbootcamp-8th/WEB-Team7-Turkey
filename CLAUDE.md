@@ -53,7 +53,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 
 ## 기술 스택
 
-- Backend: Java 21, Spring Boot 3.4.x, Gradle, Lombok, JPA, JUnit + AssertJ, SSE, Flyway
+- Backend: Java 21, Spring Boot 4.1.0, Gradle, Lombok, JPA, JUnit + AssertJ, SSE, Flyway
 - Data: MySQL 8.4, Redis
 - Infra: AWS EC2(백엔드), S3(프론트 빌드 산출물), CloudFront(CDN), GitHub Actions
 - Frontend: React, TanStack Router(파일 기반 라우팅, `routeTree.gen.ts` 자동 생성), TanStack Query, Orval(OpenAPI 기반 API 클라이언트 자동 생성), axios, shadcn/ui
@@ -115,6 +115,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - Redis 용도: **세션 저장 / 휴대전화 인증번호(TTL) / 라이더 최신 위치(`RiderLocationRepository`, BUSY 라이더만, TTL 10분) / SSE 이벤트 팬아웃(Pub/Sub)**. 영속 원본 저장소로는 쓰지 않는다. Pub/Sub은 **SSE 팬아웃 용도로만** 쓰고 작업 큐·이벤트 버스·인스턴스 간 RPC로 확장하지 않는다.
 - **GEO 저장소(`OrderGeoRepository`, 키 `order:geo`)는 호출자가 0**이다(#342/#339). 배차 위치 검색을 라이더가 아니라 주문 픽업지 인덱싱으로 뒤집기로 확정(#101 미구현)했기 때문 — **데드 코드처럼 보이지만 의도된 상태**(주문 GEO 이슈에서 재사용).
 - Redis 배포는 **EC2에 직접 설치**(2026-07-29, 디스커션 #176). ElastiCache는 비용 문제로 제외.
+- MySQL도 **EC2에 직접 설치**(RDS 아님, 사람 확인). 인스턴스 사이징: WAS `t4g.micro`, DB `t3.micro`(사람 확인, 2026-08-11).
 - 영속성·트랜잭션 정합성이 필요한 데이터는 MySQL이 정본(사용자·배송요청·배차·상태·포인트 원장·정산·위치 이력).
 - 수평 확장 가능한 모놀리식 Spring Boot WAS(코드 수준 책임 분리, MSA 아님). **실제 배포는 단일 인스턴스.**
 - 프론트 산출물은 S3 배포 + CloudFront 제공. **CloudFront 배포 하나에 `/api/*`·SSE behavior를 붙여 EC2를 origin으로 묶었다**(#26, SSE 경로 CachingDisabled). 이 단일 오리진 전제 위에서 세션 쿠키는 `SameSite=Lax` + 프로파일별 `Secure`(`common/auth/SessionCookie`) — API를 별도 오리진으로 분리하면 `SameSite=None`으로 재검토해야 한다.
@@ -131,7 +132,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - SSE 외에 **위치 폴링 API**도 있다(`GET /api/customer/deliveries/{deliveryId}/location`, `CustomerLocationQueryService`, #311) — Redis 최신 위치를 읽는 프론트 백업 경로. SSE `subscribeTracking`은 `"connected"` 코멘트만 보내고 **위치 스냅샷 init 이벤트가 없다.**
 - 추적 스냅샷(`GET .../tracking`)과 스트림은 **같은 게이트**(`OrderStatus.isTerminal()`)를 쓴다 — **WAITING도 통과, COMPLETED·CANCELED만 409**(#401).
 - **`DeliveryOrderRepository.findWithAssignedRiderById`는 반드시 `left join fetch`**(#401/#421). WAITING은 `assigned_rider_id`가 NULL이라 inner join이면 결과가 비어 500이 난다. 같은 이유로 `DeliveryTrackingQueryService`는 라이더가 null이면 `DeliveryRouteEstimator`를 호출하지 않는다(`CustomerDeliveryTrackingE2ETest`의 WAITING 케이스가 고정).
-- **위치 전송 주기·임계값**(#81): AVAILABLE 30초 / BUSY 5초 / UNAVAILABLE 미전송, 최소 이동 20m, 최대 속도 50 m/s, 정확도 상한 100m, 허용 과거 60초·미래 5초, 정지 시 강제 전송 120초, Redis 최신 위치 TTL 10분. **이 값들은 지금 클라이언트(안드로이드)만 쓴다** — 서버측 필터(`LocationAcceptancePolicy`)는 #297에서 제거 후 안 되살렸다. 다시 만들면 두 값이 같아야 한다.
+- **위치 전송 주기·임계값**(#81, BUSY 간격은 #391로 갱신): AVAILABLE 30초 / BUSY는 고정 주기가 아니라 최소 0.5초 간격으로 "최소 이동 20m 또는 정지 120초"일 때만 전송(#391) / UNAVAILABLE 미전송. 최대 속도 50 m/s, 정확도 상한 100m, 허용 과거 60초·미래 5초, Redis 최신 위치 TTL 10분. **이 값들은 지금 클라이언트(안드로이드)만 쓴다** — 서버측 필터(`LocationAcceptancePolicy`)는 #297에서 제거 후 안 되살렸다. 다시 만들면 두 값이 같아야 한다.
 - **위치 갱신 실패 응답 경계**(#81): 좌표 범위 밖·필수 값 누락·정확도 음수·미래 시각은 400. **정확도 상한 초과·60초 초과 과거 fix는 200 + `reason`** 으로 수용·폐기(실내 측위·탭 복귀에서 정상 발생). 그래서 정확도 상한을 `@DecimalMax`로 달 수 없다(Bean Validation 위반은 400).
 - **SSE 연결 수 제한은 두지 않는다**(#317, 예전 배송당 3개 ZSET 제한 제거).
 - **끊긴 연결 탐지에는 쓰기가 최소 두 번 필요**하다(#317 실측, 첫 쓰기는 소켓 버퍼에 들어가 성공). **"한 번 보내면 정리된다"고 가정하는 테스트를 쓰지 말 것.**
@@ -235,9 +236,11 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 
 ### 인프라 (배포 구성 확정 시)
 
-- EC2 사이징, MySQL 배치 방식(EC2 직접 설치 vs RDS), Redis 단일 인스턴스 SPOF 여부.
+- Redis 단일 인스턴스 SPOF 여부.
 - 배포된 OSRM 서버(#416) 사이징이 지금 트래픽에 맞는지.
 - GitHub Actions AWS 인증 방식(OIDC + 최소 권한 IAM Role 권장)과 배포 권한 범위.
 - 라이더 콜 목록 `radiusMeters` 상한 없음(#55). 좌표 미전송 요청은 WAITING 전체를 훑어, WAITING이 크게 늘면 계약을 다시 열어야 한다.
 - 러시아워 배수(×1.3)·시간대(07-09, 18-20시)가 실측 없는 잠정값. 실제 배송 데이터로 재조정.
 - 외부 SMS 발송 연동(현재 로그만 남기는 모킹) — 벤더 선정 시 `SmsSender` 구현체 교체(#20).
+- **Flyway 자동 적용 안 되던 버그가 아직 운영에 반영 안 됨**(#373, 수정은 PR #460, 아직 dev·main 머지 전). 운영 `flyway_schema_history`는 V18(정상 — V19가 어느 브랜치에도 아직 안 들어갔으니 당연한 상태). PR #460 머지·배포 후 실제로 새 마이그레이션이 자동 적용되는지 재확인 필요.
+- **BUSY 위치 전송 서버 요청량 영향 미확인**(#391). 완료 조건에 있던 항목이 체크 안 된 채 닫혔다 — #259 부하테스트가 답해야 할 항목.

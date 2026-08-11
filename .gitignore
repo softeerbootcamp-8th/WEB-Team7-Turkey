@@ -50,3 +50,6 @@ frontend/.claude/hooks/
 !.env.example
 .my.cnf
 !.my.cnf.example
+
+# ec2-seed.sh 실행마다 새로 생기는 매니페스트(부하테스트 계정↔deliveryId 매핑). 결과물이라 커밋 안 함.
+backend/loadtest/ec2-seed-*.json
