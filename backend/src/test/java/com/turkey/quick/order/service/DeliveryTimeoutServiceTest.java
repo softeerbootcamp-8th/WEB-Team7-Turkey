@@ -11,6 +11,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.turkey.quick.location.sse.TrackingPublisher;
 import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.FareType;
 import com.turkey.quick.order.domain.OrderFareSnapshot;
@@ -48,6 +49,10 @@ class DeliveryTimeoutServiceTest {
 
     @Mock
     private CustomerPaymentService customerPaymentService;
+
+    /** #444 CANCELED SSE 발행용. */
+    @Mock
+    private TrackingPublisher trackingPublisher;
 
     private static final Long CUSTOMER_ID = 42L;
     private static final Long ORDER_ID = 100L;
@@ -129,6 +134,7 @@ class DeliveryTimeoutServiceTest {
 
             assertThat(result).isTrue();
             verify(customerPaymentService).refundForCancel(CUSTOMER_ID, stale, 5_000L);
+            verify(trackingPublisher).publishStatus(eq(ORDER_ID), eq(OrderStatus.CANCELED), any());
         }
     }
 
@@ -144,7 +150,7 @@ class DeliveryTimeoutServiceTest {
             boolean result = deliveryTimeoutService.cancelAndRefund(ORDER_ID, CUSTOMER_ID);
 
             assertThat(result).isFalse();
-            verifyNoInteractions(orderFareSnapshotRepository, customerPaymentService);
+            verifyNoInteractions(orderFareSnapshotRepository, customerPaymentService, trackingPublisher);
         }
 
         @Test
@@ -162,6 +168,7 @@ class DeliveryTimeoutServiceTest {
 
             assertThat(result).isTrue();
             verify(customerPaymentService).refundForCancel(CUSTOMER_ID, orderRef, 7_500L);
+            verify(trackingPublisher).publishStatus(eq(ORDER_ID), eq(OrderStatus.CANCELED), any());
         }
 
         @Test
