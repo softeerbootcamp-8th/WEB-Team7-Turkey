@@ -157,7 +157,8 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - **`point_transaction` 요청키 유니크는 `(request_key, transaction_type)`**(V18, #40). ORDER_USE와 ORDER_REFUND가 같은 주문 요청키를 공유하고, 그 공유가 추적 근거가 된다.
 - **`point_charge.failure_reason`은 FAILED·CANCELED 두 의미를 겸한다**(#34). 해석 시 반드시 `status`를 함께 본다.
 - 결제는 MVP에서 포인트 기반/모킹 흐름 우선(실 PG 연동 아님).
-- 라이더 출금 최소 금액은 5,000P(`RiderPaymentService.MIN_WITHDRAWAL_AMOUNT`, #68, 잠정). 계좌 미등록·잔액 부족은 둘 다 409.
+- 라이더 출금 최소 금액은 5,000P(`RiderPaymentService.MIN_WITHDRAWAL_AMOUNT`, #68, 잠정). 잔액 부족은 409.
+- **출금 계좌는 사전 등록 없이 신청 시점에 요청 바디로 받는다**(#68 계약 재변경, 2026-08-11). `rider_payout_account`(암호화 저장, #87) 방식 대신 `WithdrawalRequest`에 `bankCode`·`accountNumber`·`accountHolderName`을 함께 받고, `RiderPaymentService.maskAccountNumber`가 즉시 마스킹한 뒤 원본을 버린다. `RiderPayoutAccount`·`RiderPayoutAccountRepository`는 코드는 남아 있으나 어떤 서비스도 참조하지 않는 의도된 데드 코드다(`order:geo`와 같은 패턴, `rider_payout_account` 테이블은 V7 적용 후라 유지). 워크로그 `2026-08-11-68-withdrawal-inline-account.md` 참고.
 
 ### 경로 탐색·ETA
 
@@ -204,6 +205,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - **`#22`(아이디 찾기)가 `VerificationCodeStore.consumeVerifiedToken`을 아직 안 쓴다** — 구현 시 연결 필요.
 - **라이더 콜 상세(#57)가 물품 무게·수량을 못 준다** — `delivery_order`에 컬럼 없음(`itemType`만). 필요해지면 Flyway 마이그레이션 + 주문 생성 저장까지 함께 논의.
 - **배송요청 생성 화면의 기사님 전달사항(#205)을 저장할 컬럼·계약이 없다.** 필요하면 최대 길이·라이더 노출 시점과 함께 별도 이슈로.
+- **#219 이슈 본문이 "출금 계좌 등록·변경(#87)" 의존을 명시하지만, 출금 계약이 신청 시 계좌 입력 방식으로 바뀌면서(위 「결제·포인트」) #87이 더 이상 필요하지 않다.** #219 프론트 연동 시 이슈 본문·구현 범위 재확인 필요 — 계좌 등록 화면 대신 출금 신청 폼에 계좌 입력 필드를 넣는 방향.
 
 ### 결정이 필요한 계약·정책
 
