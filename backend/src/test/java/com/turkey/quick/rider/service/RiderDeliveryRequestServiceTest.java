@@ -24,7 +24,6 @@ import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
 import com.turkey.quick.order.service.DeliveryService;
-import com.turkey.quick.order.service.DeliveryTimeoutService;
 import com.turkey.quick.rider.auth.AuthenticatedRider;
 import com.turkey.quick.rider.domain.OperatingStatus;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestAcceptResponse;
@@ -67,10 +66,6 @@ class RiderDeliveryRequestServiceTest {
 
     @Mock
     private DeliveryService deliveryService;
-
-    /** #42 만료 정리 호출용. 기본적으로 false(만료 아님)를 돌려주면 되므로 스텁 없이 존재만 시킨다. */
-    @Mock
-    private DeliveryTimeoutService deliveryTimeoutService;
 
     @Mock
     private TrackingPublisher trackingPublisher;
