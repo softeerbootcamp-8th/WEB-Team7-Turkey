@@ -72,10 +72,6 @@ class DeliveryServiceTest {
     @Mock
     private CustomerPaymentService customerPaymentService;
 
-    /** #42 지연 만료 호출용. 이 테스트가 보는 분기와 무관하므로 별도 스텁 없이 존재만 시킨다. */
-    @Mock
-    private DeliveryTimeoutService deliveryTimeoutService;
-
     /** #444 CANCELED SSE 발행용. */
     @Mock
     private TrackingPublisher trackingPublisher;
