@@ -6,6 +6,7 @@ import {
   getSignedPointAmount,
   isSamePointMonth,
   shiftPointMonth,
+  withdrawalBankOptions,
 } from './-riderPoints'
 
 describe('포인트 내역 표시값', () => {
@@ -38,6 +39,20 @@ describe('출금 신청 입력 검증', () => {
 
   it('백엔드 계약에 맞는 계좌정보를 허용한다', () => {
     expect(getWithdrawalValidation(valid, 10_000)).toBeNull()
+  })
+
+  it('화면의 은행명을 표준 은행 코드에 매핑한다', () => {
+    expect(withdrawalBankOptions).toEqual([
+      { code: '004', name: '과거은행' },
+      { code: '088', name: '근미래은행' },
+      { code: '020', name: '아프로은행' },
+      { code: '081', name: '우와은행' },
+      { code: '011', name: '성신은행' },
+    ])
+  })
+
+  it('목록에 없는 은행 코드는 허용하지 않는다', () => {
+    expect(getWithdrawalValidation({ ...valid, bankCode: '999' }, 10_000)).toBe('은행을 선택해 주세요.')
   })
 
   it('최소 출금액과 잔액을 검증한다', () => {

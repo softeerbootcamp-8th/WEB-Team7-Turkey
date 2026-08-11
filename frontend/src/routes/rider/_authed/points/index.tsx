@@ -14,6 +14,7 @@ import {
   type PointFilter,
   type PointInfoTab,
   type WithdrawalFormValues,
+  withdrawalBankOptions,
 } from './-riderPoints'
 import { useRiderPoints } from './-useRiderPoints'
 
@@ -248,7 +249,7 @@ function PointSummary({ label, value, strong = false }: { label: string; value: 
 function InfoTabContent({ tab }: { tab: PointInfoTab }) {
   const content = {
     'charge-account': ['충전계좌', '라이더 포인트 충전계좌는 준비 중입니다.'],
-    'withdrawal-account': ['출금계좌', '출금 신청할 때 은행 코드·계좌번호·예금주명을 함께 입력합니다.'],
+    'withdrawal-account': ['출금계좌', '출금 신청할 때 은행·계좌번호·예금주명을 함께 입력합니다.'],
     guide: ['포인트 이용 가이드', '배송 완료 후 정산 포인트가 적립되며, 출금 신청 시 보유 포인트에서 차감됩니다.'],
   }[tab]
   return (
@@ -374,19 +375,22 @@ function WithdrawalDialog({
           />
           <span className="absolute right-4 top-1/2 -translate-y-1/2 font-label-lg text-secondary">P</span>
         </div>
-        <label className="mt-md block font-label-lg text-on-surface" htmlFor="withdrawal-bank-code">
-          은행 코드
+        <label className="mt-md block font-label-lg text-on-surface" htmlFor="withdrawal-bank">
+          은행
         </label>
-        <input
-          id="withdrawal-bank-code"
-          type="text"
-          maxLength={20}
+        <select
+          id="withdrawal-bank"
           value={bankCode}
           onChange={(event) => setBankCode(event.target.value)}
-          placeholder="예: 004"
-          autoComplete="off"
           className="mt-2 h-12 w-full rounded-xl border border-surface-container bg-surface-container-lowest px-4 font-body-lg focus:outline-none focus:ring-2 focus:ring-primary-container"
-        />
+        >
+          <option value="">은행을 선택해 주세요</option>
+          {withdrawalBankOptions.map((bank) => (
+            <option key={bank.code} value={bank.code}>
+              {bank.name}
+            </option>
+          ))}
+        </select>
         <label className="mt-md block font-label-lg text-on-surface" htmlFor="withdrawal-account-number">
           계좌번호
         </label>
