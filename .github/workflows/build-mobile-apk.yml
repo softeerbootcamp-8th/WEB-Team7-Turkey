@@ -3,6 +3,10 @@ name: Build mobile(android) APK
 on:
   push:
     branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'mobile/**'
+      - '.github/workflows/build-mobile-apk.yml'
   workflow_dispatch:
 
 permissions:
