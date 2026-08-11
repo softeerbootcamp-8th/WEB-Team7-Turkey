@@ -1,7 +1,7 @@
 {
   "appId": "com.example.app",
   "appName": "turkey",
-  "webDir": "/Users/admin/IdeaProjects/WEB-Team7-Turkey/frontend/dist",
+  "webDir": "../frontend/dist",
   "plugins": {
     "CapacitorHttp": {
       "enabled": true
