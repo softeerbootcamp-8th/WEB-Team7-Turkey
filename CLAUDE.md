@@ -115,6 +115,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - Redis 용도: **세션 저장 / 휴대전화 인증번호(TTL) / 라이더 최신 위치(`RiderLocationRepository`, BUSY 라이더만, TTL 10분) / SSE 이벤트 팬아웃(Pub/Sub)**. 영속 원본 저장소로는 쓰지 않는다. Pub/Sub은 **SSE 팬아웃 용도로만** 쓰고 작업 큐·이벤트 버스·인스턴스 간 RPC로 확장하지 않는다.
 - **GEO 저장소(`OrderGeoRepository`, 키 `order:geo`)는 호출자가 0**이다(#342/#339). 배차 위치 검색을 라이더가 아니라 주문 픽업지 인덱싱으로 뒤집기로 확정(#101 미구현)했기 때문 — **데드 코드처럼 보이지만 의도된 상태**(주문 GEO 이슈에서 재사용).
 - Redis 배포는 **EC2에 직접 설치**(2026-07-29, 디스커션 #176). ElastiCache는 비용 문제로 제외.
+- MySQL도 **EC2에 직접 설치**(RDS 아님, 사람 확인). 인스턴스 사이징: WAS `t4g.micro`, DB `t3.micro`(사람 확인, 2026-08-11).
 - 영속성·트랜잭션 정합성이 필요한 데이터는 MySQL이 정본(사용자·배송요청·배차·상태·포인트 원장·정산·위치 이력).
 - 수평 확장 가능한 모놀리식 Spring Boot WAS(코드 수준 책임 분리, MSA 아님). **실제 배포는 단일 인스턴스.**
 - 프론트 산출물은 S3 배포 + CloudFront 제공. **CloudFront 배포 하나에 `/api/*`·SSE behavior를 붙여 EC2를 origin으로 묶었다**(#26, SSE 경로 CachingDisabled). 이 단일 오리진 전제 위에서 세션 쿠키는 `SameSite=Lax` + 프로파일별 `Secure`(`common/auth/SessionCookie`) — API를 별도 오리진으로 분리하면 `SameSite=None`으로 재검토해야 한다.
@@ -235,7 +236,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 
 ### 인프라 (배포 구성 확정 시)
 
-- EC2 사이징, MySQL 배치 방식(EC2 직접 설치 vs RDS), Redis 단일 인스턴스 SPOF 여부.
+- Redis 단일 인스턴스 SPOF 여부.
 - 배포된 OSRM 서버(#416) 사이징이 지금 트래픽에 맞는지.
 - GitHub Actions AWS 인증 방식(OIDC + 최소 권한 IAM Role 권장)과 배포 권한 범위.
 - 라이더 콜 목록 `radiusMeters` 상한 없음(#55). 좌표 미전송 요청은 WAITING 전체를 훑어, WAITING이 크게 늘면 계약을 다시 열어야 한다.
