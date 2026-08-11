@@ -2,7 +2,7 @@ name: Build mobile(android) APK
 
 on:
   push:
-    branches: [main]
+    branches: [dev]
     paths:
       - 'frontend/**'
       - 'mobile/**'
