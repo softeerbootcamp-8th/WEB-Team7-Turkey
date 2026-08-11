@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 
 import com.turkey.quick.common.auth.InMemorySessionStore;
 import com.turkey.quick.common.auth.SessionCookie;
+import com.turkey.quick.common.auth.SessionStore;
 import com.turkey.quick.common.exception.BusinessException;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
@@ -62,6 +63,22 @@ class CustomerSessionInterceptorTest {
                 request.getAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE);
         assertThat(customer.loginId()).isEqualTo("session_user01");
         assertThat(customer.name()).isEqualTo("홍길동");
+    }
+
+    @Test
+    void 인증을_통과한_요청은_세션_TTL과_쿠키를_함께_연장한다() {
+        String sessionId = "sliding-session";
+        sessionStore.create(sessionId, MEMBER_ID, "CUSTOMER", SessionStore.DEFAULT_TTL);
+        when(memberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(customer()));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        interceptor.preHandle(requestWithCookie(sessionId), response, new Object());
+
+        assertThat(sessionStore.extendCount(sessionId)).isEqualTo(1);
+        // 쿠키를 다시 내리지 않으면 서버 TTL만 늘고 클라이언트가 Max-Age에 먼저 죽는다(#439).
+        String setCookie = response.getHeader("Set-Cookie");
+        assertThat(setCookie).contains("SESSION_ID=" + sessionId);
+        assertThat(setCookie).containsIgnoringCase("Max-Age=" + SessionStore.DEFAULT_TTL.toSeconds());
     }
 
     @Test

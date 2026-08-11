@@ -107,7 +107,12 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - 인증은 **쿠키 기반 서버 세션**. 세션은 Redis에 저장하고 쿠키에는 세션 식별자만 담는다. Spring Security 없이 필터/인터셉터로 세션 확인·역할 검증·만료·로그아웃을 직접 구현한다.
 - **인증은 선언적으로 자동 적용되지 않는다.** 보호할 API마다 인터셉터의 `addPathPatterns`에 경로를 직접 등록해야 걸린다(고객 예: `customer/config/CustomerWebMvcConfig`, #27). 새 전용 API 추가 시 이 등록을 빠뜨리면 인증 없이 열린 채 배포된다 — **리뷰 시 반드시 확인**.
 - **`/api/customer/deliveries` 아래는 정확 경로로 한 건씩 등록**(#37). 형제 경로 `/quote`가 비로그인 API라 `/**`로 넓히면 조용히 401이 된다(`CustomerDeliveryCreateE2ETest`가 회귀 고정).
-- 세션 TTL은 로그인 시점 **2시간 고정, 슬라이딩 갱신 없음**(#27). `SessionStore.findMemberId()`는 조회만 하고 TTL을 안 건드린다.
+- 세션 TTL은 **2시간이고 인증을 통과한 요청마다 슬라이딩 갱신된다**(#439, 2026-08-11 — #27의 "고정 TTL, 슬라이딩 없음"을 뒤집은 결정). TTL 값은 `SessionStore.DEFAULT_TTL` 하나뿐이고, 두 세션 인터셉터가 `extend()` + **세션 쿠키 재발급**을 함께 한다.
+  - **쿠키를 다시 내리는 것이 절반이다.** 세션 쿠키는 Max-Age 영속 쿠키라 서버 TTL만 늘리면 클라이언트가 로그인 +2시간에 쿠키를 버려 결국 401이 된다.
+  - **`extend()`는 없는 세션을 되살리지 않는다.** Redis 구현은 EXPIRE로 키 존재를 먼저 확인한다 — HSET을 먼저 하면 `memberId` 없는 반쪽 세션 키가 새로 생긴다.
+  - 슬라이딩은 `findMemberId()`의 부수효과가 아니다(인증과 무관한 호출자까지 연장하게 된다).
+  - 대가: **탭·앱을 열어 두면 세션이 사실상 만료되지 않는다**(프론트 세션 확인 폴링, BUSY 라이더의 5초 위치 전송이 그대로 활동 신호가 된다). 유출된 쿠키의 유효 기간도 같은 방식으로 늘어난다 — 절대 수명 상한은 두지 않았다.
+- 안드로이드 배경 위치 서비스는 **응답의 Set-Cookie를 CookieManager에 되돌려 써야 한다**(#439). 그 POST는 WebView가 아니라 `HttpURLConnection`으로 나가므로 갱신된 Max-Age가 자동 반영되지 않는다 — 안 하면 서버는 슬라이딩하는데 이 서비스만 쿠키를 잃고 401이 된다. 401·409에서는 서비스를 멈춘다(배터리·네트워크 낭비 차단).
 - 고객·라이더 세션 인터셉터는 각 패키지에 중복돼 있다(`CustomerSessionInterceptor` #27, `RiderSessionInterceptor` #50). **세 번째 액터가 생기기 전까지 `common/auth`로 공용 추출하지 않는다**(아직 없는 차이를 미리 상정하게 됨).
 
 ### 인프라·배포
@@ -218,7 +223,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - **`GlobalExceptionHandler`에 `HttpMessageNotReadableException` 핸들러가 없다**(#81). 본문 JSON 파싱 실패 400이 `ApiResponse`가 아닌 스프링 기본 오류 본문으로 나갈 것으로 보임 — **전체 엔드포인트 해당**. 실제 본문 확인 후 이슈화 판단.
 - **인증번호 확인(`PhoneVerificationService.confirm`)에 원자적 보호가 없다**(#21). 같은 유효 코드로 동시 확인 시 인증 완료 토큰이 중복 발급될 수 있다.
 - **heartbeat가 없다.** 프록시 유휴 타임아웃에 조용한 스트림이 끊길 수 있고, #401로 WAITING 구간이 무음이라 emitter 타임아웃(5분)에 더 쉽게 걸린다(5분이 정책값인지도 미확정).
-- **SSE 연결 중 세션이 만료돼도 스트림이 안 끊긴다**(인터셉터는 연결 시점 1회만).
+- **SSE 연결 중 세션이 만료돼도 스트림이 안 끊긴다**(인터셉터는 연결 시점 1회만). 뒤집어서, **긴 SSE 연결은 슬라이딩 갱신도 못 받는다**(#439) — 요청이 한 번뿐이라 연장 시점도 한 번이다. 고객 추적 화면은 ETA 폴링(1분, `DeliveryEta`)이 같은 인터셉터를 지나며 대신 연장하지만 **그 폴링은 탭이 백그라운드면 멈춘다** — 배경에 둔 추적 탭은 여전히 만료될 수 있다.
 - ~~**주문 완료·취소 시 능동적 SSE 종료가 없다.**~~ **해소(#450, 2026-08-10)**: 완료(`RiderDeliveryService.complete`)와 자동 취소(`DeliveryTimeoutService.cancelAndRefund`)가 `TrackingPublisher.publishClose`로 **별도 채널**(`tracking:close:{id}`, `TrackingCloseSubscriber`)에 발행해 emitter를 닫는다. 닫는 것 자체는 신호가 아니라 **재질의를 유발하는 계기**다 — 브라우저 자동 재연결 → 서버 409 → `EventSource` CLOSED → 프론트 REST 재조회. **이 신호가 유실돼도 정합성은 안 깨진다**(emitter 5분 만료가 같은 사슬을 만든다). 종료 채널 접두어는 데이터 채널과 **완전히 분리해야 한다** — Redis glob의 `*`는 콜론을 포함해 매칭하므로 `tracking:order:{id}:close`로 두면 `TrackingSubscriber`가 종료 신호를 데이터 프레임으로 흘려보낸다. 수동 취소는 일부러 발행하지 않는다(취소한 당사자의 화면이 재조회로 스스로 닫는다).
 - **오래 PENDING인 충전 요청을 정리할 방법이 없다**(#34). 결제창을 연 채 브라우저를 닫으면 영구 PENDING.
 - **자동 취소 스캐너에 최대 1분의 창이 남는다**(#42). 감내 가능한 백스톱으로 명시 확정은 안 됨.

@@ -65,8 +65,23 @@ public class CustomerSessionInterceptor implements HandlerInterceptor {
             throw authFailure(response);
         }
 
+        slideSession(response, sessionId);
         request.setAttribute(CURRENT_CUSTOMER_ATTRIBUTE, AuthenticatedCustomer.from(member));
         return true;
+    }
+
+    /**
+     * 인증을 통과한 요청마다 세션 TTL을 다시 건다(슬라이딩 갱신, #439 — #27의 "고정 TTL, 슬라이딩
+     * 없음"을 뒤집은 결정).
+     *
+     * <p><b>쿠키를 함께 다시 내리지 않으면 서버만 연장되고 클라이언트가 먼저 죽는다.</b> 세션
+     * 쿠키는 Max-Age가 붙은 영속 쿠키라(로그인 시점 +TTL), 서버 TTL만 늘리면 브라우저·WebView가
+     * 로그인 +2시간에 쿠키를 버려 그 다음 요청이 쿠키 없이 나가고 결국 401이 된다.
+     */
+    private void slideSession(HttpServletResponse response, String sessionId) {
+        sessionStore.extend(sessionId, SessionStore.DEFAULT_TTL);
+        response.addHeader(HttpHeaders.SET_COOKIE,
+                SessionCookie.of(sessionId, SessionStore.DEFAULT_TTL, cookieSecure).toString());
     }
 
     private BusinessException authFailure(HttpServletResponse response) {

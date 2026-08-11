@@ -12,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class InMemorySessionStore implements SessionStore {
 
     private final ConcurrentHashMap<String, Map<String, String>> sessions = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Integer> extendCounts = new ConcurrentHashMap<>();
 
     @Override
     public void create(String sessionId, Long memberId, String role, Duration ttl) {
@@ -25,6 +26,21 @@ public class InMemorySessionStore implements SessionStore {
             return Optional.empty();
         }
         return Optional.of(Long.valueOf(session.get("memberId")));
+    }
+
+    /**
+     * 실제 만료를 흉내내지 않으므로 TTL을 다시 걸 것이 없다. 대신 <b>호출 횟수만 센다</b> —
+     * 인터셉터가 슬라이딩을 실제로 했는지(#439) 검증할 수단이 필요하다.
+     */
+    @Override
+    public void extend(String sessionId, Duration ttl) {
+        if (sessions.containsKey(sessionId)) {
+            extendCounts.merge(sessionId, 1, Integer::sum);
+        }
+    }
+
+    public int extendCount(String sessionId) {
+        return extendCounts.getOrDefault(sessionId, 0);
     }
 
     @Override

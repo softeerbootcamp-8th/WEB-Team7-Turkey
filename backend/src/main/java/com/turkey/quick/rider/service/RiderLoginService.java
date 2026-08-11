@@ -26,7 +26,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class RiderLoginService {
 
     private static final String LOGIN_FAILURE_MESSAGE = "아이디 또는 비밀번호가 일치하지 않습니다.";
-    private static final Duration SESSION_TTL = Duration.ofHours(2);
+    // 최초 TTL. 인증 요청마다 인터셉터가 같은 값으로 다시 건다(슬라이딩, #439).
+    private static final Duration SESSION_TTL = SessionStore.DEFAULT_TTL;
 
     private final MemberRepository memberRepository;
     private final RiderProfileRepository riderProfileRepository;

@@ -43,6 +43,22 @@ public class RedisSessionStore implements SessionStore {
         return Optional.of(Long.valueOf((String) memberId));
     }
 
+    /**
+     * 순서가 중요하다. EXPIRE는 없는 키에 아무 일도 하지 않고 false를 돌려주므로 만료된 세션을
+     * 되살리지 않지만, HSET을 먼저 하면 <b>없는 키에 expiresAt만 든 반쪽 세션이 새로 생긴다</b>
+     * (memberId가 없어 인증은 못 통과하지만 TTL을 물고 남는 쓰레기 키다). 그래서 EXPIRE로 키
+     * 존재를 확인한 뒤에만 값을 갱신한다 — 그 사이에는 TTL을 막 늘려 놓은 상태라 키가 사라지지 않는다.
+     */
+    @Override
+    public void extend(String sessionId, Duration ttl) {
+        String key = key(sessionId);
+        if (!Boolean.TRUE.equals(redisTemplate.expire(key, ttl))) {
+            return;
+        }
+        LocalDateTime expiresAt = LocalDateTime.now(ZoneOffset.UTC).plus(ttl);
+        redisTemplate.opsForHash().put(key, "expiresAt", expiresAt.toString());
+    }
+
     @Override
     public void delete(String sessionId) {
         redisTemplate.delete(key(sessionId));
