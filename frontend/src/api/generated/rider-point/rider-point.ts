@@ -421,7 +421,7 @@ export function useGetRiderWithdrawals<TData = Awaited<ReturnType<typeof getRide
 
 
 /**
- * 등록된 정산 계좌로 출금을 요청한다. 계좌는 요청 바디로 받지 않고 rider_payout_account 의 값을 스냅샷으로 복사한다. 요청 즉시 잔액을 선차감하고 WITHDRAWAL 원장을 남기며, 송금 실패 시 WITHDRAWAL_REFUND 로 복구한다. 같은 requestKey 로 재전송하면 새로 만들지 않고 기존 결과를 돌려준다.
+ * 출금을 요청한다. 계좌 정보(은행 코드·계좌번호·예금주명)를 요청 바디로 함께 받는다 — 사전 등록 계좌 없이 신청 시점에 입력한다. 계좌번호 원본은 저장하지 않고 마스킹한 값만 스냅샷으로 남긴다. 요청 즉시 잔액을 선차감하고 WITHDRAWAL 원장을 남기며, 송금 실패 시 WITHDRAWAL_REFUND 로 복구한다. 같은 requestKey 로 재전송하면 새로 만들지 않고 기존 결과를 돌려준다.
  * @summary 출금 요청
  */
 export const requestRiderWithdrawal = (

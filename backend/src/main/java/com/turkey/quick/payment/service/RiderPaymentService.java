@@ -12,10 +12,10 @@ import com.turkey.quick.payment.dto.WithdrawalRequest;
 import com.turkey.quick.payment.dto.WithdrawalResponse;
 import com.turkey.quick.payment.repository.PointTransactionRepository;
 import com.turkey.quick.payment.repository.PointWalletRepository;
-import com.turkey.quick.rider.domain.RiderPayoutAccount;
+import com.turkey.quick.rider.domain.RiderProfile;
 import com.turkey.quick.rider.domain.RiderWithdrawal;
 import com.turkey.quick.rider.domain.WithdrawalStatus;
-import com.turkey.quick.rider.repository.RiderPayoutAccountRepository;
+import com.turkey.quick.rider.repository.RiderProfileRepository;
 import com.turkey.quick.rider.repository.RiderWithdrawalRepository;
 import java.util.List;
 import java.util.Optional;
@@ -60,7 +60,7 @@ public class RiderPaymentService {
     private static final long MIN_WITHDRAWAL_AMOUNT = 5_000L;
 
     private final PointWalletRepository pointWalletRepository;
-    private final RiderPayoutAccountRepository riderPayoutAccountRepository;
+    private final RiderProfileRepository riderProfileRepository;
     private final RiderWithdrawalRepository riderWithdrawalRepository;
     private final PointTransactionRepository pointTransactionRepository;
 
@@ -137,9 +137,8 @@ public class RiderPaymentService {
     /**
      * 소스 FK는 유형별로 정확히 하나만 채워진다(ck_point_transaction_source). 나머지는 lazy 프록시라도
      * null이면 그대로 null이고, non-null이면 식별자 접근만으로는 추가 조회가 일어나지 않는다.
-     */
-    /**
-     * WITHDRAWAL·WITHDRAWAL_REFUND 행은 {@code withdrawalStatus}도 함께 채운다(#90 후속) — 화면이
+     *
+     * <p>WITHDRAWAL·WITHDRAWAL_REFUND 행은 {@code withdrawalStatus}도 함께 채운다(#90 후속) — 화면이
      * "포인트 출금"이라는 라벨만으로는 대기 중인지 완료됐는지 구분하지 못했던 문제를 고치기 위해서다.
      * {@code getRiderWithdrawal()}에 접근해도 추가 쿼리가 나가지 않는다 — 호출자
      * ({@link #getPointTransactions})가 이미 fetch join 으로 함께 읽어 왔다
@@ -167,10 +166,11 @@ public class RiderPaymentService {
      * (#90, RIDE-POINT-006)가 담당하므로 여기서는 {@link RiderWithdrawal#complete()}·
      * {@link RiderWithdrawal#fail(String)} 를 호출하지 않는다.
      *
-     * <p><b>출금 계좌 미등록</b>도 <b>잔액 부족</b>과 같은 409 로 응답한다({@code RiderPointApi}
-     * 문서에서 이미 확정) — 이 저장소에서 409 는 그 자체로 "지금 이 상태로는 처리할 수 없다"는
-     * 뜻이라 사유를 코드로 더 세분화하지 않았다. 계좌 등록 API 는 아직 없다(#87, Backlog) — 그
-     * 전까지는 이 경로가 항상 409 로 끝나지만, 도메인·리포지토리는 등록 여부와 무관하게 옳다.
+     * <p><b>계좌 정보는 요청 바디로 받는다</b>(사람 확인, 2026-08-11). 사전 등록 계좌
+     * ({@code rider_payout_account}) 방식 대신 신청 시점 입력으로 계약을 바꿨다 — #87(계좌 등록
+     * API)이 아직 없어 등록 계좌 방식으로는 이 경로가 항상 409 로 막혀 있었다. 원본 계좌번호는
+     * 마스킹 직후 버리고 지역 변수 밖으로 내보내지 않는다 — {@link RiderWithdrawal}에도 마스킹된
+     * 값만 넘긴다.
      *
      * <p><b>잠금은 지갑 한 곳뿐이다.</b> 이 트랜잭션은 point_charge 를 건드리지 않으므로
      * {@code point_charge → point_wallet} 잠금 순서 규칙과 무관하다.
@@ -183,9 +183,9 @@ public class RiderPaymentService {
      * 되돌아간다.
      *
      * @param riderId 세션에서 확인된 라이더 식별자
-     * @param request 출금 요청(멱등키·금액)
+     * @param request 출금 요청(멱등키·금액·계좌 정보)
      * @throws IllegalArgumentException 최소 출금 금액 미달 (→ 400)
-     * @throws BusinessException        계좌 미등록 또는 잔액 부족 (→ 409), 동시 재전송 (→ 409)
+     * @throws BusinessException        잔액 부족 (→ 409), 동시 재전송 (→ 409)
      */
     @Transactional
     public WithdrawalResponse requestWithdrawal(Long riderId, WithdrawalRequest request) {
@@ -201,10 +201,6 @@ public class RiderPaymentService {
             return toResponse(alreadyRequested.get());
         }
 
-        RiderPayoutAccount account = riderPayoutAccountRepository.findByRiderId(riderId)
-                .orElseThrow(() -> new BusinessException(HttpStatus.CONFLICT,
-                        "등록된 출금 계좌가 없습니다. 계좌를 먼저 등록해 주세요."));
-
         PointWallet wallet = pointWalletRepository.findByMemberIdForUpdate(riderId)
                 .orElseThrow(() -> new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR,
                         "포인트 지갑을 찾을 수 없습니다. riderId=" + riderId));
@@ -217,8 +213,10 @@ public class RiderPaymentService {
         }
 
         wallet.debit(request.amount());
-        RiderWithdrawal withdrawal =
-                RiderWithdrawal.request(account, request.requestKey(), request.amount());
+        RiderProfile rider = riderProfileRepository.getReferenceById(riderId);
+        RiderWithdrawal withdrawal = RiderWithdrawal.request(rider, request.requestKey(),
+                request.amount(), request.bankCode(), maskAccountNumber(request.accountNumber()),
+                request.accountHolderName());
 
         try {
             riderWithdrawalRepository.saveAndFlush(withdrawal);
@@ -232,6 +230,13 @@ public class RiderPaymentService {
                 request.requestKey(), withdrawal));
 
         return toResponse(withdrawal);
+    }
+
+    /** 뒤 4자리만 남기고 나머지는 마스킹한다. 원본은 이 메서드 호출 이후 유지하지 않는다. */
+    private String maskAccountNumber(String accountNumber) {
+        int visibleLength = Math.min(4, accountNumber.length());
+        String visible = accountNumber.substring(accountNumber.length() - visibleLength);
+        return "*".repeat(accountNumber.length() - visibleLength) + visible;
     }
 
     /**

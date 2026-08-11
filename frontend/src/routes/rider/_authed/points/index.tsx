@@ -9,10 +9,14 @@ import {
   getSignedPointAmount,
   getWithdrawalStatusClassName,
   getWithdrawalStatusLabel,
+  getWithdrawalValidation,
+  MIN_WITHDRAWAL_AMOUNT,
   pointFilterOptions,
   shiftPointMonth,
   type PointFilter,
   type PointInfoTab,
+  type WithdrawalFormValues,
+  withdrawalBankOptions,
 } from './-riderPoints'
 import { useRiderPoints } from './-useRiderPoints'
 
@@ -83,7 +87,7 @@ function RiderPoints() {
             </div>
             <button
               type="button"
-              disabled={points.balance <= 0 || points.balanceQuery.isPending}
+              disabled={points.balance < MIN_WITHDRAWAL_AMOUNT || points.balanceQuery.isPending}
               onClick={() => {
                 setNotice(null)
                 setWithdrawalOpen(true)
@@ -277,11 +281,11 @@ function RiderPoints() {
           pending={points.withdrawalMutation.isPending}
           error={points.withdrawalMutation.error ? getPointErrorMessage(points.withdrawalMutation.error) : null}
           onClose={() => setWithdrawalOpen(false)}
-          onSubmit={async (amount) => {
+          onSubmit={async (values) => {
             try {
-              await points.requestWithdrawal(amount)
+              await points.requestWithdrawal(values)
               setWithdrawalOpen(false)
-              setNotice(`${formatPoints(amount)} 출금을 신청했습니다.`)
+              setNotice(`${formatPoints(values.amount)} 출금을 신청했습니다.`)
             } catch {
               // Mutation state renders the server error inside the dialog.
             }
@@ -304,7 +308,7 @@ function PointSummary({ label, value, strong = false }: { label: string; value: 
 function InfoTabContent({ tab }: { tab: PointInfoTab }) {
   const content = {
     'charge-account': ['충전계좌', '라이더 포인트 충전계좌는 준비 중입니다.'],
-    'withdrawal-account': ['출금계좌', '등록된 출금계좌 정보는 앱에서 제공될 예정입니다.'],
+    'withdrawal-account': ['출금계좌', '출금 신청할 때 은행·계좌번호·예금주명을 함께 입력합니다.'],
     guide: ['포인트 이용 가이드', '배송 완료 후 정산 포인트가 적립되며, 출금 신청 시 보유 포인트에서 차감됩니다.'],
   }[tab]
   return (
@@ -376,16 +380,15 @@ function WithdrawalDialog({
   pending: boolean
   error: string | null
   onClose: () => void
-  onSubmit: (amount: number) => Promise<void>
+  onSubmit: (values: WithdrawalFormValues) => Promise<void>
 }) {
   const [amount, setAmount] = useState('')
+  const [bankCode, setBankCode] = useState('')
+  const [accountNumber, setAccountNumber] = useState('')
+  const [accountHolderName, setAccountHolderName] = useState('')
   const numericAmount = Number(amount)
-  const validation =
-    !Number.isInteger(numericAmount) || numericAmount <= 0
-      ? '출금할 포인트를 입력해 주세요.'
-      : numericAmount > balance
-        ? '출금 가능 포인트를 초과했습니다.'
-        : null
+  const validation = getWithdrawalValidation({ amount, bankCode, accountNumber, accountHolderName }, balance)
+  const hasStarted = Boolean(amount || bankCode || accountNumber || accountHolderName)
 
   return (
     <div
@@ -394,11 +397,21 @@ function WithdrawalDialog({
         if (event.target === event.currentTarget && !pending) onClose()
       }}
     >
-      <section
+      <form
         role="dialog"
         aria-modal="true"
         aria-labelledby="withdrawal-title"
-        className="w-full max-w-sm rounded-2xl bg-surface-container-lowest p-lg shadow-xl"
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (validation || pending) return
+          void onSubmit({
+            amount: numericAmount,
+            bankCode: bankCode.trim(),
+            accountNumber,
+            accountHolderName: accountHolderName.trim(),
+          })
+        }}
+        className="max-h-[calc(100vh-2rem)] w-full max-w-sm overflow-y-auto rounded-2xl bg-surface-container-lowest p-lg shadow-xl"
       >
         <h2 id="withdrawal-title" className="font-headline-md text-on-surface">
           포인트 출금 신청
@@ -411,7 +424,7 @@ function WithdrawalDialog({
           <input
             id="withdrawal-amount"
             type="number"
-            min="1"
+            min={MIN_WITHDRAWAL_AMOUNT}
             max={balance}
             inputMode="numeric"
             value={amount}
@@ -421,7 +434,51 @@ function WithdrawalDialog({
           />
           <span className="absolute right-4 top-1/2 -translate-y-1/2 font-label-lg text-secondary">P</span>
         </div>
-        {amount && validation && (
+        <label className="mt-md block font-label-lg text-on-surface" htmlFor="withdrawal-bank">
+          은행
+        </label>
+        <select
+          id="withdrawal-bank"
+          value={bankCode}
+          onChange={(event) => setBankCode(event.target.value)}
+          className="mt-2 h-12 w-full rounded-xl border border-surface-container bg-surface-container-lowest px-4 font-body-lg focus:outline-none focus:ring-2 focus:ring-primary-container"
+        >
+          <option value="">은행을 선택해 주세요</option>
+          {withdrawalBankOptions.map((bank) => (
+            <option key={bank.code} value={bank.code}>
+              {bank.name}
+            </option>
+          ))}
+        </select>
+        <label className="mt-md block font-label-lg text-on-surface" htmlFor="withdrawal-account-number">
+          계좌번호
+        </label>
+        <input
+          id="withdrawal-account-number"
+          type="text"
+          inputMode="numeric"
+          maxLength={20}
+          value={accountNumber}
+          onChange={(event) => setAccountNumber(event.target.value.replace(/\D/g, '').slice(0, 20))}
+          placeholder="숫자만 입력"
+          autoComplete="off"
+          className="mt-2 h-12 w-full rounded-xl border border-surface-container bg-surface-container-lowest px-4 font-body-lg focus:outline-none focus:ring-2 focus:ring-primary-container"
+        />
+        <label className="mt-md block font-label-lg text-on-surface" htmlFor="withdrawal-account-holder">
+          예금주명
+        </label>
+        <input
+          id="withdrawal-account-holder"
+          type="text"
+          maxLength={50}
+          value={accountHolderName}
+          onChange={(event) => setAccountHolderName(event.target.value)}
+          placeholder="예: 홍길동"
+          autoComplete="name"
+          className="mt-2 h-12 w-full rounded-xl border border-surface-container bg-surface-container-lowest px-4 font-body-lg focus:outline-none focus:ring-2 focus:ring-primary-container"
+        />
+        <p className="mt-2 font-label-sm text-secondary">계좌번호 원본은 저장하지 않고 마스킹된 정보만 남습니다.</p>
+        {hasStarted && validation && (
           <p role="alert" className="mt-2 font-body-md text-error">
             {validation}
           </p>
@@ -441,15 +498,14 @@ function WithdrawalDialog({
             취소
           </button>
           <button
-            type="button"
+            type="submit"
             disabled={Boolean(validation) || pending}
-            onClick={() => void onSubmit(numericAmount)}
             className="h-12 rounded-xl bg-primary-container font-label-lg text-on-primary-container disabled:opacity-40"
           >
             {pending ? '신청 중…' : '신청하기'}
           </button>
         </div>
-      </section>
+      </form>
     </div>
   )
 }
