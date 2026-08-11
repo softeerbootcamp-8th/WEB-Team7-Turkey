@@ -13,10 +13,17 @@
 //   N              동시 고객·라이더 쌍 수(#259 §3 공통 독립변인). 기본 10.
 //   DURATION       계단 유지 시간. 기본 2m(§5 "최소 1~3분" 권장의 하한).
 //   POLL_INTERVAL  고객 폴링 주기 T(초). 기본 5.
-//   RIDER_INTERVAL 라이더 위치 전송 주기(초). 기본 5(BUSY 확정값, #81).
+//   RIDER_INTERVAL 라이더 위치 전송 주기(초). 기본 2.
 //   BASE_URL       기본 http://localhost:8080.
 //
 // 대상 전환(로컬→EC2)은 BASE_URL만 바꾸면 된다 — 앱 코드 변경이 필요 없다(#259 §5 확인 완료).
+//
+// RIDER_INTERVAL에 고정값이 없는 이유: 안드로이드 클라이언트(#391)는 주기 전송이 아니라
+// "20m 이상 이동 OR 정지 120초"일 때만 보낸다. GPS 콜백 자체의 하한이 0.5초라 그게 물리적
+// 최솟값이고, 실제 전송 간격은 이동 속도에 달렸다. 시내 배달 속도(8~11 m/s)로 20m 이동하는 데
+// 약 2초 걸리는 걸 "보통" 값으로 쓴다 — 최악값(0.5)과 둘 다 재보고 그 사이로 본다.
+//   k6 run -e RIDER_INTERVAL=2   polling-arm.js   # 보통 이동 중
+//   k6 run -e RIDER_INTERVAL=0.5 polling-arm.js   # 물리적 최솟값(사람 확인, 2026-08-11)
 
 import http from 'k6/http';
 import { sleep } from 'k6';
@@ -27,7 +34,7 @@ const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 const N = Number(__ENV.N || 10);
 const DURATION = __ENV.DURATION || '2m';
 const POLL_INTERVAL_SEC = Number(__ENV.POLL_INTERVAL || 5);
-const RIDER_INTERVAL_SEC = Number(__ENV.RIDER_INTERVAL || 5);
+const RIDER_INTERVAL_SEC = Number(__ENV.RIDER_INTERVAL || 2);
 
 // 지연(#259 §3-i): "실제 변경 시점 ~ 클라이언트가 그 변경을 인지하는 시점". 요청→응답 왕복이
 // 아니라, 고객이 새 위치를 처음 본 시각에서 그 위치의 measuredAt을 뺀 값이어야 공정 비교가 된다

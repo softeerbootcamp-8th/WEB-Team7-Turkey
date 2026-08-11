@@ -21,6 +21,8 @@
 //   ./bin/k6.exe run -e N=10 sse-arm.js
 //
 // 환경변수는 polling-arm.js와 동일(N, DURATION, RIDER_INTERVAL, BASE_URL).
+// RIDER_INTERVAL 기본값·근거는 polling-arm.js 상단 주석 참고 — 안드로이드 클라이언트(#391)가
+// 고정 주기가 아니라 "20m 이동 OR 정지 120초"로 보내서, 보통값(2s)·물리적 최솟값(0.5s) 둘 다 잰다.
 
 import sse from 'k6/x/sse';
 import http from 'k6/http';
@@ -31,7 +33,7 @@ import { seedPairs } from './seed.js';
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 const N = Number(__ENV.N || 10);
 const DURATION = __ENV.DURATION || '2m';
-const RIDER_INTERVAL_SEC = Number(__ENV.RIDER_INTERVAL || 5);
+const RIDER_INTERVAL_SEC = Number(__ENV.RIDER_INTERVAL || 2);
 
 // 폴링 arm의 polling_latency_ms와 같은 정의로 잰다 — "위치가 실제로 바뀐 시점(measuredAt) ~
 // 고객이 그 이벤트를 받은 시점"까지의 시간. SSE는 구조상 이 값이 곧 "요청→응답 시간"과 거의
