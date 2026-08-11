@@ -1762,8 +1762,26 @@ export interface WithdrawalListResponse {
  * 포인트 출금 요청
  */
 export interface WithdrawalRequest {
+  /**
+   * 예금주명
+   * @minLength 0
+   * @maxLength 50
+   */
+  accountHolderName: string;
+  /**
+   * 계좌번호(숫자만). 원본은 저장하지 않고 마스킹 후 폐기한다.
+   * @minLength 1
+   * @pattern \d{6,20}
+   */
+  accountNumber: string;
   /** 출금 금액(포인트). 잔액을 초과하면 거부된다. */
   amount?: number;
+  /**
+   * 은행 코드
+   * @minLength 0
+   * @maxLength 20
+   */
+  bankCode: string;
   /**
    * 출금 요청 멱등키(UUID). 재전송 시 같은 값을 그대로 보낸다.
    * @minLength 36
