@@ -7,13 +7,17 @@ import com.turkey.quick.common.response.ApiResponse;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
 import com.turkey.quick.member.repository.MemberRepository;
+import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.FarePolicy;
 import com.turkey.quick.order.domain.ItemType;
+import com.turkey.quick.order.domain.OrderStatus;
+import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.order.repository.FarePolicyRepository;
 import com.turkey.quick.payment.domain.PointWallet;
 import com.turkey.quick.payment.repository.PointWalletRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -31,6 +35,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -100,6 +105,12 @@ class CustomerDeliveryCreateE2ETest extends IntegrationTestSupport {
 
     @Autowired
     private FarePolicyRepository farePolicyRepository;
+
+    @Autowired
+    private DeliveryOrderRepository deliveryOrderRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Autowired
     private PlatformTransactionManager transactionManager;
@@ -187,6 +198,21 @@ class CustomerDeliveryCreateE2ETest extends IntegrationTestSupport {
     private long balanceOf(String loginId) {
         Long memberId = memberRepository.findByLoginId(loginId).orElseThrow().getId();
         return pointWalletRepository.findByMemberId(memberId).orElseThrow().getBalance();
+    }
+
+    /** 주문을 생성하고(201 확인) 그 deliveryId 를 돌려준다. */
+    private long createOrder(String cookie, String requestKey, long fare) {
+        var response = rest.exchange(DELIVERIES_ENDPOINT, HttpMethod.POST,
+                withCookie(cookie, createBody(requestKey, fare)), ApiResponse.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        Map<?, ?> data = (Map<?, ?>) response.getBody().data();
+        return ((Number) data.get("deliveryId")).longValue();
+    }
+
+    /** requested_at 은 updatable=false 라 도메인 메서드로 못 바꾼다 — 타임아웃 재현을 위해 직접 되민다. */
+    private void backdateRequestedAt(long orderId, LocalDateTime requestedAt) {
+        jdbcTemplate.update("UPDATE delivery_order SET requested_at = ? WHERE order_id = ?",
+                requestedAt, orderId);
     }
 
     @Test
@@ -304,6 +330,34 @@ class CustomerDeliveryCreateE2ETest extends IntegrationTestSupport {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(balanceOf("e2e_order05")).isEqualTo(50_000L - fare);
+    }
+
+    @Test
+    @DisplayName("만료된 기존 주문이 있으면 새 요청이 그것을 자동 정리(취소·환급)하고 새 주문을 만든다")
+    void expiresStaleOrderLazilyThroughControllerOnNewRequest() {
+        // #463: 지연 만료 트리거가 컨트롤러에 있으므로 실제 HTTP 로만 검증된다. 서비스를 직접 부르면
+        // 만료 정리가 걸리지 않아 uk_delivery_active_customer 위반으로 409 가 난다(서비스 통합 테스트가
+        // 아니라 여기에 둔 이유).
+        saveActiveFarePolicy();
+        saveCustomerWithWallet("e2e_order07", "p@ssw0rd", "01077778888", 50_000L);
+        String cookie = loginAndGetSessionCookie("e2e_order07", "p@ssw0rd");
+        long fare = quotedFare();
+
+        long staleOrderId = createOrder(cookie, UUID.randomUUID().toString(), fare);
+        backdateRequestedAt(staleOrderId, LocalDateTime.now(ZoneOffset.UTC).minusMinutes(10));
+
+        // 진행 중 주문이 있는 상태에서 새 요청 — 스캐너를 기다리지 않고 컨트롤러가 먼저 만료 정리한다.
+        long newOrderId = createOrder(cookie, UUID.randomUUID().toString(), fare);
+
+        DeliveryOrder stale = deliveryOrderRepository.findById(staleOrderId).orElseThrow();
+        assertThat(stale.getStatus()).isEqualTo(OrderStatus.CANCELED);
+
+        DeliveryOrder created = deliveryOrderRepository.findById(newOrderId).orElseThrow();
+        assertThat(created.getStatus()).isEqualTo(OrderStatus.WAITING);
+        assertThat(created.getId()).isNotEqualTo(staleOrderId);
+
+        // 만료 주문 환급(+fare) 과 새 주문 차감(-fare) 이 상쇄되어 잔액은 fare 하나만큼만 줄어 있다.
+        assertThat(balanceOf("e2e_order07")).isEqualTo(50_000L - fare);
     }
 
     @Test
