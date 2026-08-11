@@ -78,7 +78,7 @@ export function MockPaymentModal({
         aria-modal="true"
         aria-labelledby="mock-payment-title"
         aria-describedby="mock-payment-description"
-        className="max-h-[94vh] w-full max-w-md overflow-y-auto rounded-t-[28px] bg-white text-[#191f28] shadow-2xl sm:rounded-[28px]"
+        className="max-h-[94dvh] w-full max-w-md overflow-y-auto rounded-t-[28px] bg-white text-[#191f28] shadow-2xl [clip-path:inset(0_round_28px)] [scrollbar-color:#c7cdd4_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#c7cdd4] [&::-webkit-scrollbar-track]:bg-transparent sm:rounded-[28px]"
       >
         <div className="flex items-center justify-between px-6 pb-2 pt-5">
           <div className="flex items-center gap-2">
