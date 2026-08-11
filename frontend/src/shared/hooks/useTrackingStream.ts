@@ -180,7 +180,19 @@ export function useTrackingStream(deliveryId: number | undefined, enabled: boole
       // 브라우저 EventSource는 서버가 200이 아닌 응답을 준 게 아니라면 자동으로 재연결을
       // 시도한다(readyState가 CONNECTING으로 돌아감). CLOSED면 브라우저가 재시도를 포기한
       // 것이다(예: 401/404/409 응답).
-      setStatus(source.readyState === EventSource.CLOSED ? 'error' : 'reconnecting')
+      const rejected = source.readyState === EventSource.CLOSED
+      setStatus(rejected ? 'error' : 'reconnecting')
+
+      // 재연결이 서버에 의해 거부됐다는 것은 그 배송이 더 이상 구독 대상이 아니라는 뜻이다 —
+      // 배송이 완료·취소되면 서버가 연결을 닫고(#450), 뒤이은 재연결이 409로 거부된다.
+      // 그런데 EventSource는 상태코드도 본문도 스크립트에 노출하지 않으므로, 아는 것은
+      // "영구 실패했다"뿐이다. 그래서 읽을 수 있는 채널(REST)로 다시 물어본다.
+      //
+      // 단순히 연결이 끊긴 경우(CONNECTING)에는 트리거하지 않는다 — 브라우저가 알아서
+      // 재연결하고, 그 재연결이 성공하면 아직 진행 중인 배송이라는 뜻이다.
+      if (rejected) {
+        setStatusChangedAt(Date.now())
+      }
     }
 
     return () => {

@@ -219,7 +219,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - **인증번호 확인(`PhoneVerificationService.confirm`)에 원자적 보호가 없다**(#21). 같은 유효 코드로 동시 확인 시 인증 완료 토큰이 중복 발급될 수 있다.
 - **heartbeat가 없다.** 프록시 유휴 타임아웃에 조용한 스트림이 끊길 수 있고, #401로 WAITING 구간이 무음이라 emitter 타임아웃(5분)에 더 쉽게 걸린다(5분이 정책값인지도 미확정).
 - **SSE 연결 중 세션이 만료돼도 스트림이 안 끊긴다**(인터셉터는 연결 시점 1회만).
-- **주문 완료·취소 시 능동적 SSE 종료가 없다.** 중계는 조용해지나 연결은 타임아웃까지 열려 있고 완료 알림이 프론트로 안 간다.
+- ~~**주문 완료·취소 시 능동적 SSE 종료가 없다.**~~ **해소(#450, 2026-08-10)**: 완료(`RiderDeliveryService.complete`)와 자동 취소(`DeliveryTimeoutService.cancelAndRefund`)가 `TrackingPublisher.publishClose`로 **별도 채널**(`tracking:close:{id}`, `TrackingCloseSubscriber`)에 발행해 emitter를 닫는다. 닫는 것 자체는 신호가 아니라 **재질의를 유발하는 계기**다 — 브라우저 자동 재연결 → 서버 409 → `EventSource` CLOSED → 프론트 REST 재조회. **이 신호가 유실돼도 정합성은 안 깨진다**(emitter 5분 만료가 같은 사슬을 만든다). 종료 채널 접두어는 데이터 채널과 **완전히 분리해야 한다** — Redis glob의 `*`는 콜론을 포함해 매칭하므로 `tracking:order:{id}:close`로 두면 `TrackingSubscriber`가 종료 신호를 데이터 프레임으로 흘려보낸다. 수동 취소는 일부러 발행하지 않는다(취소한 당사자의 화면이 재조회로 스스로 닫는다).
 - **오래 PENDING인 충전 요청을 정리할 방법이 없다**(#34). 결제창을 연 채 브라우저를 닫으면 영구 PENDING.
 - **자동 취소 스캐너에 최대 1분의 창이 남는다**(#42). 감내 가능한 백스톱으로 명시 확정은 안 됨.
 - **고객이 자기 주문의 "만료됨"을 능동 조회할 방법이 없다**(#44/#46 미구현). 클라이언트 카운트다운(`requestedAt + 5분`)도 미구현 — #46/#47 프론트 연동 시 반영.

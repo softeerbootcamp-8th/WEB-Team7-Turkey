@@ -1,5 +1,6 @@
 package com.turkey.quick.order.service;
 
+import com.turkey.quick.location.sse.TrackingPublisher;
 import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.FareType;
 import com.turkey.quick.order.domain.OrderFareSnapshot;
@@ -44,6 +45,9 @@ public class DeliveryTimeoutService {
     private final DeliveryOrderRepository deliveryOrderRepository;
     private final OrderFareSnapshotRepository orderFareSnapshotRepository;
     private final CustomerPaymentService customerPaymentService;
+
+    /** #450: 자동 취소된 배송의 SSE 연결을 정리하기 위해 주입한다. */
+    private final TrackingPublisher trackingPublisher;
 
     /**
      * 지연 만료(#42 비고 + 사람 확인). 주문 생성 흐름({@link DeliveryService#createDelivery}) 맨 앞에서
@@ -122,6 +126,14 @@ public class DeliveryTimeoutService {
         DeliveryOrder orderRef = deliveryOrderRepository.getReferenceById(orderId);
         long balanceAfter = customerPaymentService.refundForCancel(
                 customerId, orderRef, estimate.getTotalFare());
+
+        // 취소되면 이 배송으로는 더 보낼 것이 없으므로 연결을 정리한다(#450). 화면 정합성은
+        // 클라이언트 타이머(#444)가 담당하고, 여기서는 고객이 화면을 떠난 경우에도 연결이
+        // emitter 절대 수명(5분)까지 남지 않게 하는 것이 목적이다.
+        //
+        // 수동 취소(DeliveryService.cancelDelivery)에는 붙이지 않는다 — 고객이 직접 호출해
+        // 응답을 받고 화면이 재조회하면 구독 조건이 꺼져 훅이 클라이언트 쪽에서 닫는다.
+        trackingPublisher.publishClose(orderId);
 
         log.info("[배차대기-자동취소] orderId={}, customerId={}, refundAmount={}, balanceAfter={}",
                 orderId, customerId, estimate.getTotalFare(), balanceAfter);

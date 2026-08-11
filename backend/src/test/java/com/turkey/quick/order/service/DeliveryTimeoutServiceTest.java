@@ -11,6 +11,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.turkey.quick.location.sse.TrackingPublisher;
 import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.FareType;
 import com.turkey.quick.order.domain.OrderFareSnapshot;
@@ -48,6 +49,10 @@ class DeliveryTimeoutServiceTest {
 
     @Mock
     private CustomerPaymentService customerPaymentService;
+
+    /** #450: 자동 취소된 배송의 SSE 연결을 정리한다. 발행 자체는 아래 전용 테스트가 검증한다. */
+    @Mock
+    private TrackingPublisher trackingPublisher;
 
     private static final Long CUSTOMER_ID = 42L;
     private static final Long ORDER_ID = 100L;
@@ -144,7 +149,22 @@ class DeliveryTimeoutServiceTest {
             boolean result = deliveryTimeoutService.cancelAndRefund(ORDER_ID, CUSTOMER_ID);
 
             assertThat(result).isFalse();
-            verifyNoInteractions(orderFareSnapshotRepository, customerPaymentService);
+            verifyNoInteractions(orderFareSnapshotRepository, customerPaymentService, trackingPublisher);
+        }
+
+        @Test
+        @DisplayName("취소에 성공하면 그 배송의 SSE 연결을 닫으라는 신호를 발행한다")
+        void publishesCloseSignalOnSuccess() {
+            given(deliveryOrderRepository.cancelIfWaiting(eq(ORDER_ID), any(), any())).willReturn(1);
+            OrderFareSnapshot estimate = mock(OrderFareSnapshot.class);
+            given(estimate.getTotalFare()).willReturn(5_000L);
+            given(orderFareSnapshotRepository.findByOrder_IdAndFareType(ORDER_ID, FareType.ESTIMATE))
+                    .willReturn(Optional.of(estimate));
+            given(deliveryOrderRepository.getReferenceById(ORDER_ID)).willReturn(mock(DeliveryOrder.class));
+
+            deliveryTimeoutService.cancelAndRefund(ORDER_ID, CUSTOMER_ID);
+
+            verify(trackingPublisher).publishClose(ORDER_ID);
         }
 
         @Test
