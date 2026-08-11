@@ -29,6 +29,10 @@ import http from 'k6/http';
 import { sleep } from 'k6';
 import { Trend, Counter } from 'k6/metrics';
 import { seedPairs } from './seed.js';
+import { loginPairs } from './ec2-login.js';
+
+// polling-arm.js와 같은 규칙 — RUN_ID가 있으면 EC2 모드(ec2-seed.sh 선행 필요).
+const EC2_MODE = Boolean(__ENV.RUN_ID);
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 const N = Number(__ENV.N || 10);
@@ -63,7 +67,7 @@ export const options = {
 };
 
 export function setup() {
-  return seedPairs(N);
+  return EC2_MODE ? loginPairs() : seedPairs(N);
 }
 
 export function riderLoop(data) {

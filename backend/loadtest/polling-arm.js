@@ -12,7 +12,7 @@
 // 환경변수:
 //   N              동시 고객·라이더 쌍 수(#259 §3 공통 독립변인). 기본 10.
 //   DURATION       계단 유지 시간. 기본 2m(§5 "최소 1~3분" 권장의 하한).
-//   POLL_INTERVAL  고객 폴링 주기 T(초). 기본 5.
+//   POLL_INTERVAL  고객 폴링 주기 T(초). 기본 2.
 //   RIDER_INTERVAL 라이더 위치 전송 주기(초). 기본 2.
 //   BASE_URL       기본 http://localhost:8080.
 //
@@ -29,11 +29,17 @@ import http from 'k6/http';
 import { sleep } from 'k6';
 import { Trend, Counter } from 'k6/metrics';
 import { seedPairs } from './seed.js';
+import { loginPairs } from './ec2-login.js';
+
+// -e RUN_ID=... 를 주면 EC2 모드(ec2-seed.sh 로 미리 만들어 둔 계정에 로그인만 한다).
+// 안 주면 로컬 모드(seed.js 가 회원가입부터 API로 직접 만든다). N은 두 모드 다 ec2-seed.sh
+// 실행 때 쓴 값과 여기 -e N=... 을 사람이 맞춰 줘야 한다(자동 감지 안 함 — 간단하게 유지).
+const EC2_MODE = Boolean(__ENV.RUN_ID);
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 const N = Number(__ENV.N || 10);
 const DURATION = __ENV.DURATION || '2m';
-const POLL_INTERVAL_SEC = Number(__ENV.POLL_INTERVAL || 5);
+const POLL_INTERVAL_SEC = Number(__ENV.POLL_INTERVAL || 2);
 const RIDER_INTERVAL_SEC = Number(__ENV.RIDER_INTERVAL || 2);
 
 // 지연(#259 §3-i): "실제 변경 시점 ~ 클라이언트가 그 변경을 인지하는 시점". 요청→응답 왕복이
@@ -59,11 +65,11 @@ export const options = {
       startTime: `${RIDER_INTERVAL_SEC}s`,
     },
   },
-  setupTimeout: '180s',
+  setupTimeout: '25m', // N=50 실측 88s(1.76s/쌍) 기준 대규모 N 역산(#259 실측, 2026-08-11).
 };
 
 export function setup() {
-  return seedPairs(N);
+  return EC2_MODE ? loginPairs() : seedPairs(N);
 }
 
 export function riderLoop(data) {
