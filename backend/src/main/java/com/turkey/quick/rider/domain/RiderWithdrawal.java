@@ -72,6 +72,14 @@ public class RiderWithdrawal {
     @Column(name = "account_holder_name_snapshot", nullable = false, length = 50, updatable = false)
     private String accountHolderNameSnapshot;
 
+    /**
+     * 벤더 이체 식별자(V19, #90). {@code PointCharge.providerPaymentKey}와 같은 이유로 확정
+     * 트랜잭션보다 먼저 선커밋한다({@link #markTransferReceived}) — 뒤가 실패해도 "이체는 됐다"는
+     * 사실이 DB에 남는다.
+     */
+    @Column(name = "provider_transfer_key", length = 100)
+    private String providerTransferKey;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     private WithdrawalStatus status;
@@ -131,6 +139,22 @@ public class RiderWithdrawal {
                                           String accountHolderName) {
         return new RiderWithdrawal(rider, requestKey, amount, bankCode, maskedAccountNumber,
                 accountHolderName);
+    }
+
+    /**
+     * 이체 결과 식별자 선커밋(V19, #90). {@code PointCharge.markApprovalReceived}와 같은 계약이다:
+     * PENDING 이 아니면 거부하고, 이미 다른 식별자가 있으면 덮어쓰지 않고 같은 값인지만 확인한다.
+     *
+     * @return 정상 기록(또는 같은 값 재기록)이면 {@code true}, 이미 <b>다른</b> 식별자가 있으면
+     *         {@code false}(= 같은 출금에 이체 응답이 둘 존재한다는 신호)
+     */
+    public boolean markTransferReceived(String providerTransferKey) {
+        requirePending("이체 식별자 기록");
+        if (this.providerTransferKey != null) {
+            return this.providerTransferKey.equals(providerTransferKey);
+        }
+        this.providerTransferKey = providerTransferKey;
+        return true;
     }
 
     /** 송금 성공: PENDING → COMPLETED. 차감된 포인트는 그대로 두므로 복구 플래그는 false 다. */

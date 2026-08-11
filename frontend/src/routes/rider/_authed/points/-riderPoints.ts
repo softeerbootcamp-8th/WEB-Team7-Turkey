@@ -82,6 +82,42 @@ export function getPointTransactionLabel(type?: PointTransactionResponse['transa
   }
 }
 
+/**
+ * WITHDRAWAL·WITHDRAWAL_REFUND 행에만 붙는 처리 상태 배지. 그 외 유형은 이 필드가 없어(백엔드
+ * PointTransactionResponse#withdrawalStatus 계약) null 을 돌려주고, 화면은 배지를 아예 그리지 않는다.
+ *
+ * WITHDRAWAL_REFUND 는 그 출금이 실패해 포인트가 돌아왔다는 뜻이라 항상 FAILED 로만 온다 — 그래도
+ * 라벨은 "실패"로 통일해 WITHDRAWAL 행의 실패 상태와 같은 문구를 쓰게 한다(#90 후속).
+ */
+export function getWithdrawalStatusLabel(
+  status?: PointTransactionResponse['withdrawalStatus'],
+): string | null {
+  switch (status) {
+    case 'PENDING':
+      return '처리 대기'
+    case 'COMPLETED':
+      return '완료'
+    case 'FAILED':
+      return '실패'
+    default:
+      return null
+  }
+}
+
+export function getWithdrawalStatusClassName(
+  status?: PointTransactionResponse['withdrawalStatus'],
+): string {
+  switch (status) {
+    case 'PENDING':
+      return 'bg-secondary-container text-on-secondary-container'
+    case 'FAILED':
+      return 'bg-error-container text-on-error-container'
+    case 'COMPLETED':
+    default:
+      return 'bg-tertiary-container text-on-tertiary-container'
+  }
+}
+
 export function getSignedPointAmount(item: PointTransactionResponse): number {
   return (item.direction === 'DEBIT' ? -1 : 1) * (item.amount ?? 0)
 }
