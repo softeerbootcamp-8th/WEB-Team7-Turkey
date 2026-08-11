@@ -28,10 +28,10 @@ import sse from 'k6/x/sse';
 import http from 'k6/http';
 import { sleep } from 'k6';
 import { Trend, Counter } from 'k6/metrics';
-import { seedPairs } from './seed.js';
-import { loginPairs } from './ec2-login.js';
+import { seedPairs } from './local/seed.js';
+import { loginPairs } from './remote/ec2-login.js';
 
-// polling-arm.js와 같은 규칙 — RUN_ID가 있으면 EC2 모드(ec2-seed.sh 선행 필요).
+// polling-arm.js와 같은 규칙 — RUN_ID가 있으면 EC2 모드(remote/ec2-seed.sh 선행 필요).
 const EC2_MODE = Boolean(__ENV.RUN_ID);
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';

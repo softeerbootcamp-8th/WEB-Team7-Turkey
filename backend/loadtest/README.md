@@ -10,9 +10,14 @@
 
 | 위치 | 대상 | 내용 |
 |---|---|---|
-| `local/` | 로컬 docker 앱 | `rider-location-update.js`, `rider-call-list.js` 등 시나리오 |
-| `remote/` | **배포 서버** | 배포 전용 시드·세션 조달. 가드는 `remote/README.md` |
-| 최상위 | 공용 | `collect.py`(지표 수집), arm 스크립트(대상은 `BASE_URL` 로 갈린다) |
+| `local/` | 로컬 docker 앱 | 시나리오(`rider-location-update.js`, `rider-call-list.js`) + API 경유 시드 `seed.js` |
+| `remote/` | **배포 서버** | SQL 직접 시드 `ec2-seed.sh` + 매니페스트 로그인 `ec2-login.js`. 가드는 `remote/README.md` |
+| 최상위 | 공용 | `collect.py`(지표 수집), arm 스크립트(`polling-arm.js`·`sse-arm.js`), `cleanup-seed.sql` |
+
+- **대상 전환은 `BASE_URL`**, **시딩 방식 전환은 `RUN_ID`** 다(`RUN_ID` 가 있으면 arm 이 매니페스트
+  기반 `loginPairs()`, 없으면 API 시딩 `seedPairs()`).
+- `seed.js` 가 `local/` 인 이유: 회원가입 API의 `debugCode` 가 **local 프로파일에서만** 채워져
+  배포에서는 쓸 수 없다.
 
 arm 스크립트를 대상별로 복사하지 않는 이유는, 두 벌이 되면 한쪽만 고쳐져 **로컬·배포 수치를
 직접 비교할 수 없게** 되기 때문이다. 대상 전환은 `BASE_URL` 하나로 한다.

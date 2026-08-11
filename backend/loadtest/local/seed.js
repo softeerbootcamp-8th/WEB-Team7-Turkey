@@ -3,7 +3,7 @@
 // 이 파일은 그 자체로 실행하는 스크립트가 아니라, arm 스크립트(SSE/Polling)가
 // setup() 안에서 import 해 쓰는 모듈이다:
 //
-//   import { seedPairs } from './seed.js';
+//   import { seedPairs } from './local/seed.js';
 //   export function setup() {
 //     return seedPairs(Number(__ENV.N || 10));
 //   }

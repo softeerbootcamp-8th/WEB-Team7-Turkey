@@ -28,11 +28,11 @@
 import http from 'k6/http';
 import { sleep } from 'k6';
 import { Trend, Counter } from 'k6/metrics';
-import { seedPairs } from './seed.js';
-import { loginPairs } from './ec2-login.js';
+import { seedPairs } from './local/seed.js';
+import { loginPairs } from './remote/ec2-login.js';
 
-// -e RUN_ID=... 를 주면 EC2 모드(ec2-seed.sh 로 미리 만들어 둔 계정에 로그인만 한다).
-// 안 주면 로컬 모드(seed.js 가 회원가입부터 API로 직접 만든다). N은 두 모드 다 ec2-seed.sh
+// -e RUN_ID=... 를 주면 EC2 모드(remote/ec2-seed.sh 로 미리 만들어 둔 계정에 로그인만 한다).
+// 안 주면 로컬 모드(seed.js 가 회원가입부터 API로 직접 만든다). N은 두 모드 다 remote/ec2-seed.sh
 // 실행 때 쓴 값과 여기 -e N=... 을 사람이 맞춰 줘야 한다(자동 감지 안 함 — 간단하게 유지).
 const EC2_MODE = Boolean(__ENV.RUN_ID);
 

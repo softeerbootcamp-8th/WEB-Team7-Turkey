@@ -6,15 +6,32 @@
 배포 대상은 팀 공용 환경이고, 되돌리기 어려운 부작용(운영 DB에 남는 계정·주문, 다른 사람의
 작업 중단)이 따른다.
 
-## 여기 오는 것 / 안 오는 것
+## 무엇이 어디에 있나
 
-| | 어디 | 왜 |
+| 파일 | 위치 | 왜 |
 |---|---|---|
 | `ec2-seed.sh` · `ec2-login.js` | **여기** | 배포 DB에 SQL 직접 시드 + 매니페스트 기반 로그인. 배포 전용이다 |
-| `../local/seed.js` | `local/` | 회원가입 API의 `debugCode` 가 **local 프로파일에서만** 채워져 배포에서는 애초에 못 쓴다 |
-| `../polling-arm.js` · `../sse-arm.js` | 최상위(공용) | 측정 로직이 양쪽 공통이고 대상은 `BASE_URL` 로만 갈린다. 여기로 복사하면 두 벌이 되어 로컬·배포 수치를 직접 비교할 수 없게 된다 |
-| `../cleanup-seed.sql` | 최상위(공용) | 계정 접두어가 로컬·배포에서 같다 |
-| `../collect.py` | 최상위(공용) | `PROM_URL` 로 어느 Prometheus를 읽을지 정한다(아래) |
+| `seed.js` | `../local/` | 회원가입 API의 `debugCode` 가 **local 프로파일에서만** 채워져 배포에서는 애초에 못 쓴다 |
+| `polling-arm.js` · `sse-arm.js` | `../`(공용) | 측정 로직이 양쪽 공통이고 대상은 `BASE_URL` 로만 갈린다. 여기로 복사하면 두 벌이 되어 로컬·배포 수치를 직접 비교할 수 없게 된다 |
+| `cleanup-seed.sql` | `../`(공용) | 계정 접두어가 로컬·배포에서 같다 |
+| `seed-fare-policy.sql` | `../`(공용) | 활성 요금 정책 시드. 로컬·배포 둘 다 필요하다(이 스크립트가 계정 시딩보다 먼저 실행한다) |
+| `collect.py` | `../`(공용) | `PROM_URL` 로 어느 Prometheus를 읽을지 정한다(아래) |
+
+`ec2-seed.sh` 는 매니페스트(`ec2-seed-<RUN_ID>.json`)를 **자기 디렉터리(여기)에** 쓰고,
+`ec2-login.js` 의 `open('./ec2-seed-<RUN_ID>.json')` 도 **자기 모듈 기준**으로 해석된다(k6 동작,
+실측 확인). 그래서 둘은 항상 같은 폴더에 있어야 한다 — 하나만 옮기면 매니페스트를 못 찾는다.
+
+## 실행
+
+```bash
+cd backend/loadtest
+./remote/ec2-seed.sh <N> <RUN_ID>          # 배포 DB에 계정·배송 생성 → remote/ec2-seed-<RUN_ID>.json
+docker compose ... k6 run -e RUN_ID=<RUN_ID> -e BASE_URL=https://<배포주소> \
+  -e N=<N> polling-arm.js                  # RUN_ID 가 있으면 arm 이 EC2 모드로 동작한다
+```
+
+`RUN_ID` 를 주면 arm 이 `loginPairs()`(매니페스트 기반)를, 안 주면 `seedPairs()`(로컬 API 시딩)를
+쓴다. **대상 전환은 `BASE_URL`, 시딩 방식 전환은 `RUN_ID` 다.**
 
 ## 지켜야 할 것
 
