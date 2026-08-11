@@ -33,8 +33,9 @@ public class RiderDeliveryRequestController implements RiderDeliveryRequestApi {
     /**
      * 배차 수락 직전 만료 정리(#42)를 위해 주입한다. 이 호출을 서비스의 {@code @Transactional}
      * 안이 아니라 여기(트랜잭션 밖)서 하는 이유는 커넥션 풀 교착 회피다 — {@code cancelIfExpired}는
-     * {@code REQUIRES_NEW}라 accept 트랜잭션이 쥔 커넥션을 정지시킨 채 두 번째 커넥션을 요구하고,
-     * 그러면 accept 1건이 커넥션 2개를 동시 점유해 동시 요청이 풀 크기의 절반을 넘으면 교착됐다(#446).
+     * {@code REQUIRES_NEW}라 accept 트랜잭션이 쥔 커넥션(C1)을 정지시킨 채 두 번째 커넥션(C2)을 요구한다.
+     * 동시 요청이 풀 크기에 도달해 모든 커넥션이 C1로 점유되면 아무도 C2를 얻지 못하고 서로 대기하는
+     * 순환 교착에 빠진다(#446). 여유가 하나라도 남으면 C2가 순차 처리돼 배수되므로 임계는 풀 크기다.
      */
     private final DeliveryTimeoutService deliveryTimeoutService;
 
