@@ -32,9 +32,15 @@ public final class TrackingChannel {
      * {@code *} 는 콜론을 포함해 매칭하므로 {@link #pattern()}({@code tracking:order:*})에 그대로
      * 걸리고, {@link TrackingSubscriber} 가 종료 신호를 <b>데이터 프레임으로 브라우저에 흘려보낸다.</b>
      *
-     * <p>채널을 나누는 이유는 {@code TrackingSubscriber} 의 확정 설계(페이로드를 파싱하지 않고
-     * 그대로 흘린다)를 지키기 위해서다. 상태 프레임에 종료 의미를 얹으면 구독자가 JSON 을 파싱해야
-     * 하지만, 채널을 나누면 <b>채널명만 보면 된다.</b>
+     * <p>같은 채널에 {@code type} 필드로 얹지 않고 채널을 나눈 <b>결정적 이유는 누출을 구조로
+     * 막기 위해서다.</b> 같은 채널이면 {@link TrackingSubscriber} 가 릴레이할지 닫을지를 판단해야
+     * 하고, 그 판단이 틀리면 종료 신호가 SSE {@code data:} 로 브라우저에 도착한다. 채널을 나누면
+     * <b>리스너가 아예 달라 그 실수가 성립하지 않는다.</b> 판별자를 이미 디스패치를 수행하는
+     * 계층(Redis 패턴 매칭)에 두는 것이기도 하다.
+     *
+     * <p>부수적으로 {@code TrackingSubscriber} 의 "파싱하지 않고 흘린다"도 유지된다. 다만 그건
+     * 불가침 계약이 아니라 #78 의 구현 선택이다 — 서버측 순서 가드처럼 파싱이 필요한 요구가 생기면
+     * 그때는 채널을 더 쪼갤 게 아니라 파싱하는 것이 맞다.
      */
     private static final String CLOSE_PREFIX = "tracking:close:";
 
@@ -88,7 +94,7 @@ public final class TrackingChannel {
      * <p><b>형식이 어긋나면 예외가 아니라 빈 결과다.</b> 이 메서드는 Redis 가 넘겨준 채널명으로
      * 리스너 스레드에서 호출되는데, 거기서 예외를 던지면
      * {@code RedisMessageListenerContainer} 가 그것을 삼켜 로그만 남기고 <b>그 메시지의 나머지
-     * 수신자까지 잃는다.</b> 잘못된 채널명은 무시하고 넘어가는 것이 맞다.
+     * 수신자까지 잃는다.</b>
      */
     public static Optional<Long> deliveryIdOf(String channel) {
         return parseAfter(channel, PREFIX);
