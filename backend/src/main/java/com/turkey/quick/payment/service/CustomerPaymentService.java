@@ -115,6 +115,7 @@ public class CustomerPaymentService {
                 transaction.getPointCharge() != null ? transaction.getPointCharge().getId() : null,
                 transaction.getRiderSettlement() != null ? transaction.getRiderSettlement().getId() : null,
                 transaction.getRiderWithdrawal() != null ? transaction.getRiderWithdrawal().getId() : null,
+                transaction.getRiderWithdrawal() != null ? transaction.getRiderWithdrawal().getStatus() : null,
                 transaction.getCreatedAt());
     }
 
