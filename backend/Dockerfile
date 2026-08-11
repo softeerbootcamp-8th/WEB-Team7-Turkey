@@ -11,4 +11,8 @@ FROM eclipse-temurin:21-jre
 WORKDIR /app
 COPY --from=build /app/build/libs/*.jar app.jar
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# -Xmx228m: 프로덕션 t4g.micro의 ergonomic 기본값(총 메모리 906MiB의 25%, #259 실측)과
+# 동일하게 고정 — 로컬 --scale 부하테스트가 프로덕션 힙 제약을 근사하게 재현하도록 한다.
+# 파일명에 hostname을 넣는 건 --scale app=N으로 띄운 컨테이너들이 같은 /dumps 볼륨을
+# 공유하기 때문 — 없으면 전부 PID 1이라 덤프·GC 로그가 서로 덮어써진다(#374).
+ENTRYPOINT ["sh", "-c", "exec java -Xmx228m -XX:+UseSerialGC -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/dumps/heapdump-$(hostname).hprof -Xlog:gc*:file=/dumps/gc-$(hostname).log:time,uptime,level,tags:filecount=5,filesize=20m -jar app.jar"]

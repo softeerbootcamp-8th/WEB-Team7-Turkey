@@ -53,3 +53,6 @@ frontend/.claude/hooks/
 
 # ec2-seed.sh 실행마다 새로 생기는 매니페스트(부하테스트 계정↔deliveryId 매핑). 결과물이라 커밋 안 함.
 backend/loadtest/ec2-seed-*.json
+
+# 로컬 부하테스트 힙 덤프·GC 로그(#374). 수백MB 바이너리라 커밋 안 함.
+backend/heapdumps/
