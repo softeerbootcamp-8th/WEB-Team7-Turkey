@@ -32,6 +32,16 @@ OpenAPI 스펙(`/v3/api-docs`)은 경로·본문 스키마만 알려준다. **�
 둘 다 개수를 `SET @n`(또는 `@riders`/`@orders`)으로 바꾼다. 재귀 CTE 기본 상한이 1000 이라
 그보다 많이 만들려면 같은 세션에서 `SET SESSION cte_max_recursion_depth = <값>` 을 먼저 실행한다.
 
+**통합·E2E 테스트를 돌리면 이 시드가 전부 사라진다.** 테스트가 같은 로컬 DB를 쓰고
+`DatabaseCleaner` 가 매 테스트 전에 전 테이블을 **TRUNCATE** 하기 때문이다. 그래서 부하테스트
+중간에 누군가(또는 자신이) `./gradlew test` 를 돌리면 계정·주문이 통째로 없어지고, 다음 실행은
+**로그인 401** 로 죽는다 — 원인이 안 보이는 실패라 먼저 이 가능성을 확인할 것:
+
+```bash
+docker compose exec -T mysql mysql -uturkey -plocal turkey -e "select count(*) from member;"
+# 2행(int_busy, int_busy_cust)만 남아 있으면 테스트가 지운 것이다. 다시 시드한다.
+```
+
 **VU 수는 계정 수(라이더 + 고객)에 맞춘다.** 각 스크립트가 역할당 `n` 명을 만들므로 총 계정은
 `2n` 이다 — 기본 `n=100` 이면 200 이 계정 1개당 VU 1개가 되는 값이다. VU 가 계정보다 많으면
 여러 VU 가 한 계정을 공유해 같은 행·같은 Redis 키만 두드리고, 버퍼풀 지역성이 비현실적으로

@@ -118,7 +118,16 @@ description: Turkey 저장소에서 k6 부하테스트를 목적만 듣고 끝�
 #     무관한 빈 컨테이너 값으로 채워진다(초록불 거짓말의 다른 형태).
 cd infra/monitoring-ec2
 docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.loadtest.yml up -d
-curl -sf localhost:9099/-/ready >/dev/null || echo "관측 스택 미기동"
+
+# 스크레이프 대상이 6개(mysql·redis·spring-app·node-app·node-db·node-redis) 전부 up 인지 본다.
+# `/-/ready` 만으로는 부족하다 — Prometheus 가 200 을 주면서 **대상이 0개**일 수 있다.
+curl -s 'localhost:9099/api/v1/targets?state=any' | python3 -c "import sys,json; \
+t=json.load(sys.stdin)['data']['activeTargets']; \
+print(f'타깃 {len(t)}개,', [x['labels']['job'] for x in t if x['health']!='up'] or '전부 up')"
+
+# 6개가 아니면 Prometheus 를 **재생성**한다(restart 로는 안 풀린다 — 아래 이유).
+docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.loadtest.yml \
+  up -d --force-recreate prometheus
 
 # (2) 부하 대상. 코드가 바뀌었거나 브랜치를 옮겼으면 --build 를 반드시 준다 — 낡은 이미지로
 #     재면 조용히 다른 코드를 측정한다.
@@ -158,6 +167,13 @@ docker compose run --rm -e BASE_URL=http://app:8080 -e RIDER_COUNT=100 -e MAX_VU
   않는다 — 기본 시드(`c1~c6`, `rbusy1~3` 등)가 이미 있으면 필요 없다.
 - 필요한 데이터셋이 이미 있으면 **시드를 아예 건너뛴다.**
 
+- **브랜치를 바꿔 작업한 뒤에는 Prometheus 를 반드시 재생성한다.** `targets/`·`targets.local/` 은
+  리포지토리에 있는 파일이고 Prometheus 가 그 **디렉터리를 bind mount** 한다. 브랜치 전환이 그
+  디렉터리를 지우고 새로 만들면, bind mount 는 기동 시점 inode 를 붙잡고 있어 **파일이 복구된
+  뒤에도 컨테이너는 삭제된 옛 inode 를 계속 본다.** 증상은 "스크레이프 대상이 통째로 없어짐"
+  이고, 앱 actuator 는 정상 200 을 준다 — 설정 오류처럼 보이지만 마운트가 끊긴 것이다.
+  `restart` 로는 안 풀리고 `up -d --force-recreate prometheus` 가 필요하다(실제로 겪었다).
+  `collect.py` 의 "exporter 가 부하 대상을 보고 있는지 확인" 안내로는 이 상태를 못 짚는다.
 - **`BASE_URL=http://app:8080`** 을 쓴다(docker 네트워크 내부 주소). 호스트 포트로 돌리지 말 것.
 - 시드가 DB 를 전부 지운다. 사용자가 로컬에서 작업 중인 데이터가 있는지 모르겠으면 먼저 알린다.
 - **백그라운드로 돌리지 말 것.** 훅이 종료 시점에 붙어야 지표가 자동으로 올라온다.
