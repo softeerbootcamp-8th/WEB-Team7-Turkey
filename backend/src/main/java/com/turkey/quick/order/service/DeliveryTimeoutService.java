@@ -4,6 +4,7 @@ import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.FareType;
 import com.turkey.quick.order.domain.OrderFareSnapshot;
 import com.turkey.quick.order.domain.OrderStatus;
+import com.turkey.quick.location.sse.TrackingPublisher;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
 import com.turkey.quick.payment.service.CustomerPaymentService;
@@ -44,6 +45,9 @@ public class DeliveryTimeoutService {
     private final DeliveryOrderRepository deliveryOrderRepository;
     private final OrderFareSnapshotRepository orderFareSnapshotRepository;
     private final CustomerPaymentService customerPaymentService;
+
+    /** CANCELED 전이를 그 배송의 SSE 채널에 알린다(#444). 트랜잭션 안에서 부르면 커밋 후로 자동으로 미뤄진다. */
+    private final TrackingPublisher trackingPublisher;
 
     /**
      * 지연 만료(#42 비고 + 사람 확인). 주문 생성 흐름({@link DeliveryService#createDelivery}) 맨 앞에서
@@ -122,6 +126,8 @@ public class DeliveryTimeoutService {
         DeliveryOrder orderRef = deliveryOrderRepository.getReferenceById(orderId);
         long balanceAfter = customerPaymentService.refundForCancel(
                 customerId, orderRef, estimate.getTotalFare());
+
+        trackingPublisher.publishStatus(orderId, OrderStatus.CANCELED, now.toInstant(ZoneOffset.UTC));
 
         log.info("[배차대기-자동취소] orderId={}, customerId={}, refundAmount={}, balanceAfter={}",
                 orderId, customerId, estimate.getTotalFare(), balanceAfter);

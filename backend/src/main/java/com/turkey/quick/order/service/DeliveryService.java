@@ -23,6 +23,7 @@ import com.turkey.quick.order.dto.FareQuoteResponse;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.order.repository.FarePolicyRepository;
 import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
+import com.turkey.quick.location.sse.TrackingPublisher;
 import com.turkey.quick.payment.service.CustomerPaymentService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -66,6 +67,9 @@ public class DeliveryService {
 
     /** 지연 만료(#42) 호출용. 별도 빈이라야 {@code expireIfStale} 의 {@code REQUIRES_NEW} 프록시를 탄다. */
     private final DeliveryTimeoutService deliveryTimeoutService;
+
+    /** CANCELED 전이를 그 배송의 SSE 채널에 알린다(#444). 트랜잭션 안에서 부르면 커밋 후로 자동으로 미뤄진다. */
+    private final TrackingPublisher trackingPublisher;
 
     /**
      * 요금 견적. 활성 정책(fare_policy)과 좌표만으로 계산하며 주문·스냅샷은 만들지 않는다.
@@ -270,6 +274,8 @@ public class DeliveryService {
 
         long balanceAfter = customerPaymentService.refundForCancel(
                 customerId, deliveryOrderRepository.getReferenceById(deliveryId), estimate.getTotalFare());
+
+        trackingPublisher.publishStatus(deliveryId, OrderStatus.CANCELED, canceledAt.toInstant(ZoneOffset.UTC));
 
         log.info("[배송요청-취소] deliveryId={}, customerId={}, refundAmount={}, balanceAfter={}",
                 deliveryId, customerId, estimate.getTotalFare(), balanceAfter);
