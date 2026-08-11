@@ -50,6 +50,7 @@ class DeliveryTimeoutServiceTest {
     @Mock
     private CustomerPaymentService customerPaymentService;
 
+    /** #444 CANCELED SSE 발행용. */
     /** #450: 자동 취소된 배송의 SSE 연결을 정리한다. 발행 자체는 아래 전용 테스트가 검증한다. */
     @Mock
     private TrackingPublisher trackingPublisher;
@@ -134,6 +135,7 @@ class DeliveryTimeoutServiceTest {
 
             assertThat(result).isTrue();
             verify(customerPaymentService).refundForCancel(CUSTOMER_ID, stale, 5_000L);
+            verify(trackingPublisher).publishStatus(eq(ORDER_ID), eq(OrderStatus.CANCELED), any());
         }
     }
 
@@ -153,21 +155,6 @@ class DeliveryTimeoutServiceTest {
         }
 
         @Test
-        @DisplayName("취소에 성공하면 그 배송의 SSE 연결을 닫으라는 신호를 발행한다")
-        void publishesCloseSignalOnSuccess() {
-            given(deliveryOrderRepository.cancelIfWaiting(eq(ORDER_ID), any(), any())).willReturn(1);
-            OrderFareSnapshot estimate = mock(OrderFareSnapshot.class);
-            given(estimate.getTotalFare()).willReturn(5_000L);
-            given(orderFareSnapshotRepository.findByOrder_IdAndFareType(ORDER_ID, FareType.ESTIMATE))
-                    .willReturn(Optional.of(estimate));
-            given(deliveryOrderRepository.getReferenceById(ORDER_ID)).willReturn(mock(DeliveryOrder.class));
-
-            deliveryTimeoutService.cancelAndRefund(ORDER_ID, CUSTOMER_ID);
-
-            verify(trackingPublisher).publishClose(ORDER_ID);
-        }
-
-        @Test
         @DisplayName("취소에 성공하면 예상 운임 스냅샷 금액만큼 환급한다")
         void refundsFareAmountFromEstimateSnapshotOnSuccess() {
             given(deliveryOrderRepository.cancelIfWaiting(eq(ORDER_ID), any(), any())).willReturn(1);
@@ -182,6 +169,7 @@ class DeliveryTimeoutServiceTest {
 
             assertThat(result).isTrue();
             verify(customerPaymentService).refundForCancel(CUSTOMER_ID, orderRef, 7_500L);
+            verify(trackingPublisher).publishStatus(eq(ORDER_ID), eq(OrderStatus.CANCELED), any());
         }
 
         @Test

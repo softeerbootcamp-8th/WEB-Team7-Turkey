@@ -11,6 +11,7 @@ import type {
 } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
 import { getCustomerDeliveryStatusLabel, isActiveDeliveryStatus, isTrackableDeliveryStatus } from '@/shared/delivery/status'
 import { useTrackingStream, type TrackingConnectionStatus } from '@/shared/hooks/useTrackingStream'
+import { useWaitingExpiryTimer } from '@/shared/hooks/useWaitingExpiryTimer'
 import { DeliveryEta } from './-components/DeliveryEta'
 import { TrackingMap } from './-components/TrackingMap'
 
@@ -56,7 +57,11 @@ function DeliveryTracking() {
   const { deliveryId: deliveryIdParam } = Route.useParams()
   const deliveryId = Number(deliveryIdParam)
 
-  const detailQuery = useGetDelivery(deliveryId)
+  // 다른 탭/기기가 먼저 취소·배차했을 수 있으니, 이 화면으로 포커스가 돌아올 때마다 다시
+  // 확인한다(Discussion #402·#432, #444) — 최종 백스톱, 타이머·SSE와 겹쳐 방어한다.
+  const detailQuery = useGetDelivery(deliveryId, {
+    query: { refetchOnWindowFocus: true, staleTime: 0 },
+  })
   const cancelMutation = useCancelCustomerDelivery()
 
   // ApiResponse<T> 봉투를 벗긴다 — customInstance는 axios 레벨(AxiosResponse<T>)만
@@ -74,6 +79,10 @@ function DeliveryTracking() {
   const isTrackable = isTrackableDeliveryStatus(detail?.status)
   const isSubscribable = isActiveDeliveryStatus(detail?.status)
   const { status: streamStatus, location, statusChangedAt } = useTrackingStream(deliveryId, isSubscribable)
+
+  // 논리적 만료(생성+5분) 이후 물리적 만료(스캐너)를 기다리지 않고, 화면이 보고 있는 시점마다
+  // 스스로 판정해 기존 취소 API를 대신 호출한다(Discussion #402, #444).
+  useWaitingExpiryTimer(deliveryId, detail?.status, detail?.requestedAt)
 
   // 상태 전이 SSE 프레임(#398)을 받으면 상세 조회를 재조회해 화면을 갱신한다(#399).
   // 재조회는 멱등이라 이벤트 순서 역전·중복 걱정이 없다.
