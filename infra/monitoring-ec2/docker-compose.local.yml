@@ -31,6 +31,14 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-local}
 
   caddy:
+    environment:
+      # base 는 `${SITE_ADDRESS:-}` 라 값이 없으면 **빈 문자열**을 넘긴다. 그런데 Caddyfile 의
+      # `{$SITE_ADDRESS:https://localhost}` 는 변수가 "설정됐지만 비어 있는" 경우 기본값으로
+      # 넘어가지 않는다 — 주소가 사라져 `{ tls internal ... }` 가 되고, 맨 앞의 `{` 를 전역
+      # 옵션 블록으로 읽어 `unrecognized global option: tls` 로 **기동이 실패한다**.
+      # verify-local.sh 는 이 값을 직접 넣어 주지만, `docker compose up -d` 를 손으로 치면
+      # 걸린다(실제로 걸렸다). 로컬 오버레이는 로컬임을 아니까 여기서 기본값을 준다.
+      SITE_ADDRESS: ${SITE_ADDRESS:-https://localhost}
     # !override 가 없으면 base 의 443 에 8443 이 "추가"되어 443 을 그대로 점유한다.
     ports: !override
       # 443 은 권한·기존 프로세스와 충돌하기 쉬워 로컬에서만 8443 으로 뺀다.

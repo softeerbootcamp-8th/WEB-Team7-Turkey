@@ -3,6 +3,20 @@
 시나리오 스크립트와 실측 결과. 실행 방법은 각 스크립트 상단 주석과 `../docker-compose.yml` 의
 `k6` 서비스 주석에 있다.
 
+## 디렉터리 구분 (2026-08-11 결정)
+
+**대상이 로컬인지 배포인지에 따라 디렉터리가 갈린다.** 같은 명령처럼 보이면 실수로 팀 공용
+환경을 때리기 때문이다.
+
+| 위치 | 대상 | 내용 |
+|---|---|---|
+| `local/` | 로컬 docker 앱 | `rider-location-update.js`, `rider-call-list.js` 등 시나리오 |
+| `remote/` | **배포 서버** | 배포 전용 시드·세션 조달. 가드는 `remote/README.md` |
+| 최상위 | 공용 | `collect.py`(지표 수집), arm 스크립트(대상은 `BASE_URL` 로 갈린다) |
+
+arm 스크립트를 대상별로 복사하지 않는 이유는, 두 벌이 되면 한쪽만 고쳐져 **로컬·배포 수치를
+직접 비교할 수 없게** 되기 때문이다. 대상 전환은 `BASE_URL` 하나로 한다.
+
 측정은 **앱을 컨테이너로 띄우고**(`--profile app`) k6·앱·MySQL·Redis 를 같은 docker 네트워크에
 두고 한다. 앱 컨테이너는 배포 EC2 와 같은 **1GiB / 2 vCPU** 로 묶여 있다.
 
@@ -10,14 +24,29 @@
 > 낡은 이미지로 재면 조용히 다른 코드를 측정한다.
 
 ```bash
-cd backend
+# 1) 관측 스택(Prometheus + Grafana + exporter). 세 번째 파일이 exporter 를 부하 대상으로 돌린다 —
+#    빼면 MySQL·Redis 수치가 무관한 빈 컨테이너 값으로 채워진다.
+cd infra/monitoring-ec2
+docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.loadtest.yml up -d
+curl -sf localhost:9099/-/ready || echo "관측 스택이 안 떴다 — 리포트가 빈다"
+
+# 2) 부하 대상 + 시드
+cd ../../backend
 docker compose --profile app up -d --build
 docker compose exec -T mysql mysql -uturkey -plocal turkey < scripts/reset-and-seed-local.sql
 # BUSY 라이더 100명(+고객 100명, 진행 중 배송 100건). VU 수보다 많게 잡는다.
 docker compose exec -T mysql mysql -uturkey -plocal turkey < scripts/seed-loadtest-riders.sql
-docker compose --profile loadtest run --rm -e BASE_URL=http://app:8080 -e RIDER_COUNT=100 \
-  k6 run /scripts/rider-location-update.js
+
+# 3) 실행 → 리포트. testid 를 빼먹으면 Grafana 대시보드와 collect.py 가 런을 구분하지 못한다.
+ID=location-$(date +%Y%m%d-%H%M%S); S=$(date +%s)
+docker compose run --rm -e BASE_URL=http://app:8080 -e RIDER_COUNT=100 \
+  k6 run --tag testid=$ID /scripts/local/rider-location-update.js
+./loadtest/collect.py $S $(date +%s) $ID > ../docs/loadtest/$(date +%F)-${ID}.md
 ```
+
+Grafana 는 `https://localhost:8443`(자체서명, 최초 1회 "고급 > 계속 진행") 의 **k6 Prometheus**
+대시보드에서 `testid` 를 골라 본다. 런 단위 p95/p99 는 k6 가 종료할 때 터미널에 찍는 summary 가
+정본이다 — 퍼센타일은 구간별로 나뉘어 저장되므로 시간축으로 평균낼 수 없다.
 
 `RIDER_COUNT` 를 생략하면 기본 시드의 BUSY 라이더 3명만 쓴다 — 계정을 공유하면 같은 행·같은
 Redis 키만 두드려 수치가 왜곡된다(아래 A vs B 비교). 계정 수는 `seed-loadtest-riders.sql` 의
@@ -27,7 +56,7 @@ Redis 키만 두드려 수치가 왜곡된다(아래 A vs B 비교). 계정 수�
 > 앱↔DB 트래픽이 Docker VM 경계를 넘어 지연이 붙는다. 실제로 그 구성에서 나온 첫 측정은
 > 커넥션 풀 대기가 부풀려져 병목을 잘못 짚었다(아래 「측정 이력」).
 
-## rider-location-update.js — 라이더 위치 갱신
+## local/rider-location-update.js — 라이더 위치 갱신
 
 `POST /api/rider/location`. BUSY 라이더가 5초마다 때리는 유일한 상시 쓰기 경로다.
 
@@ -144,7 +173,7 @@ B 는 가상 스레드가 없던 브랜치에서 잰 같은 조건이다 — 이
 - **알림 규칙이 실제 지표에 반응했다.** 첫 측정에서 `HikariPoolPending` 이 pending 까지 갔다
   (테스트 90초 < 규칙의 `for: 2m` 이라 firing 전에 종료).
 
-### 측정 이력
+### 측정 이력(위치 갱신)
 
 1. **첫 측정** — 앱을 호스트 `bootRun`, 계정 3개: 2,287 req/s · Hikari 대기 36. 이걸 보고
    "커넥션 풀이 병목"이라고 결론지었다.

@@ -105,58 +105,49 @@ services:
       s3mock:
         condition: service_started
 
-  # k6 부하 테스트 결과 시각화용. `--profile loadtest` 로 별도로 켠다(app profile 과 독립적).
-  influxdb:
-    image: influxdb:1.8
-    profiles: ["loadtest"]
-    environment:
-      INFLUXDB_DB: k6
-
-  grafana:
-    image: grafana/grafana:11.2.0
-    profiles: ["loadtest"]
-    ports:
-      - "3000:3000"
-    environment:
-      # 로컬 1회성 부하테스트 시각화 용도라 익명 admin 허용 — 팀 공유용 모니터링은
-      # infra/monitoring-ec2 쪽(개별 로그인 계정)을 쓴다.
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
-    volumes:
-      - grafana-data:/var/lib/grafana
-    depends_on:
-      - influxdb
-
-  # 실행: docker compose --profile loadtest run --rm k6 run /scripts/<파일명>.js
-  # ./loadtest/ 에 시나리오 스크립트를 직접 작성해서 넣는다(리포지토리에는 없음).
+  # 부하 발생기. 시나리오는 ./loadtest/local/(로컬 대상) · ./loadtest/remote/(배포 대상)에 있고, 결과는 로컬 모니터링 스택의 Prometheus 로
+  # 밀어 넣는다(아래 K6_OUT 기본값). 관측·시각화는 전부 그쪽이 한다 — 이 파일에 influxdb·
+  # grafana 를 따로 두지 않는 이유다(로컬에 Grafana 가 둘이면 어느 쪽을 보는지 헷갈린다).
   #
-  # 모니터링 스택(infra/monitoring-ec2)의 Prometheus 로 결과를 보낼 수 있다. 개발 PC 쪽 포트는
-  # 9099 로 통일한다 — 이 파일의 s3mock 이 9090 을 쓰기 때문이다.
-  #   로컬 스택: docker-compose.local.yml 이 이미 127.0.0.1:9099 로 노출한다.
-  #   실 EC2   : ssh -N -L 9099:localhost:9090 <모니터링-EC2> &   (그쪽 9090 은 루프백 바인딩)
-  # 그다음:
-  #   K6_OUT=experimental-prometheus-rw \
-  #   K6_PROMETHEUS_RW_SERVER_URL=http://host.docker.internal:9099/api/v1/write \
-  #     docker compose --profile loadtest run --rm k6 run /scripts/<파일명>.js
-  # 컨테이너에서 호스트의 터널을 타려고 host.docker.internal 을 쓰므로 extra_hosts 가 필요하다.
-  # 출력 이름은 k6 버전에 따라 다를 수 있다(experimental- 접두어 제거 예정) — 안 먹으면
-  # `docker compose --profile loadtest run --rm k6 --help` 로 확인할 것.
+  # k6 가 이 프로젝트에 있는 이유: 측정 경로(k6 → app → mysql/redis)가 한 docker 네트워크
+  # 안에서 끝나야 한다. 호스트를 경유하면 macOS·Windows 에서 Docker VM 경계를 넘어 지연이
+  # 붙고, 그게 요청이 커넥션을 잡는 시간에 그대로 더해진다(loadtest/README.md 「측정 이력」의
+  # 철회된 첫 결론이 정확히 이 함정이었다). 반대로 결과 전송·스크레이프는 측정 경로가
+  # 아니므로 호스트를 경유해도 수치에 영향이 없다.
+  #
+  # 실행(부하 대상은 app 컨테이너다 — 호스트 bootRun 으로 재지 말 것):
+  #   cd ../infra/monitoring-ec2 && docker compose \
+  #     -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.loadtest.yml up -d
+  #   curl -sf localhost:9099/-/ready || echo "관측 스택이 안 떠 있다 — 리포트가 빈다"
+  #   cd ../../backend && docker compose --profile app up -d --build
+  #   S=$(date +%s)
+  #   docker compose run --rm -e BASE_URL=http://app:8080 k6 \
+  #     run --tag testid=location-$(date +%Y%m%d-%H%M%S) /scripts/local/rider-location-update.js
+  #   ./loadtest/collect.py $S $(date +%s) location-<위와 같은 값>
+  #
+  # `--tag testid=` 를 빼먹지 말 것: Grafana k6 대시보드가 그 라벨로 런을 구분하고,
+  # collect.py 도 그것으로 런을 특정한다. 없으면 여러 런이 한 그래프에 겹친다.
+  #
+  # 배포 EC2 의 Prometheus 로는 절대 밀지 않는다. 그쪽 보존 정책이 `15d 또는 8GB 중 먼저
+  # 걸리는 쪽`인데, k6 시리즈는 카디널리티가 높고(URL·check·status × testid, 런마다 새 testid)
+  # 8GB 에 닿으면 Prometheus 는 오래된 블록부터 지운다 — k6 와 운영 지표를 구분하지 않는다.
   k6:
     image: grafana/k6:latest
+    # `up -d` 가 이걸 띄우지 않게 막는 용도다. `docker compose run k6` 는 대상 서비스의
+    # 프로파일을 자동으로 켜므로(Compose v2 이상) 실행할 때 --profile 을 줄 필요가 없다.
     profiles: ["loadtest"]
     volumes:
       - ./loadtest:/scripts
     environment:
-      K6_OUT: ${K6_OUT:-influxdb=http://influxdb:8086/k6}
-      K6_PROMETHEUS_RW_SERVER_URL: ${K6_PROMETHEUS_RW_SERVER_URL:-}
+      # 출력 이름은 k6 v2.1.0 에서 실측 확인했다(`prometheus-rw` 는 아직 없다).
+      K6_OUT: ${K6_OUT:-experimental-prometheus-rw}
+      # 로컬 모니터링 스택의 Prometheus. 9099 인 이유는 이 파일의 s3mock 이 9090 을 쓰기 때문.
+      K6_PROMETHEUS_RW_SERVER_URL: ${K6_PROMETHEUS_RW_SERVER_URL:-http://host.docker.internal:9099/api/v1/write}
       # 기본값은 avg/min/med/max 뿐이라 p99 가 안 올라간다. 부하테스트에서 볼 값은 p99 다.
       K6_PROMETHEUS_RW_TREND_STATS: p(95),p(99),max
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on:
-      - influxdb
     entrypoint: ["k6"]
 
 volumes:
   turkey-mysql-data:
-  grafana-data:

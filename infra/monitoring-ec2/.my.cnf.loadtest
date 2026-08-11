@@ -1,0 +1,8 @@
+# 부하테스트 계측용(docker-compose.loadtest.yml). 부하 대상인 backend/docker-compose.yml 의
+# mysql 컨테이너를 호스트 공개 포트로 본다. 배포는 .my.cnf, 스택 자체 검증은 .my.cnf.local.
+# 자격증명은 backend/docker-compose.yml 에 그대로 적혀 있는 로컬 개발용 값이다.
+[client]
+user = root
+password = local
+host = host.docker.internal
+port = 3306
