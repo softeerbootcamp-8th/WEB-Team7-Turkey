@@ -37,7 +37,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.multipart.MultipartFile;
 
 @Slf4j
 @Service
@@ -55,6 +58,7 @@ public class RiderDeliveryService {
     private final PointWalletRepository pointWalletRepository;
     private final PointTransactionRepository pointTransactionRepository;
     private final RiderDeliveryProofUploadService riderDeliveryProofUploadService;
+    private final PlatformTransactionManager transactionManager;
 
     /** #398: 배송 단계 전이·완료를 고객 추적 SSE로 실시간 전달하기 위해 주입한다. */
     private final TrackingPublisher trackingPublisher;
@@ -188,12 +192,42 @@ public class RiderDeliveryService {
         return completeInternal(rider, deliveryId, request.proofType(), proofValue);
     }
 
-    /** 서버가 파일을 직접 받아 그 자리에서 S3에 올리는 완료 경로(원래 #61 후속 구현, 병행 유지). */
-    @Transactional
+    /**
+     * 서버가 파일을 직접 받아 S3에 올리는 완료 경로(원래 #61 후속 구현, 병행 유지).
+     *
+     * <p><b>DB 커밋 → S3 업로드 순서다(사람 확인).</b> 원래는 S3 업로드가 먼저였는데, 그 뒤
+     * 트랜잭션이 실패하면(정산 등) DB엔 아무 흔적도 없이 S3에만 파일이 남는 완전한 유령
+     * 데이터가 됐다. 지금은 배송 완료 트랜잭션(정산·포인트 적립 포함)을 {@link TransactionTemplate}
+     * 으로 먼저 커밋시키고 — 이 메서드 자체엔 {@code @Transactional}을 안 붙인다, 같은 빈
+     * 안에서 {@link #completeInternal}을 직접 호출하면 AOP 프록시를 안 타 트랜잭션이 안 걸리기
+     * 때문이다 — 커밋 후에 S3 업로드를 시도한다. 이러면 S3가 실패해도 배송 완료 자체는
+     * 되돌리지 않는다(이미 커밋된 걸 코드로 되돌리려면 별도 보상 트랜잭션이 필요한데, 그럴
+     * 경우 결국 배송 완료가 S3 가용성에 다시 종속된다 — 하려는 것과 반대). 대신 실패하면
+     * 로그를 남기고 응답의 {@code proofUploadFailed}를 true로 돌려 "완료는 됐지만 사진이
+     * 없는 상태"임을 알린다. 재업로드 API는 다음 이슈로 미룬다.
+     */
     public RiderDeliveryCompleteResponse completeWithPhotoFile(AuthenticatedRider rider, Long deliveryId,
                                                                  RiderDeliveryCompleteMultipartRequest request) {
-        String proofValue = resolveProofValueFromUpload(deliveryId, request);
-        return completeInternal(rider, deliveryId, request.proofType(), proofValue);
+        PendingProof pending = resolvePendingProofFromUpload(deliveryId, request);
+
+        RiderDeliveryCompleteResponse response = new TransactionTemplate(transactionManager).execute(status ->
+                completeInternal(rider, deliveryId, request.proofType(), pending.proofValue()));
+
+        if (pending.pendingUpload() != null) {
+            try {
+                riderDeliveryProofUploadService.store(pending.proofValue(), pending.pendingUpload());
+            } catch (Exception e) {
+                log.error("event=RIDER_DELIVERY_PROOF_PHOTO_UPLOAD_FAILED_AFTER_COMMIT "
+                                + "riderId={} orderId={} key={}",
+                        rider.memberId(), deliveryId, pending.proofValue(), e);
+                return response.withProofUploadFailed(true);
+            }
+        }
+        return response;
+    }
+
+    /** 커밋 전엔 키만 정하고, 실제 파일 업로드는 {@link #completeWithPhotoFile}이 커밋 후에 한다. */
+    private record PendingProof(String proofValue, MultipartFile pendingUpload) {
     }
 
     private RiderDeliveryCompleteResponse completeInternal(AuthenticatedRider rider, Long deliveryId,
@@ -256,7 +290,7 @@ public class RiderDeliveryService {
                 rider.memberId(), deliveryId, settlementAmount);
         return new RiderDeliveryCompleteResponse(
                 deliveryId, OrderStatus.COMPLETED, OperatingStatus.AVAILABLE,
-                settlementAmount, order.getCompletedAt());
+                settlementAmount, order.getCompletedAt(), false);
     }
 
     /**
@@ -278,15 +312,17 @@ public class RiderDeliveryService {
     }
 
     /**
-     * proofType=PHOTO 면 file 을 S3 에 올려 그 키를 인증값으로 쓰고, 그 외에는 클라이언트가 보낸
-     * proofValue 를 그대로 쓴다. 둘 다 없으면 인증 정보가 없는 것이므로 거부한다.
+     * proofType=PHOTO 면 file 의 키만 미리 만들어 두고(업로드는 안 함 — 커밋 후
+     * {@link #completeWithPhotoFile}이 한다), 그 외에는 클라이언트가 보낸 proofValue 를
+     * 그대로 쓴다(업로드 대상 없음). 둘 다 없으면 인증 정보가 없는 것이므로 거부한다.
      */
-    private String resolveProofValueFromUpload(Long deliveryId, RiderDeliveryCompleteMultipartRequest request) {
+    private PendingProof resolvePendingProofFromUpload(Long deliveryId, RiderDeliveryCompleteMultipartRequest request) {
         if (request.file() != null && !request.file().isEmpty()) {
-            return riderDeliveryProofUploadService.upload(deliveryId, request.file());
+            String key = riderDeliveryProofUploadService.buildKey(deliveryId, request.file().getOriginalFilename());
+            return new PendingProof(key, request.file());
         }
         if (request.proofValue() != null && !request.proofValue().isBlank()) {
-            return request.proofValue();
+            return new PendingProof(request.proofValue(), null);
         }
         throw new BusinessException(HttpStatus.BAD_REQUEST,
                 "완료 인증 정보(사진 파일 또는 참조값)가 필요합니다.");

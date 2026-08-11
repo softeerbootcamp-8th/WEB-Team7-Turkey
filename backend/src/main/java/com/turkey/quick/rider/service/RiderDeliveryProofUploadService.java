@@ -54,6 +54,18 @@ public class RiderDeliveryProofUploadService {
         return key;
     }
 
+    /**
+     * 이미 정해진 키로 업로드만 수행한다 — 완료 트랜잭션이 먼저 커밋된 뒤 지연 업로드하는
+     * 경로 전용이다(사람 확인). {@link #upload}와 달리 키 생성을 하지 않는다: 호출자가
+     * 트랜잭션 커밋 *전*에 {@link #buildKey}로 키를 미리 만들어 DB에 심어 두고, 커밋 *후*
+     * 이 메서드로 실제 파일을 그 키에 올린다 — 실패해도 DB에는 이미 그 키를 가리키는
+     * 인증 기록이 남아 있어 완전한 유령 데이터가 되지 않는다.
+     */
+    public void store(String key, MultipartFile file) {
+        storage.store(key, file);
+        log.info("event=RIDER_DELIVERY_PROOF_PHOTO_UPLOADED key={} sizeBytes={}", key, file.getSize());
+    }
+
     /** upload()가 쓰는 키 생성 — 클라이언트가 보낸 원본 파일명을 그대로 반영한다. */
     String buildKey(Long deliveryId, String originalFilename) {
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
