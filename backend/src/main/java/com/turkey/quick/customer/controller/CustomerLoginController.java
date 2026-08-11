@@ -7,13 +7,18 @@ import com.turkey.quick.customer.dto.CustomerLoginResponse;
 import com.turkey.quick.customer.service.CustomerLoginResult;
 import com.turkey.quick.customer.service.CustomerLoginService;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequiredArgsConstructor
+@RequestMapping("/api/customer/login")
 public class CustomerLoginController implements CustomerLoginApi {
 
     private final CustomerLoginService customerLoginService;
@@ -22,7 +27,10 @@ public class CustomerLoginController implements CustomerLoginApi {
     private boolean cookieSecure;
 
     @Override
-    public ApiResponse<CustomerLoginResponse> login(CustomerLoginRequest request, HttpServletResponse response) {
+    @PostMapping
+    public ApiResponse<CustomerLoginResponse> login(
+            @Valid @RequestBody CustomerLoginRequest request,
+            HttpServletResponse response) {
         CustomerLoginResult result = customerLoginService.login(request.loginId(), request.password());
 
         var cookie = SessionCookie.of(result.sessionId(), result.sessionTtl(), cookieSecure);
