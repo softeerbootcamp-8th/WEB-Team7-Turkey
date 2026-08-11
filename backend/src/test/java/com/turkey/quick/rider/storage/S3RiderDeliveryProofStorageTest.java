@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import java.io.ByteArrayInputStream;
 import java.net.URI;
 import java.time.Duration;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockMultipartFile;
@@ -31,7 +32,8 @@ class S3RiderDeliveryProofStorageTest {
             new S3RiderDeliveryProofStorage(amazonS3, s3Presigner, "proof-bucket");
 
     @Test
-    void 파일을_지정한_키로_S3에_업로드한다() {
+    @DisplayName("파일을 지정한 키로 S3에 업로드한다")
+    void shouldUploadFileToSpecifiedS3Key() {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "photo.jpg", "image/jpeg", new byte[]{1, 2, 3});
 
@@ -46,7 +48,8 @@ class S3RiderDeliveryProofStorageTest {
     }
 
     @Test
-    void S3에서_파일과_메타데이터를_읽는다() throws Exception {
+    @DisplayName("S3에서 파일과 메타데이터를 읽는다")
+    void shouldReadFileAndMetadataFromS3() throws Exception {
         String key = "proof/42/photo_uuid.jpg";
         GetObjectResponse response = GetObjectResponse.builder()
                 .contentType("image/jpeg")
@@ -71,7 +74,8 @@ class S3RiderDeliveryProofStorageTest {
     }
 
     @Test
-    void S3_객체의_10초_만료_Presigned_URL을_생성한다() throws Exception {
+    @DisplayName("S3 객체의 10초 만료 Presigned URL을 생성한다")
+    void shouldCreatePresignedUrlExpiringInTenSeconds() throws Exception {
         PresignedGetObjectRequest presignedRequest = mock(PresignedGetObjectRequest.class);
         when(presignedRequest.url()).thenReturn(URI.create("https://example.com/proof.jpg").toURL());
         when(s3Presigner.presignGetObject(any(GetObjectPresignRequest.class)))

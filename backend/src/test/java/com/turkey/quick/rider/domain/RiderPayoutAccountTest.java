@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
 import java.nio.charset.StandardCharsets;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class RiderPayoutAccountTest {
@@ -19,7 +20,8 @@ class RiderPayoutAccountTest {
     }
 
     @Test
-    void 출금계좌_등록시_입력값이_보관된다() {
+    @DisplayName("출금계좌 등록시 입력값이 보관된다")
+    void shouldStoreValuesWhenRegisteringPayoutAccount() {
         RiderProfile rider = rider();
         byte[] ciphertext = cipher("enc-110-123456");
 
@@ -34,7 +36,8 @@ class RiderPayoutAccountTest {
     }
 
     @Test
-    void 계좌_변경시_은행_암호문_마스킹_예금주가_교체된다() {
+    @DisplayName("계좌 변경시 은행 암호문 마스킹 예금주가 교체된다")
+    void shouldReplaceEncryptedBankAccountMaskAndHolderOnUpdate() {
         RiderPayoutAccount account = RiderPayoutAccount.register(
                 rider(), "088", cipher("enc-110-123456"), "신한(**3456)", "홍라이더");
         byte[] newCipher = cipher("enc-020-987654");

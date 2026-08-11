@@ -19,7 +19,8 @@ class PointChargeTest {
     }
 
     @Test
-    void 충전요청은_PENDING_상태로_생성되고_승인_환불_필드는_비어있다() {
+    @DisplayName("충전요청은 PENDING 상태로 생성되고 승인 환불 필드는 비어있다")
+    void shouldCreatePendingChargeWithEmptyApprovalAndRefundFields() {
         PointCharge charge = pending(10_000L);
 
         assertThat(charge.getStatus()).isEqualTo(PointChargeStatus.PENDING);
@@ -29,13 +30,15 @@ class PointChargeTest {
     }
 
     @Test
-    void 요청금액은_양수여야_한다() {
+    @DisplayName("요청금액은 양수여야 한다")
+    void shouldRequirePositiveRequestedAmount() {
         assertThatThrownBy(() -> pending(0L))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void 승인하면_PAID로_전이하고_승인금액은_요청금액과_같다() {
+    @DisplayName("승인하면 PAID로 전이하고 승인금액은 요청금액과 같다")
+    void shouldTransitionToPaidWithRequestedAmountOnApproval() {
         PointCharge charge = pending(10_000L);
 
         charge.approve("pay-key-1", "IBK", "국민카드(1234)");
@@ -48,7 +51,8 @@ class PointChargeTest {
     }
 
     @Test
-    void 이미_승인된_충전은_다시_승인할수_없다() {
+    @DisplayName("이미 승인된 충전은 다시 승인할수 없다")
+    void shouldNotApproveAlreadyPaidCharge() {
         PointCharge charge = pending(10_000L);
         charge.approve("pay-key-1", "IBK", "국민카드(1234)");
 
@@ -57,7 +61,8 @@ class PointChargeTest {
     }
 
     @Test
-    void 실패하면_FAILED로_전이하고_사유를_기록한다() {
+    @DisplayName("실패하면 FAILED로 전이하고 사유를 기록한다")
+    void shouldTransitionToFailedAndRecordReason() {
         PointCharge charge = pending(10_000L);
 
         charge.fail("한도 초과");
@@ -68,7 +73,8 @@ class PointChargeTest {
     }
 
     @Test
-    void 취소하면_CANCELED로_전이하고_사유를_기록한다() {
+    @DisplayName("취소하면 CANCELED로 전이하고 사유를 기록한다")
+    void shouldTransitionToCanceledAndRecordReason() {
         PointCharge charge = pending(10_000L);
 
         charge.cancel("고객이 결제를 취소했습니다.");
@@ -82,7 +88,8 @@ class PointChargeTest {
     }
 
     @Test
-    void 이미_승인된_충전은_취소할수_없다() {
+    @DisplayName("이미 승인된 충전은 취소할수 없다")
+    void shouldNotCancelAlreadyPaidCharge() {
         PointCharge charge = pending(10_000L);
         charge.approve("pay-key-1", "IBK", "국민카드(1234)");
 
@@ -91,7 +98,8 @@ class PointChargeTest {
     }
 
     @Test
-    void 이미_실패한_충전은_취소할수_없다() {
+    @DisplayName("이미 실패한 충전은 취소할수 없다")
+    void shouldNotCancelFailedCharge() {
         PointCharge charge = pending(10_000L);
         charge.fail("한도 초과");
 
@@ -102,7 +110,8 @@ class PointChargeTest {
     }
 
     @Test
-    void 승인된_충전을_전액_환불하면_REFUNDED로_전이한다() {
+    @DisplayName("승인된 충전을 전액 환불하면 REFUNDED로 전이한다")
+    void shouldTransitionToRefundedAfterFullRefund() {
         PointCharge charge = pending(10_000L);
         charge.approve("pay-key-1", "IBK", "국민카드(1234)");
 
@@ -115,7 +124,8 @@ class PointChargeTest {
     }
 
     @Test
-    void 승인되지_않은_충전은_환불할수_없다() {
+    @DisplayName("승인되지 않은 충전은 환불할수 없다")
+    void shouldNotRefundUnpaidCharge() {
         PointCharge charge = pending(10_000L);
 
         assertThatThrownBy(() -> charge.refund("refund-key-1", "고객 변심"))

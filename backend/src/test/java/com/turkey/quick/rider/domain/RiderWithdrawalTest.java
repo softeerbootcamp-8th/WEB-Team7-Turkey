@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
 import java.nio.charset.StandardCharsets;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class RiderWithdrawalTest {
@@ -22,7 +23,8 @@ class RiderWithdrawalTest {
     }
 
     @Test
-    void 출금요청은_PENDING으로_생성되고_처리시각과_복구플래그는_비어있다() {
+    @DisplayName("출금요청은 PENDING으로 생성되고 처리시각과 복구플래그는 비어있다")
+    void shouldCreatePendingWithdrawalWithoutProcessedAtOrRestoredFlag() {
         RiderWithdrawal withdrawal = pending(30_000L);
 
         assertThat(withdrawal.getStatus()).isEqualTo(WithdrawalStatus.PENDING);
@@ -34,7 +36,8 @@ class RiderWithdrawalTest {
 
     /** 계좌는 in-place 로 교체되므로, 이력이 현재 계좌를 따라가지 않도록 값을 복사해 둔다. */
     @Test
-    void 요청_시점의_계좌_정보를_스냅샷으로_복사한다() {
+    @DisplayName("요청 시점의 계좌 정보를 스냅샷으로 복사한다")
+    void shouldCopyAccountInformationIntoRequestSnapshot() {
         RiderPayoutAccount account = account();
 
         RiderWithdrawal withdrawal = RiderWithdrawal.request(account, "req-key-1", 30_000L);
@@ -46,7 +49,8 @@ class RiderWithdrawalTest {
     }
 
     @Test
-    void 계좌를_바꿔도_기존_출금이력의_스냅샷은_변하지_않는다() {
+    @DisplayName("계좌를 바꿔도 기존 출금이력의 스냅샷은 변하지 않는다")
+    void shouldPreserveWithdrawalSnapshotAfterAccountChange() {
         RiderPayoutAccount account = account();
         RiderWithdrawal withdrawal = RiderWithdrawal.request(account, "req-key-1", 30_000L);
 
@@ -58,26 +62,30 @@ class RiderWithdrawalTest {
     }
 
     @Test
-    void 출금금액은_양수여야_한다() {
+    @DisplayName("출금금액은 양수여야 한다")
+    void shouldRequirePositiveWithdrawalAmount() {
         assertThatThrownBy(() -> pending(0L)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> pending(-1L)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void 요청식별값은_비어있을수_없다() {
+    @DisplayName("요청식별값은 비어있을수 없다")
+    void shouldRequireNonBlankRequestKey() {
         assertThatThrownBy(() -> RiderWithdrawal.request(account(), "  ", 30_000L))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void 출금계좌는_필수다() {
+    @DisplayName("출금계좌는 필수다")
+    void shouldRequirePayoutAccount() {
         assertThatThrownBy(() -> RiderWithdrawal.request(null, "req-key-1", 30_000L))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     /** ck_rider_withdrawal_state_values: COMPLETED ⟺ processed_at NOT NULL, points_restored=0. */
     @Test
-    void 완료하면_처리시각이_기록되고_복구플래그는_false로_남는다() {
+    @DisplayName("완료하면 처리시각이 기록되고 복구플래그는 false로 남는다")
+    void shouldRecordProcessedAtAndLeaveRestoredFalseOnCompletion() {
         RiderWithdrawal withdrawal = pending(30_000L);
 
         withdrawal.complete();
@@ -89,7 +97,8 @@ class RiderWithdrawalTest {
 
     /** ck_rider_withdrawal_state_values: FAILED ⟺ processed_at NOT NULL, points_restored=1. */
     @Test
-    void 실패하면_처리시각과_복구플래그를_함께_세팅한다() {
+    @DisplayName("실패하면 처리시각과 복구플래그를 함께 세팅한다")
+    void shouldSetProcessedAtAndRestoredFlagOnFailure() {
         RiderWithdrawal withdrawal = pending(30_000L);
 
         withdrawal.fail("계좌 정보 불일치");
@@ -101,7 +110,8 @@ class RiderWithdrawalTest {
     }
 
     @Test
-    void 이미_완료된_출금은_다시_처리할수_없다() {
+    @DisplayName("이미 완료된 출금은 다시 처리할수 없다")
+    void shouldNotProcessCompletedWithdrawalAgain() {
         RiderWithdrawal withdrawal = pending(30_000L);
         withdrawal.complete();
 
@@ -110,7 +120,8 @@ class RiderWithdrawalTest {
     }
 
     @Test
-    void 이미_실패한_출금은_다시_처리할수_없다() {
+    @DisplayName("이미 실패한 출금은 다시 처리할수 없다")
+    void shouldNotProcessFailedWithdrawalAgain() {
         RiderWithdrawal withdrawal = pending(30_000L);
         withdrawal.fail("계좌 정보 불일치");
 
@@ -120,7 +131,8 @@ class RiderWithdrawalTest {
     }
 
     @Test
-    void 재처리를_거부해도_기존_상태는_그대로_유지된다() {
+    @DisplayName("재처리를 거부해도 기존 상태는 그대로 유지된다")
+    void shouldPreserveExistingStateWhenReprocessingIsRejected() {
         RiderWithdrawal withdrawal = pending(30_000L);
         withdrawal.complete();
 

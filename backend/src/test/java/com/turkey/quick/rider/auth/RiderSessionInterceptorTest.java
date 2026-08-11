@@ -18,6 +18,7 @@ import jakarta.servlet.http.Cookie;
 import java.time.Duration;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -57,7 +58,8 @@ class RiderSessionInterceptorTest {
     }
 
     @Test
-    void 유효한_세션이면_통과하고_운행_상태를_포함한_인증된_라이더를_request_attribute에_담는다() {
+    @DisplayName("유효한 세션이면 통과하고 운행 상태를 포함한 인증된 라이더를 request attribute에 담는다")
+    void shouldAuthenticateRiderWithOperatingStatusAndContinue() {
         String sessionId = "valid-session";
         sessionStore.create(sessionId, MEMBER_ID, "RIDER", Duration.ofHours(2));
         Member member = rider();
@@ -75,7 +77,8 @@ class RiderSessionInterceptorTest {
     }
 
     @Test
-    void 고객_세션으로_라이더_API에_접근하면_401을_던진다() {
+    @DisplayName("고객 세션으로 라이더 API에 접근하면 401을 던진다")
+    void shouldThrowUnauthorizedWhenCustomerSessionAccessesRiderApi() {
         String sessionId = "customer-session";
         sessionStore.create(sessionId, MEMBER_ID, "CUSTOMER", Duration.ofHours(2));
         Member customer = Member.create("session_customer01", "encoded", "고객", "01099998888", MemberRole.CUSTOMER);
@@ -89,7 +92,8 @@ class RiderSessionInterceptorTest {
     }
 
     @Test
-    void 라이더_프로필이_없으면_401을_던진다() {
+    @DisplayName("라이더 프로필이 없으면 401을 던진다")
+    void shouldThrowUnauthorizedWithoutRiderProfile() {
         String sessionId = "no-profile-session";
         sessionStore.create(sessionId, MEMBER_ID, "RIDER", Duration.ofHours(2));
         when(memberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(rider()));
@@ -103,7 +107,8 @@ class RiderSessionInterceptorTest {
     }
 
     @Test
-    void 인증에_실패하면_응답에_만료_쿠키를_함께_보낸다() {
+    @DisplayName("인증에 실패하면 응답에 만료 쿠키를 함께 보낸다")
+    void shouldSendExpiredCookieWhenAuthenticationFails() {
         MockHttpServletRequest request = requestWithCookie("no-such-session");
         MockHttpServletResponse response = new MockHttpServletResponse();
 

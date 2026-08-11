@@ -9,6 +9,7 @@ import com.turkey.quick.member.domain.MemberRole;
 import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
 import java.util.Map;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -65,7 +66,8 @@ class CustomerLogoutE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 로그인_후_로그아웃하면_200과_만료_쿠키를_반환하고_세션이_삭제된다() {
+    @DisplayName("로그인 후 로그아웃하면 200과 만료 쿠키를 반환하고 세션이 삭제된다")
+    void shouldExpireCookieAndDeleteSessionOnLogout() {
         saveCustomer("e2e_logout01", "p@ssw0rd", "01011112222");
         String cookie = loginAndGetSessionCookie("e2e_logout01", "p@ssw0rd");
         String sessionId = cookie.substring("SESSION_ID=".length());
@@ -80,7 +82,8 @@ class CustomerLogoutE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 로그아웃_이후_세션_확인을_호출하면_401을_반환한다() {
+    @DisplayName("로그아웃 이후 세션 확인을 호출하면 401을 반환한다")
+    void shouldReturnUnauthorizedWhenCheckingSessionAfterLogout() {
         saveCustomer("e2e_logout02", "p@ssw0rd", "01022223333");
         String cookie = loginAndGetSessionCookie("e2e_logout02", "p@ssw0rd");
 
@@ -91,14 +94,16 @@ class CustomerLogoutE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 세션_쿠키가_없어도_로그아웃은_200을_반환한다() {
+    @DisplayName("세션 쿠키가 없어도 로그아웃은 200을 반환한다")
+    void shouldSucceedWithoutSessionCookie() {
         var response = rest.exchange(LOGOUT_ENDPOINT, HttpMethod.POST, withCookie(null), ApiResponse.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 
     @Test
-    void 존재하지_않는_세션이어도_로그아웃은_200을_반환한다() {
+    @DisplayName("존재하지 않는 세션이어도 로그아웃은 200을 반환한다")
+    void shouldSucceedForUnknownSession() {
         var response = rest.exchange(LOGOUT_ENDPOINT, HttpMethod.POST,
                 withCookie("SESSION_ID=no-such-session"), ApiResponse.class);
 

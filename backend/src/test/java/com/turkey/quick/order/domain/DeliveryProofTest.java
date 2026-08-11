@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
 import com.turkey.quick.rider.domain.RiderProfile;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class DeliveryProofTest {
@@ -20,7 +21,8 @@ class DeliveryProofTest {
     }
 
     @Test
-    void 생성하면_주문과_라이더_인증정보를_보관한다() {
+    @DisplayName("생성하면 주문과 라이더 인증정보를 보관한다")
+    void shouldStoreOrderRiderAndProofInformation() {
         DeliveryOrder order = order();
         RiderProfile rider = rider();
 
@@ -34,35 +36,40 @@ class DeliveryProofTest {
     }
 
     @Test
-    void order는_null일수_없다() {
+    @DisplayName("order는 null일수 없다")
+    void shouldRejectNullOrder() {
         assertThatThrownBy(() -> DeliveryProof.create(null, rider(),
                 ProofType.PHOTO, "ref"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void rider는_null일수_없다() {
+    @DisplayName("rider는 null일수 없다")
+    void shouldRejectNullRider() {
         assertThatThrownBy(() -> DeliveryProof.create(order(), null,
                 ProofType.PHOTO, "ref"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void proofType은_null일수_없다() {
+    @DisplayName("proofType은 null일수 없다")
+    void shouldRejectNullProofType() {
         assertThatThrownBy(() -> DeliveryProof.create(order(), rider(),
                 null, "ref"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void proofValue는_공백일수_없다() {
+    @DisplayName("proofValue는 공백일수 없다")
+    void shouldRejectBlankProofValue() {
         assertThatThrownBy(() -> DeliveryProof.create(order(), rider(),
                 ProofType.AUTH_CODE, "   "))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void proofValue는_500자를_초과할수_없다() {
+    @DisplayName("proofValue는 500자를 초과할수 없다")
+    void shouldRejectProofValueLongerThanFiveHundredCharacters() {
         assertThatThrownBy(() -> DeliveryProof.create(order(), rider(),
                 ProofType.PHOTO, "a".repeat(501)))
                 .isInstanceOf(IllegalArgumentException.class);

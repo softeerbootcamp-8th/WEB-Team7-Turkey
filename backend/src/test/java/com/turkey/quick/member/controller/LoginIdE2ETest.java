@@ -7,6 +7,7 @@ import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
 import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -27,7 +28,8 @@ class LoginIdE2ETest extends IntegrationTestSupport {
     private MemberRepository memberRepository;
 
     @Test
-    void 사용_가능한_아이디를_조회하면_200과_available_true를_반환한다() {
+    @DisplayName("사용 가능한 아이디를 조회하면 200과 available true를 반환한다")
+    void shouldReturnAvailableTrueForUnusedLoginId() {
         var response = rest.getForEntity("/api/login-ids/availability?loginId=fresh_id_1", ApiResponse.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -36,7 +38,8 @@ class LoginIdE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 사용중인_아이디를_조회하면_200과_available_false_사유를_반환한다() {
+    @DisplayName("사용중인 아이디를 조회하면 200과 available false 사유를 반환한다")
+    void shouldReturnAvailableFalseWithReasonForUsedLoginId() {
         memberRepository.save(Member.create("already_taken", "hash", "테스터3", "01055556666", MemberRole.CUSTOMER));
 
         var response = rest.getForEntity("/api/login-ids/availability?loginId=already_taken", ApiResponse.class);
@@ -48,7 +51,8 @@ class LoginIdE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void loginId_파라미터가_비어있으면_400을_반환한다() {
+    @DisplayName("loginId 파라미터가 비어있으면 400을 반환한다")
+    void shouldReturnBadRequestForBlankLoginIdParameter() {
         var response = rest.getForEntity("/api/login-ids/availability?loginId=", ApiResponse.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
