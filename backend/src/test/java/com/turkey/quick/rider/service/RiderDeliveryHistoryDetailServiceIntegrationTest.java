@@ -132,7 +132,7 @@ class RiderDeliveryHistoryDetailServiceIntegrationTest extends IntegrationTestSu
         Fixture fixture = assignedDelivery();
         moveToDelivering(fixture);
         riderDeliveryService.complete(authenticated(fixture), fixture.orderId(),
-                new RiderDeliveryCompleteRequest(proofType, null, proofValue));
+                new RiderDeliveryCompleteRequest(proofType, proofValue));
         return fixture;
     }
 

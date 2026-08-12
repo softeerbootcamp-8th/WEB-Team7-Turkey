@@ -6,6 +6,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.Duration;
+import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -15,6 +16,8 @@ import software.amazon.awssdk.services.s3.model.*;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
 /** 저장소 설정이 s3일 때 배송 인증 파일을 실제 S3에 저장한다. */
 @Component
@@ -34,6 +37,7 @@ public class S3RiderDeliveryProofStorage implements RiderDeliveryProofStorage {
         this.bucket = bucket;
     }
 
+    /** 서버가 파일을 직접 받아 저장하는 경로(현재 호출자 없음 — presigned PUT 전환 후 보존용). */
     @Override
     public void store(String key, MultipartFile file) {
         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
@@ -86,5 +90,43 @@ public class S3RiderDeliveryProofStorage implements RiderDeliveryProofStorage {
         PresignedGetObjectRequest presignedRequest = s3Presigner.presignGetObject(presignRequest);
 
         return presignedRequest.url().toString();
+    }
+
+    @Override
+    public String presignUpload(String key, String contentType, Duration ttl) {
+        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                .bucket(bucket)
+                .key(key)
+                .contentType(contentType)
+                .build();
+
+        PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
+                .signatureDuration(ttl)
+                .putObjectRequest(putObjectRequest)
+                .build();
+
+        PresignedPutObjectRequest presignedRequest = s3Presigner.presignPutObject(presignRequest);
+        return presignedRequest.url().toString();
+    }
+
+    @Override
+    public Optional<Long> sizeOf(String key) {
+        try {
+            HeadObjectResponse response = amazonS3.headObject(HeadObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .build());
+            return Optional.of(response.contentLength());
+        } catch (NoSuchKeyException e) {
+            return Optional.empty();
+        }
+    }
+
+    @Override
+    public void delete(String key) {
+        amazonS3.deleteObject(DeleteObjectRequest.builder()
+                .bucket(bucket)
+                .key(key)
+                .build());
     }
 }

@@ -13,10 +13,10 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
  * S3 업로드 클라이언트(#61 후속, 배송 완료 인증 사진). 자격 증명은 기본 프로바이더 체인
  * (환경변수 → 시스템 프로퍼티 → {@code ~/.aws/credentials} → EC2 인스턴스 프로파일)을 그대로 쓴다.
  *
- * <p>가장 단순한 구성이다 — 커넥션 풀·타임아웃을 의도적으로 튜닝하지 않았고, 업로드도
- * {@code RiderDeliveryProofUploadService} 에서 요청 스레드가 파일 전체를 메모리로 받아
- * 동기 호출로 올린다. 부하 상황에서 병목을 먼저 실측한 뒤 Presigned URL 방식으로 옮길 계획이다
- * (사람 확인, {@code docs/worklog/2026-08-04-61-delivery-completion-proof.md}).
+ * <p>업로드는 라이더 클라이언트가 {@code S3Presigner.presignPutObject}로 발급한 URL로 S3에 직접
+ * 하고, 서버는 완료 처리 시 HeadObject로 재검증만 한다(PUT presign + 사후검증 방식, 서버가
+ * 파일 전체를 메모리로 받아 동기 업로드하던 이전 방식에서 전환). 커넥션 풀·타임아웃은 여전히
+ * 튜닝하지 않은 가장 단순한 구성이다.
  */
 @Configuration
 @ConditionalOnProperty(name = "rider.delivery-proof.storage", havingValue = "s3")
