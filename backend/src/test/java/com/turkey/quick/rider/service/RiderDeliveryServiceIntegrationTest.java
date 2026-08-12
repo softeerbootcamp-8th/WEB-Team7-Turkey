@@ -27,6 +27,7 @@ import com.turkey.quick.rider.auth.AuthenticatedRider;
 import com.turkey.quick.rider.domain.OperatingStatus;
 import com.turkey.quick.rider.domain.RiderProfile;
 import com.turkey.quick.rider.dto.RiderDeliveryAction;
+import com.turkey.quick.rider.dto.RiderDeliveryCompleteMultipartRequest;
 import com.turkey.quick.rider.dto.RiderDeliveryCompleteRequest;
 import com.turkey.quick.rider.dto.RiderDeliveryNextAction;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
@@ -42,6 +43,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -223,13 +225,15 @@ class RiderDeliveryServiceIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("완료 인증과 함께 배송을 완료하면 라이더를 해제하고 정산 포인트를 적립한다")
+    @DisplayName("완료 인증 사진을 멀티파트로 올리면 서버가 직접 저장하고 라이더를 해제·정산 적립한다")
     void shouldCompleteDeliveryAndSettle() {
         Fixture fixture = saveAssignedOrder(true, "integration_rider_62_a", "01062000001");
         moveToDelivering(fixture);
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "proof-62-a.jpg", "image/jpeg", "fake-photo-bytes".getBytes());
 
-        var response = riderDeliveryService.complete(authenticated(fixture), fixture.orderId(),
-                new RiderDeliveryCompleteRequest(ProofType.PHOTO, null, "proof/62-a.jpg"));
+        var response = riderDeliveryService.completeWithPhotoFile(authenticated(fixture), fixture.orderId(),
+                new RiderDeliveryCompleteMultipartRequest(ProofType.PHOTO, file, null));
 
         assertThat(response.status()).isEqualTo(OrderStatus.COMPLETED);
         assertThat(response.operatingStatus()).isEqualTo(OperatingStatus.AVAILABLE);
@@ -250,7 +254,7 @@ class RiderDeliveryServiceIntegrationTest extends IntegrationTestSupport {
         Fixture fixture = saveAssignedOrder(true, "integration_rider_62_b", "01062000002");
         moveToDelivering(fixture);
         RiderDeliveryCompleteRequest request =
-                new RiderDeliveryCompleteRequest(ProofType.RECIPIENT_CONFIRMATION, null, "recipient-62-b");
+                new RiderDeliveryCompleteRequest(ProofType.RECIPIENT_CONFIRMATION, "recipient-62-b");
         riderDeliveryService.complete(authenticated(fixture), fixture.orderId(), request);
 
         assertThatThrownBy(() -> riderDeliveryService.complete(authenticated(fixture), fixture.orderId(), request))
@@ -269,7 +273,7 @@ class RiderDeliveryServiceIntegrationTest extends IntegrationTestSupport {
         pointWalletRepository.deleteById(fixture.riderId());
 
         assertThatThrownBy(() -> riderDeliveryService.complete(authenticated(fixture), fixture.orderId(),
-                new RiderDeliveryCompleteRequest(ProofType.AUTH_CODE, null, "auth-62-c")))
+                new RiderDeliveryCompleteRequest(ProofType.AUTH_CODE, "auth-62-c")))
                 .isInstanceOf(IllegalStateException.class);
 
         DeliveryOrder persisted = deliveryOrderRepository.findById(fixture.orderId()).orElseThrow();

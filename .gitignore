@@ -60,3 +60,7 @@ infra/monitoring-ec2/provisioning/dashboards/*.json
 backend/loadtest/.stats-latest.csv
 # 훅이 이미 보고한 런 목록(중복 방지용 상태).
 backend/loadtest/.reported-runs
+backend/loadtest/ec2-seed-*.json
+
+# 로컬 부하테스트 힙 덤프·GC 로그(#374). 수백MB 바이너리라 커밋 안 함.
+backend/heapdumps/

@@ -124,6 +124,10 @@ services:
       timeout: 3s
       retries: 30
       start_period: 40s
+    # 힙 덤프(OOM 시)·GC 로그(#374)를 호스트에서 바로 확인하려고 바인드 마운트.
+    # --scale app=N 이어도 파일명에 컨테이너 hostname이 들어가 서로 안 덮어쓴다(Dockerfile 참고).
+    volumes:
+      - ./heapdumps:/dumps
     depends_on:
       mysql:
         condition: service_healthy

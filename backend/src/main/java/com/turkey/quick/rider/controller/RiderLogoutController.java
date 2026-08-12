@@ -9,6 +9,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -21,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequiredArgsConstructor
+@RequestMapping("/api/rider/logout")
 public class RiderLogoutController implements RiderLogoutApi {
 
     private final SessionStore sessionStore;
@@ -30,6 +33,7 @@ public class RiderLogoutController implements RiderLogoutApi {
     private boolean cookieSecure;
 
     @Override
+    @PostMapping
     public ApiResponse<Void> logout(HttpServletRequest request, HttpServletResponse response) {
         String sessionId = SessionCookie.extractSessionId(request);
         if (sessionId != null) {

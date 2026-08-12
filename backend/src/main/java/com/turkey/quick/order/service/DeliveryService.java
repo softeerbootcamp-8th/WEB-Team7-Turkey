@@ -65,9 +65,6 @@ public class DeliveryService {
      */
     private final CustomerPaymentService customerPaymentService;
 
-    /** 지연 만료(#42) 호출용. 별도 빈이라야 {@code expireIfStale} 의 {@code REQUIRES_NEW} 프록시를 탄다. */
-    private final DeliveryTimeoutService deliveryTimeoutService;
-
     /** CANCELED 전이를 그 배송의 SSE 채널에 알린다(#444). 트랜잭션 안에서 부르면 커밋 후로 자동으로 미뤄진다. */
     private final TrackingPublisher trackingPublisher;
 
@@ -125,6 +122,14 @@ public class DeliveryService {
      * 결제가 안 된" 상태나 그 반대가 만들어진다. 그래서 {@code @Transactional} 하나가 ④~⑥ 을 덮고,
      * 차감 메서드는 {@code Propagation.MANDATORY} 라 이 트랜잭션 밖에서는 호출 자체가 실패한다.
      *
+     * <p><b>이 요청은 커넥션 1개만 쓴다</b>(#463, #446 형제 버그). 지연 만료(#42)의
+     * {@code expireIfStale} 는 {@code REQUIRES_NEW} 라, 예전처럼 이 {@code @Transactional} 안에서
+     * 부르면 바깥 트랜잭션이 커넥션 C1 을 쥔 채 suspend 되고(suspend 는 반납이 아니다) 새 트랜잭션이
+     * C2 를 또 요구해, 생성 1건이 커넥션 2개를 동시 점유한다 — 서로 다른 고객이 동시에 다수 주문을
+     * 만들면 풀이 고갈돼 교착된다. 그래서 만료 정리를 이 경계 밖(컨트롤러)으로 옮겨 만료 정리와 생성이
+     * 커넥션을 순차로만 쓰게 했다. {@code REQUIRES_NEW} 독립 커밋 의미와 "새 주문 생성이 만료 주문을
+     * 정리한다(#42)"는 동작은 그대로다.
+     *
      * <p><b>흐름</b>(두 이슈의 처리 흐름을 합친 것)
      *
      * <ol>
@@ -164,10 +169,8 @@ public class DeliveryService {
      */
     @Transactional
     public DeliveryCreateResponse createDelivery(DeliveryCreateRequest request, Long customerId) {
-        // ⓪ 지연 만료(#42): 기존 진행 중 주문이 타임아웃을 이미 넘긴 WAITING 이면, 능동 스캐너를
-        //    기다리지 않고 여기서 먼저 취소·환급한다. 별도 트랜잭션(REQUIRES_NEW)이라 이 취소는
-        //    아래에서 새 주문 생성이 실패해도 되돌아가지 않는다 — 이미 옳은 정리이기 때문이다.
-        deliveryTimeoutService.expireIfStale(customerId);
+        // 지연 만료(#42)는 이 메서드가 아니라 호출자(CustomerDeliveryController)가 이 트랜잭션 밖에서
+        // 먼저 수행한다 — 이유는 클래스/메서드 javadoc의 "커넥션 1개" 항목(#463) 참조.
 
         // ① 멱등: 같은 요청키의 주문이 이미 있으면 그 결과를 그대로 돌려준다(순차 재전송).
         //    포인트도 다시 차감하지 않는다 — 아래 저장 경로를 아예 타지 않기 때문이다.

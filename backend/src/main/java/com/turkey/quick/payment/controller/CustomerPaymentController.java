@@ -51,7 +51,8 @@ public class CustomerPaymentController implements CustomerPointApi {
             @RequestParam(name = "page", defaultValue = "0") int page,
 
             @RequestParam(name = "size", defaultValue = "20") int size) {
-        return null;
+        return ApiResponse.ok(
+                customerPaymentService.getPointTransactions(customer.memberId(), type, page, size));
     }
 
     @Override
