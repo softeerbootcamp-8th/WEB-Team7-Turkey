@@ -2,7 +2,6 @@ package com.turkey.quick.rider.controller;
 
 import com.turkey.quick.common.response.ApiResponse;
 import com.turkey.quick.rider.auth.AuthenticatedRider;
-import com.turkey.quick.rider.auth.RiderSessionInterceptor;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestAcceptResponse;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestDetailResponse;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestPageResponse;
@@ -11,19 +10,11 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.constraints.DecimalMax;
-import jakarta.validation.constraints.DecimalMin;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestAttribute;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 
 /**
- * 라이더 콜(배차 대기 배송요청) API 계약(인터페이스 전용, 구현 없음).
+ * 라이더 콜(배차 대기 배송요청) API 문서 계약.
  *
  * <p>수락 전에는 고객 연락처와 상세 주소를 내려주지 않는다. 배차가 확정된 뒤에만
  * {@link RiderDeliveryApi} 응답에서 열린다.
@@ -37,7 +28,6 @@ import org.springframework.web.bind.annotation.RequestParam;
  * 콜을 목록에서 내리는 것뿐이라 상태를 바꾸지 않는다.
  */
 @Tag(name = "rider-request", description = "라이더 콜 — 배차 대기 요청 조회·수락·넘기기")
-@RequestMapping("/api/rider/requests")
 public interface RiderDeliveryRequestApi {
 
     @Operation(
@@ -53,60 +43,59 @@ public interface RiderDeliveryRequestApi {
                     + "afterId를 그대로 돌려보내면 된다 — 첫 페이지는 전부 생략한다. "
                     + "(#55) 라이더 식별을 위한 인증 파라미터가 이 계약에 빠져 있었어 추가함 — "
                     + "다른 세 메서드(상세/수락/넘기기)는 각자 이슈에서 채운다.")
-    @GetMapping
     ApiResponse<RiderDeliveryRequestPageResponse> getDeliveryRequests(
-            @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
+            @Parameter(hidden = true)
             AuthenticatedRider rider,
 
             @Parameter(description = "라이더 현재 위도(선택, 없으면 위치 무시하고 전체 반환)", example = "37.5006")
-            @RequestParam(required = false) @DecimalMin("-90") @DecimalMax("90") BigDecimal latitude,
+            BigDecimal latitude,
 
             @Parameter(description = "라이더 현재 경도(선택, 없으면 위치 무시하고 전체 반환)", example = "127.0366")
-            @RequestParam(required = false) @DecimalMin("-180") @DecimalMax("180") BigDecimal longitude,
+            BigDecimal longitude,
 
             @Parameter(description = "검색 반경(m)", example = "3000")
-            @RequestParam(defaultValue = "3000") int radiusMeters,
+            int radiusMeters,
 
             @Parameter(description = "정렬 기준", example = "DISTANCE",
                     schema = @io.swagger.v3.oas.annotations.media.Schema(
                             allowableValues = {"DISTANCE", "FARE", "REQUESTED_AT"}))
-            @RequestParam(defaultValue = "DISTANCE") String sort,
+            String sort,
 
             @Parameter(description = "정렬 방향(선택, 생략하면 기준별 기본값 — FARE는 내림차순, "
                     + "나머지는 오름차순)", example = "ASC",
                     schema = @io.swagger.v3.oas.annotations.media.Schema(allowableValues = {"ASC", "DESC"}))
-            @RequestParam(required = false) String sortDirection,
+            String sortDirection,
 
             @Parameter(description = "예상 정산액(운임) 최소값, 원(선택)", example = "3000")
-            @RequestParam(required = false) Long fareMin,
+            Long fareMin,
 
             @Parameter(description = "예상 정산액(운임) 최대값, 원(선택)", example = "10000")
-            @RequestParam(required = false) Long fareMax,
+            Long fareMax,
 
             @Parameter(description = "배송거리(픽업→도착지) 최소값, m(선택)", example = "500")
-            @RequestParam(required = false) Integer distanceMin,
+            Integer distanceMin,
 
             @Parameter(description = "배송거리(픽업→도착지) 최대값, m(선택)", example = "5000")
-            @RequestParam(required = false) Integer distanceMax,
+            Integer distanceMax,
 
             @Parameter(description = "페이지 크기(1~100)", example = "20")
-            @RequestParam(defaultValue = "20") int size,
+            int size,
 
             @Parameter(description = "커서: 이전 페이지 마지막 항목의 라이더→픽업지 거리(m). "
                     + "sort=DISTANCE일 때만 채운다", example = "740")
-            @RequestParam(required = false) Integer afterDistanceMeters,
+            Integer afterDistanceMeters,
 
             @Parameter(description = "커서: 이전 페이지 마지막 항목의 예상 정산액. sort=FARE일 때만 채운다",
                     example = "6400")
-            @RequestParam(required = false) Long afterFare,
+            Long afterFare,
 
             @Parameter(description = "커서: 이전 페이지 마지막 항목의 요청 시각. sort=REQUESTED_AT일 때만 채운다",
                     example = "2026-07-28T02:10:00")
-            @RequestParam(required = false) LocalDateTime afterRequestedAt,
+            LocalDateTime afterRequestedAt,
 
             @Parameter(description = "커서: 이전 페이지 마지막 항목의 배송요청 식별자(정렬값이 같을 때 "
                     + "tiebreaker). 첫 페이지면 생략", example = "1024")
-            @RequestParam(required = false) Long afterId);
+            Long afterId);
 
     @Operation(summary = "배차 대기 콜 상세",
             description = "수락 판단에 필요한 거리·운임·소요시간·좌표를 조회한다. "
@@ -118,13 +107,12 @@ public interface RiderDeliveryRequestApi {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "404", description = "존재하지 않거나 더 이상 WAITING 이 아닌 주문")
     })
-    @GetMapping("/{deliveryId}")
     ApiResponse<RiderDeliveryRequestDetailResponse> getDeliveryRequest(
-            @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
+            @Parameter(hidden = true)
             AuthenticatedRider rider,
 
             @Parameter(description = "배송요청 식별자", example = "1024")
-            @PathVariable Long deliveryId);
+            Long deliveryId);
 
     @Operation(summary = "배차 확정(콜 수락)",
             description = "배송 WAITING→ASSIGNED + 라이더 AVAILABLE→BUSY 를 한 트랜잭션으로 처리한다(ADR-006 "
@@ -140,18 +128,16 @@ public interface RiderDeliveryRequestApi {
                     description = "다른 라이더가 먼저 수락했거나, 취소됐거나, 라이더가 AVAILABLE 이 아니거나 "
                             + "이미 다른 배송을 수행 중임")
     })
-    @PostMapping("/{deliveryId}/accept")
     ApiResponse<RiderDeliveryRequestAcceptResponse> acceptDeliveryRequest(
-            @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
+            @Parameter(hidden = true)
             AuthenticatedRider rider,
 
             @Parameter(description = "배송요청 식별자", example = "1024")
-            @PathVariable Long deliveryId);
+            Long deliveryId);
 
     @Operation(summary = "콜 넘기기",
             description = "해당 라이더의 목록에서만 감춘다. 주문 상태는 WAITING 그대로이고 다른 라이더에게는 계속 보인다.")
-    @PostMapping("/{deliveryId}/skip")
     ApiResponse<Void> skipDeliveryRequest(
             @Parameter(description = "배송요청 식별자", example = "1024")
-            @PathVariable Long deliveryId);
+            Long deliveryId);
 }

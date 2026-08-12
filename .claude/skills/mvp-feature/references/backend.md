@@ -51,7 +51,8 @@ Repository → Service → DTO → Controller. 바깥에서 안으로 쓰면 아
 
 - 매핑이 구현체에만 있으므로 컨트롤러가 **JDK 동적 프록시**로 감싸이면 매핑이 유실돼 404가 난다. Boot는 CGLIB 프록시가 기본이라 보통 문제없지만 `spring.aop.proxy-target-class=false`면 확인 필요.
 - `@RequestParam @NotBlank`처럼 파라미터에 직접 건 제약은 Spring 6.1(Boot 3.2)부터 메서드 검증(AOP)으로 걸린다 → 그런 제약을 쓰는 구현 클래스에 `@Validated`를 붙인다(`LoginIdController` 참고). `@RequestBody @Valid`는 별도 경로라 `@Validated` 없이도 동작.
-- `CustomerDeliveryApi`·`LoginIdApi`처럼 **인터페이스에 매핑·검증까지 얹은 옛 파일이 남아 있다.** 동작에 문제 없으니 이번 이슈 범위가 아니면 건드리지 않고, 손보게 되면 위 형태로 옮긴다. 새 컨트롤러는 처음부터 위 형태.
+- 기존 컨트롤러도 이 분리 원칙으로 마이그레이션을 마쳤다(2026-08-11). 새 컨트롤러에서 인터페이스에
+  매핑·바인딩·검증 애노테이션을 다시 추가하지 않는다.
 
 반환은 항상 `ApiResponse<T>`로 감싼다(`common/response/ApiResponse.java`의 `ok`/`fail`). 경로는 액터를 앞에 둔다: `/api/customer/...`, `/api/rider/...`, 공용 `/api/...`. 동적 세그먼트는 프론트와 맞춰 `{deliveryId}`. 컨트롤러는 얇게 유지하고 비즈니스 분기(상태 검사, 권한 판정)를 넣지 않는다.
 
