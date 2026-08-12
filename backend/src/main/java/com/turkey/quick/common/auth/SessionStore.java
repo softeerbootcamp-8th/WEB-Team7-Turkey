@@ -18,7 +18,7 @@ public interface SessionStore {
      */
     Duration DEFAULT_TTL = Duration.ofHours(2);
 
-    /** 세션을 생성한다. 값 형식은 docs/03-erd.md 5절에 정의된 {memberId, role, expiresAt}. */
+    /** 세션을 생성한다. 값 형식은 docs/03-erd.md 5절에 정의된 {memberId, role}. */
     void create(String sessionId, Long memberId, String role, Duration ttl);
 
     /**
@@ -33,8 +33,7 @@ public interface SessionStore {
 
     /**
      * 존재하는 세션의 TTL을 다시 건다(슬라이딩 갱신, #439). 이미 만료돼 없는 세션은 되살리지
-     * 않는다(멱등 — 조용히 무시한다). 저장된 {@code expiresAt}도 함께 갱신해 값이 실제 TTL과
-     * 어긋나지 않게 한다.
+     * 않는다(멱등 — 조용히 무시한다).
      */
     void extend(String sessionId, Duration ttl);
 

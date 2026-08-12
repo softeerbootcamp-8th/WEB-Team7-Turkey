@@ -4,8 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.turkey.quick.support.IntegrationTestSupport;
 import java.time.Duration;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,7 +16,7 @@ import org.springframework.test.context.ActiveProfiles;
  * (호출 횟수만 센다) 여기서 확인할 성질을 검증할 수 없다.
  *
  * <p>핵심은 두 가지다. <b>남은 TTL 이 실제로 늘어난다</b>, 그리고 <b>없는 세션은 되살아나지
- * 않는다</b> — 후자는 HSET 을 먼저 하면 memberId 없는 반쪽 세션 키가 새로 생기는 실수를 고정한다.
+ * 않는다</b> — extend() 가 EXPIRE 한 번만 호출해 없는 키를 새로 만들 여지가 없다.
  */
 @SpringBootTest(properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")
@@ -42,10 +40,6 @@ class RedisSessionStoreIntegrationTest extends IntegrationTestSupport {
 
         assertThat(redisTemplate.getExpire(KEY)).isGreaterThan(Duration.ofMinutes(90).toSeconds());
         assertThat(sessionStore.findMemberId(SESSION_ID)).contains(42L);
-        // 저장된 expiresAt 도 함께 갱신돼 실제 TTL 과 어긋나지 않는다(생성 시 값은 +1분이었다).
-        LocalDateTime expiresAt =
-                LocalDateTime.parse((String) redisTemplate.opsForHash().get(KEY, "expiresAt"));
-        assertThat(expiresAt).isAfter(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(90));
     }
 
     @Test
