@@ -15,6 +15,7 @@ import com.turkey.quick.rider.domain.RiderProfile;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -47,7 +48,8 @@ class RiderLoginServiceTest {
     }
 
     @Test
-    void 올바른_아이디와_비밀번호로_로그인하면_세션을_생성하고_현재_운행_상태를_반환한다() {
+    @DisplayName("올바른 아이디와 비밀번호로 로그인하면 세션을 생성하고 현재 운행 상태를 반환한다")
+    void shouldCreateSessionAndReturnOperatingStatusForValidCredentials() {
         Member member = rider();
         when(memberRepository.findByLoginId(LOGIN_ID)).thenReturn(Optional.of(member));
         when(riderProfileRepository.findById(member.getId()))
@@ -61,7 +63,8 @@ class RiderLoginServiceTest {
     }
 
     @Test
-    void 고객_계정으로_라이더_로그인을_시도하면_401을_반환한다() {
+    @DisplayName("고객 계정으로 라이더 로그인을 시도하면 401을 반환한다")
+    void shouldReturnUnauthorizedForCustomerAccount() {
         Member customer = Member.create(LOGIN_ID, passwordEncoder.encode(RAW_PASSWORD), "고객", "01099998888", MemberRole.CUSTOMER);
         when(memberRepository.findByLoginId(LOGIN_ID)).thenReturn(Optional.of(customer));
 
@@ -72,7 +75,8 @@ class RiderLoginServiceTest {
     }
 
     @Test
-    void 존재하지_않는_아이디로_로그인하면_401을_반환한다() {
+    @DisplayName("존재하지 않는 아이디로 로그인하면 401을 반환한다")
+    void shouldReturnUnauthorizedForUnknownLoginId() {
         when(memberRepository.findByLoginId(LOGIN_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> riderLoginService.login(LOGIN_ID, RAW_PASSWORD))
@@ -82,7 +86,8 @@ class RiderLoginServiceTest {
     }
 
     @Test
-    void 비밀번호가_틀리면_401을_반환한다() {
+    @DisplayName("비밀번호가 틀리면 401을 반환한다")
+    void shouldReturnUnauthorizedForWrongPassword() {
         Member member = rider();
         when(memberRepository.findByLoginId(LOGIN_ID)).thenReturn(Optional.of(member));
 
@@ -93,7 +98,8 @@ class RiderLoginServiceTest {
     }
 
     @Test
-    void 탈퇴한_계정으로_로그인하면_401을_반환한다() {
+    @DisplayName("탈퇴한 계정으로 로그인하면 401을 반환한다")
+    void shouldReturnUnauthorizedForWithdrawnAccount() {
         Member member = rider();
         member.withdraw();
         when(memberRepository.findByLoginId(LOGIN_ID)).thenReturn(Optional.of(member));

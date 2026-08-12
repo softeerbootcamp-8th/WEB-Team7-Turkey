@@ -28,6 +28,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -93,7 +94,8 @@ class RiderSignupServiceTest {
     }
 
     @Test
-    void 정상_가입하면_비밀번호를_해시해_저장하고_결과를_반환한다() {
+    @DisplayName("정상 가입하면 비밀번호를 해시해 저장하고 결과를 반환한다")
+    void shouldHashPasswordSaveMemberAndReturnResult() {
         issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
         when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of(term(1L, true)));
 
@@ -113,7 +115,8 @@ class RiderSignupServiceTest {
     }
 
     @Test
-    void 정상_가입하면_초기_운행_상태가_UNAVAILABLE인_라이더_프로필을_생성한다() {
+    @DisplayName("정상 가입하면 초기 운행 상태가 UNAVAILABLE인 라이더 프로필을 생성한다")
+    void shouldCreateUnavailableRiderProfileOnSignup() {
         issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
         when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of());
 
@@ -125,7 +128,8 @@ class RiderSignupServiceTest {
     }
 
     @Test
-    void 정상_가입하면_포인트_지갑을_생성한다() {
+    @DisplayName("정상 가입하면 포인트 지갑을 생성한다")
+    void shouldCreatePointWalletOnSignup() {
         issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
         when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of());
 
@@ -137,7 +141,8 @@ class RiderSignupServiceTest {
     }
 
     @Test
-    void 정상_가입하면_동의한_약관마다_동의_이력을_저장한다() {
+    @DisplayName("정상 가입하면 동의한 약관마다 동의 이력을 저장한다")
+    void shouldSaveAgreementHistoryForEveryAgreedTerm() {
         issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
         when(termRepository.findByActiveTrueAndTargetRoleIn(any()))
                 .thenReturn(List.of(term(1L, true), term(2L, false)));
@@ -150,7 +155,8 @@ class RiderSignupServiceTest {
     }
 
     @Test
-    void 비밀번호와_비밀번호확인이_다르면_거부한다() {
+    @DisplayName("비밀번호와 비밀번호확인이 다르면 거부한다")
+    void shouldRejectWhenPasswordConfirmationDoesNotMatch() {
         var mismatched = new RiderSignupRequest(
                 LOGIN_ID, "p@ssw0rd", "different", "홍길동", PHONE_NUMBER, TOKEN, List.of());
 
@@ -165,7 +171,8 @@ class RiderSignupServiceTest {
     }
 
     @Test
-    void 이미_사용중인_아이디면_거부한다() {
+    @DisplayName("이미 사용중인 아이디면 거부한다")
+    void shouldRejectAlreadyUsedLoginId() {
         when(memberRepository.existsByLoginId(LOGIN_ID)).thenReturn(true);
 
         assertThatThrownBy(() -> riderSignupService.signup(request(List.of())))
@@ -175,7 +182,8 @@ class RiderSignupServiceTest {
     }
 
     @Test
-    void 인증_토큰이_없거나_만료됐으면_거부한다() {
+    @DisplayName("인증 토큰이 없거나 만료됐으면 거부한다")
+    void shouldRejectMissingOrExpiredVerificationToken() {
         assertThatThrownBy(() -> riderSignupService.signup(request(List.of())))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getStatus())
@@ -183,7 +191,8 @@ class RiderSignupServiceTest {
     }
 
     @Test
-    void 필수_약관에_동의하지_않으면_거부한다() {
+    @DisplayName("필수 약관에 동의하지 않으면 거부한다")
+    void shouldRejectMissingRequiredTermAgreement() {
         issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
         when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of(term(1L, true)));
 
@@ -198,7 +207,8 @@ class RiderSignupServiceTest {
     }
 
     @Test
-    void 사전_중복_확인을_통과해도_DB_유니크_제약을_어기면_409로_변환한다() {
+    @DisplayName("사전 중복 확인을 통과해도 DB 유니크 제약을 어기면 409로 변환한다")
+    void shouldTranslateDatabaseUniqueConstraintViolationToConflict() {
         issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
         when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of());
         when(memberRepository.save(any())).thenThrow(new DataIntegrityViolationException("uk_member_login_id"));

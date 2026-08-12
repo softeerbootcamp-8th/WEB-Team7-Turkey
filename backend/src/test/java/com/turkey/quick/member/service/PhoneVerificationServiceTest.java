@@ -13,6 +13,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
@@ -34,7 +35,8 @@ class PhoneVerificationServiceTest {
     }
 
     @Test
-    void 미가입_번호로_회원가입_목적_인증번호를_요청하면_발송하고_저장한다() {
+    @DisplayName("미가입 번호로 회원가입 목적 인증번호를 요청하면 발송하고 저장한다")
+    void shouldSendAndStoreSignupCodeForUnregisteredNumber() {
         when(memberRepository.existsByPhoneNumber(PHONE_NUMBER)).thenReturn(false);
 
         PhoneVerificationResult result = phoneVerificationService.request(PHONE_NUMBER, VerificationPurpose.SIGNUP);
@@ -46,7 +48,8 @@ class PhoneVerificationServiceTest {
     }
 
     @Test
-    void 이미_가입된_번호로_회원가입_목적_인증번호를_요청하면_거부한다() {
+    @DisplayName("이미 가입된 번호로 회원가입 목적 인증번호를 요청하면 거부한다")
+    void shouldRejectSignupCodeRequestForRegisteredNumber() {
         when(memberRepository.existsByPhoneNumber(PHONE_NUMBER)).thenReturn(true);
 
         assertThatThrownBy(() -> phoneVerificationService.request(PHONE_NUMBER, VerificationPurpose.SIGNUP))
@@ -56,7 +59,8 @@ class PhoneVerificationServiceTest {
     }
 
     @Test
-    void 계정찾기_목적은_가입_여부를_확인하지_않는다() {
+    @DisplayName("계정찾기 목적은 가입 여부를 확인하지 않는다")
+    void shouldSkipRegistrationCheckForAccountRecovery() {
         // FIND_ID 목적은 이슈 처리 흐름상 회원가입 여부 확인 단계(③)를 건너뛴다.
         // existsByPhoneNumber 가 true 를 반환하도록 둬도(=미가입이 아니어도) 거부되지 않아야 분기가 맞다.
         when(memberRepository.existsByPhoneNumber(PHONE_NUMBER)).thenReturn(true);
@@ -67,7 +71,8 @@ class PhoneVerificationServiceTest {
     }
 
     @Test
-    void 재전송_쿨다운_중이면_거부한다() {
+    @DisplayName("재전송 쿨다운 중이면 거부한다")
+    void shouldRejectRequestDuringResendCooldown() {
         when(memberRepository.existsByPhoneNumber(PHONE_NUMBER)).thenReturn(false);
         phoneVerificationService.request(PHONE_NUMBER, VerificationPurpose.SIGNUP);
 
@@ -78,7 +83,8 @@ class PhoneVerificationServiceTest {
     }
 
     @Test
-    void 문자_발송에_실패하면_502로_변환한다() {
+    @DisplayName("문자 발송에 실패하면 502로 변환한다")
+    void shouldTranslateSmsFailureToBadGateway() {
         when(memberRepository.existsByPhoneNumber(PHONE_NUMBER)).thenReturn(false);
         smsSender.failNext();
 
@@ -89,7 +95,8 @@ class PhoneVerificationServiceTest {
     }
 
     @Test
-    void 문자_발송에_실패하면_저장된_코드와_쿨다운을_지워_즉시_재시도할_수_있다() {
+    @DisplayName("문자 발송에 실패하면 저장된 코드와 쿨다운을 지워 즉시 재시도할 수 있다")
+    void shouldClearCodeAndCooldownAfterSmsFailure() {
         when(memberRepository.existsByPhoneNumber(PHONE_NUMBER)).thenReturn(false);
         smsSender.failNext();
 
@@ -104,7 +111,8 @@ class PhoneVerificationServiceTest {
     }
 
     @Test
-    void 동시에_같은_번호로_요청하면_한_건만_성공한다() throws InterruptedException {
+    @DisplayName("동시에 같은 번호로 요청하면 한 건만 성공한다")
+    void shouldAllowOnlyOneConcurrentRequestForSameNumber() throws InterruptedException {
         when(memberRepository.existsByPhoneNumber(PHONE_NUMBER)).thenReturn(false);
 
         int 시도수 = 10;
@@ -137,7 +145,8 @@ class PhoneVerificationServiceTest {
     }
 
     @Test
-    void 올바른_코드로_확인하면_토큰을_발급하고_코드를_지운다() {
+    @DisplayName("올바른 코드로 확인하면 토큰을 발급하고 코드를 지운다")
+    void shouldIssueTokenAndDeleteCodeAfterSuccessfulConfirmation() {
         when(memberRepository.existsByPhoneNumber(PHONE_NUMBER)).thenReturn(false);
         phoneVerificationService.request(PHONE_NUMBER, VerificationPurpose.SIGNUP);
         String code = verificationCodeStore.savedCode(VerificationPurpose.SIGNUP, PHONE_NUMBER);
@@ -151,7 +160,8 @@ class PhoneVerificationServiceTest {
     }
 
     @Test
-    void 인증_요청_이력이_없으면_404를_반환한다() {
+    @DisplayName("인증 요청 이력이 없으면 404를 반환한다")
+    void shouldReturnNotFoundWithoutVerificationRequestHistory() {
         assertThatThrownBy(() -> phoneVerificationService.confirm(PHONE_NUMBER, VerificationPurpose.SIGNUP, "123456"))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getStatus())
@@ -159,7 +169,8 @@ class PhoneVerificationServiceTest {
     }
 
     @Test
-    void 인증번호가_틀리면_400을_반환한다() {
+    @DisplayName("인증번호가 틀리면 400을 반환한다")
+    void shouldReturnBadRequestForWrongVerificationCode() {
         when(memberRepository.existsByPhoneNumber(PHONE_NUMBER)).thenReturn(false);
         phoneVerificationService.request(PHONE_NUMBER, VerificationPurpose.SIGNUP);
 
@@ -170,7 +181,8 @@ class PhoneVerificationServiceTest {
     }
 
     @Test
-    void 오입력을_5회_초과하면_429를_반환하고_코드를_지운다() {
+    @DisplayName("오입력을 5회 초과하면 429를 반환하고 코드를 지운다")
+    void shouldReturnTooManyRequestsAndDeleteCodeAfterTooManyFailures() {
         when(memberRepository.existsByPhoneNumber(PHONE_NUMBER)).thenReturn(false);
         phoneVerificationService.request(PHONE_NUMBER, VerificationPurpose.SIGNUP);
 
@@ -188,7 +200,8 @@ class PhoneVerificationServiceTest {
     }
 
     @Test
-    void 검증에_성공한_코드는_다시_사용할_수_없다() {
+    @DisplayName("검증에 성공한 코드는 다시 사용할 수 없다")
+    void shouldNotReuseSuccessfullyVerifiedCode() {
         when(memberRepository.existsByPhoneNumber(PHONE_NUMBER)).thenReturn(false);
         phoneVerificationService.request(PHONE_NUMBER, VerificationPurpose.SIGNUP);
         String code = verificationCodeStore.savedCode(VerificationPurpose.SIGNUP, PHONE_NUMBER);

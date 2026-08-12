@@ -9,6 +9,7 @@ import com.turkey.quick.member.domain.MemberRole;
 import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
 import java.util.Map;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -50,7 +51,8 @@ class CustomerLoginE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 올바른_로그인_정보면_200과_세션_쿠키를_반환한다() {
+    @DisplayName("올바른 로그인 정보면 200과 세션 쿠키를 반환한다")
+    void shouldReturnSessionCookieForValidCredentials() {
         saveCustomer("e2e_login01", "p@ssw0rd", "01011112222");
 
         var response = rest.postForEntity(LOGIN_ENDPOINT,
@@ -76,7 +78,8 @@ class CustomerLoginE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 존재하지_않는_아이디로_로그인하면_401을_반환한다() {
+    @DisplayName("존재하지 않는 아이디로 로그인하면 401을 반환한다")
+    void shouldReturnUnauthorizedForUnknownLoginId() {
         var response = rest.postForEntity(LOGIN_ENDPOINT,
                 Map.of("loginId", "no_such_login_id", "password", "aaa"), ApiResponse.class);
 
@@ -84,7 +87,8 @@ class CustomerLoginE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 비밀번호가_틀리면_401을_반환한다() {
+    @DisplayName("비밀번호가 틀리면 401을 반환한다")
+    void shouldReturnUnauthorizedForWrongPassword() {
         saveCustomer("e2e_login02", "p@ssw0rd", "01022223333");
 
         var response = rest.postForEntity(LOGIN_ENDPOINT,
@@ -94,7 +98,8 @@ class CustomerLoginE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 라이더_계정으로_로그인하면_401을_반환한다() {
+    @DisplayName("라이더 계정으로 로그인하면 401을 반환한다")
+    void shouldReturnUnauthorizedForRiderAccount() {
         memberRepository.save(Member.create("e2e_rider01", PASSWORD_ENCODER.encode("p@ssw0rd"), "라이더", "01033334444", MemberRole.RIDER));
 
         var response = rest.postForEntity(LOGIN_ENDPOINT,
@@ -104,7 +109,8 @@ class CustomerLoginE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 비밀번호가_없으면_400을_반환한다() {
+    @DisplayName("비밀번호가 없으면 400을 반환한다")
+    void shouldReturnBadRequestWithoutPassword() {
         var response = rest.postForEntity(LOGIN_ENDPOINT, Map.of("loginId", "someone"), ApiResponse.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);

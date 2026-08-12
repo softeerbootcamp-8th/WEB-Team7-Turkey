@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class PointWalletTest {
@@ -14,14 +15,16 @@ class PointWalletTest {
     }
 
     @Test
-    void 지갑_생성시_잔액은_0이다() {
+    @DisplayName("지갑 생성시 잔액은 0이다")
+    void shouldCreateWalletWithZeroBalance() {
         PointWallet wallet = PointWallet.create(member());
 
         assertThat(wallet.getBalance()).isZero();
     }
 
     @Test
-    void 충전하면_잔액이_증가한다() {
+    @DisplayName("충전하면 잔액이 증가한다")
+    void shouldIncreaseBalanceWhenCharged() {
         PointWallet wallet = PointWallet.create(member());
 
         wallet.credit(1000L);
@@ -30,7 +33,8 @@ class PointWalletTest {
     }
 
     @Test
-    void 사용하면_잔액이_감소한다() {
+    @DisplayName("사용하면 잔액이 감소한다")
+    void shouldDecreaseBalanceWhenUsed() {
         PointWallet wallet = PointWallet.create(member());
         wallet.credit(1000L);
 
@@ -40,7 +44,8 @@ class PointWalletTest {
     }
 
     @Test
-    void 잔액보다_큰_금액은_사용할수_없고_잔액은_그대로다() {
+    @DisplayName("잔액보다 큰 금액은 사용할수 없고 잔액은 그대로다")
+    void shouldRejectAmountGreaterThanBalanceWithoutChangingBalance() {
         PointWallet wallet = PointWallet.create(member());
         wallet.credit(500L);
 
@@ -50,7 +55,8 @@ class PointWalletTest {
     }
 
     @Test
-    void 충전_금액은_양수여야_한다() {
+    @DisplayName("충전 금액은 양수여야 한다")
+    void shouldRequirePositiveChargeAmount() {
         PointWallet wallet = PointWallet.create(member());
 
         assertThatThrownBy(() -> wallet.credit(0L))
@@ -58,7 +64,8 @@ class PointWalletTest {
     }
 
     @Test
-    void 사용_금액은_양수여야_한다() {
+    @DisplayName("사용 금액은 양수여야 한다")
+    void shouldRequirePositiveUseAmount() {
         PointWallet wallet = PointWallet.create(member());
         wallet.credit(1000L);
 

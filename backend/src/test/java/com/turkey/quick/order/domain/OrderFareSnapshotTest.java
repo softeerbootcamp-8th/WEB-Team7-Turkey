@@ -3,6 +3,7 @@ package com.turkey.quick.order.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class OrderFareSnapshotTest {
@@ -23,7 +24,8 @@ class OrderFareSnapshotTest {
     }
 
     @Test
-    void 생성하면_주문과_요금정책을_참조하고_필드가_설정된다() {
+    @DisplayName("생성하면 주문과 요금정책을 참조하고 필드가 설정된다")
+    void shouldCreateSnapshotWithOrderPolicyAndFields() {
         DeliveryOrder order = order();
         FarePolicy policy = farePolicy();
 
@@ -41,7 +43,8 @@ class OrderFareSnapshotTest {
     }
 
     @Test
-    void total_fare는_base_distance_surcharge의_합으로_자동_계산된다() {
+    @DisplayName("total fare는 base distance surcharge의 합으로 자동 계산된다")
+    void shouldCalculateTotalFareFromBaseDistanceAndSurcharge() {
         OrderFareSnapshot snapshot = OrderFareSnapshot.create(order(), farePolicy(), FareType.FINAL,
                 "v1", 5_000, 3_000L, 2_500L, 1_000L);
 
@@ -49,7 +52,8 @@ class OrderFareSnapshotTest {
     }
 
     @Test
-    void 할증이_0이어도_합으로_계산된다() {
+    @DisplayName("할증이 0이어도 합으로 계산된다")
+    void shouldCalculateTotalFareWhenSurchargeIsZero() {
         OrderFareSnapshot snapshot = OrderFareSnapshot.create(order(), farePolicy(), FareType.ESTIMATE,
                 "v1", 5_000, 3_000L, 2_500L, 0L);
 
@@ -57,42 +61,48 @@ class OrderFareSnapshotTest {
     }
 
     @Test
-    void order는_null일수_없다() {
+    @DisplayName("order는 null일수 없다")
+    void shouldRejectNullOrder() {
         assertThatThrownBy(() -> OrderFareSnapshot.create(null, farePolicy(), FareType.ESTIMATE,
                 "v1", 5_000, 3_000L, 2_500L, 1_000L))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void farePolicy는_null일수_없다() {
+    @DisplayName("farePolicy는 null일수 없다")
+    void shouldRejectNullFarePolicy() {
         assertThatThrownBy(() -> OrderFareSnapshot.create(order(), null, FareType.ESTIMATE,
                 "v1", 5_000, 3_000L, 2_500L, 1_000L))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void fareType은_null일수_없다() {
+    @DisplayName("fareType은 null일수 없다")
+    void shouldRejectNullFareType() {
         assertThatThrownBy(() -> OrderFareSnapshot.create(order(), farePolicy(), null,
                 "v1", 5_000, 3_000L, 2_500L, 1_000L))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void policyVersion은_null일수_없다() {
+    @DisplayName("policyVersion은 null일수 없다")
+    void shouldRejectNullPolicyVersion() {
         assertThatThrownBy(() -> OrderFareSnapshot.create(order(), farePolicy(), FareType.ESTIMATE,
                 null, 5_000, 3_000L, 2_500L, 1_000L))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void policyVersion은_공백일수_없다() {
+    @DisplayName("policyVersion은 공백일수 없다")
+    void shouldRejectBlankPolicyVersion() {
         assertThatThrownBy(() -> OrderFareSnapshot.create(order(), farePolicy(), FareType.ESTIMATE,
                 "   ", 5_000, 3_000L, 2_500L, 1_000L))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void policyVersion은_30자를_초과할수_없다() {
+    @DisplayName("policyVersion은 30자를 초과할수 없다")
+    void shouldRejectPolicyVersionLongerThanThirtyCharacters() {
         String tooLong = "v".repeat(31);
 
         assertThatThrownBy(() -> OrderFareSnapshot.create(order(), farePolicy(), FareType.ESTIMATE,
@@ -101,28 +111,32 @@ class OrderFareSnapshotTest {
     }
 
     @Test
-    void 산정거리는_양수여야_한다() {
+    @DisplayName("산정거리는 양수여야 한다")
+    void shouldRequirePositiveCalculatedDistance() {
         assertThatThrownBy(() -> OrderFareSnapshot.create(order(), farePolicy(), FareType.ESTIMATE,
                 "v1", 0, 3_000L, 2_500L, 1_000L))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void 기본요금은_음수일수_없다() {
+    @DisplayName("기본요금은 음수일수 없다")
+    void shouldRejectNegativeBaseFare() {
         assertThatThrownBy(() -> OrderFareSnapshot.create(order(), farePolicy(), FareType.ESTIMATE,
                 "v1", 5_000, -1L, 2_500L, 1_000L))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void 거리요금은_음수일수_없다() {
+    @DisplayName("거리요금은 음수일수 없다")
+    void shouldRejectNegativeDistanceFare() {
         assertThatThrownBy(() -> OrderFareSnapshot.create(order(), farePolicy(), FareType.ESTIMATE,
                 "v1", 5_000, 3_000L, -1L, 1_000L))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void 물품할증은_음수일수_없다() {
+    @DisplayName("물품할증은 음수일수 없다")
+    void shouldRejectNegativeItemSurcharge() {
         assertThatThrownBy(() -> OrderFareSnapshot.create(order(), farePolicy(), FareType.ESTIMATE,
                 "v1", 5_000, 3_000L, 2_500L, -1L))
                 .isInstanceOf(IllegalArgumentException.class);

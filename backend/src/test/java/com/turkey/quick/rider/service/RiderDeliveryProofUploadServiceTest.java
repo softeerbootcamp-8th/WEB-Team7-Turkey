@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import com.turkey.quick.rider.storage.RiderDeliveryProofFile;
 import com.turkey.quick.rider.storage.RiderDeliveryProofStorage;
 import java.io.ByteArrayInputStream;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 
@@ -17,7 +18,8 @@ class RiderDeliveryProofUploadServiceTest {
     private final RiderDeliveryProofUploadService service = new RiderDeliveryProofUploadService(storage);
 
     @Test
-    void 업로드할_때_원본파일명_뒤에_UUID를_붙인다() {
+    @DisplayName("업로드할 때 원본파일명 뒤에 UUID를 붙인다")
+    void shouldAppendUuidToOriginalFilenameOnUpload() {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "door.photo.jpg", "image/jpeg", new byte[]{1, 2, 3});
 
@@ -29,7 +31,8 @@ class RiderDeliveryProofUploadServiceTest {
     }
 
     @Test
-    void 파일을_읽을_때_파일명_뒤의_UUID를_제거한다() throws Exception {
+    @DisplayName("파일을 읽을 때 파일명 뒤의 UUID를 제거한다")
+    void shouldRemoveUuidSuffixWhenReadingFilename() throws Exception {
         String key = "proof/2026/08/42/delivery_photo_"
                 + "123e4567-e89b-42d3-a456-426614174000.jpg";
         ByteArrayInputStream content = new ByteArrayInputStream(new byte[]{1});
@@ -45,7 +48,8 @@ class RiderDeliveryProofUploadServiceTest {
     }
 
     @Test
-    void UUID_형식이_아닌_접미사는_파일명에서_제거하지_않는다() {
+    @DisplayName("UUID 형식이 아닌 접미사는 파일명에서 제거하지 않는다")
+    void shouldPreserveNonUuidSuffixInFilename() {
         assertThat(service.originalFilenameOf("proof/42/photo_final.jpg"))
                 .isEqualTo("photo_final.jpg");
     }
