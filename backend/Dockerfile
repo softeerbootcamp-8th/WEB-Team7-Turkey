@@ -17,4 +17,4 @@ EXPOSE 8080
 # 공유하기 때문 — 없으면 전부 PID 1이라 덤프·GC 로그가 서로 덮어써진다. %p(PID)도 같이
 # 넣는 건 같은 컨테이너가 재시작돼도(고정 파일명이면 JVM이 기존 덤프를 안 덮어써 두 번째
 # OOM부터 덤프가 안 남는다) 매번 새 파일이 생기게 하기 위함이다(#374).
-ENTRYPOINT ["sh", "-c", "exec java -Xmx228m -XX:+UseSerialGC -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/dumps/heapdump-$(hostname)-%p.hprof -Xlog:gc*:file=/dumps/gc-$(hostname).log:time,uptime,level,tags:filecount=5,filesize=20m -jar app.jar"]
+ENTRYPOINT ["sh", "-c", "exec java -Xmx228m -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/dumps/heapdump-$(hostname)-%p.hprof -Xlog:gc*,gc+heap=debug:file=/dumps/gc-$(hostname).log:time,uptime,level,tags:filecount=5,filesize=20m -jar app.jar"]
