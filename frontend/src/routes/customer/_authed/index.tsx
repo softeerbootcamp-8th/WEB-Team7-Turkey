@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ChevronRight, Package, Settings, Truck } from 'lucide-react'
+import { ChevronRight, Package, Settings, Truck, WalletCards } from 'lucide-react'
 import { useGetCustomerActiveDelivery } from '@/api/generated/customer-delivery/customer-delivery'
 import type { ActiveDeliveryResponseItemType } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
 import { getCustomerDeliveryStatusLabel } from '@/shared/delivery/status'
@@ -120,6 +120,10 @@ function CustomerHome() {
                 <span>퀵 부르기</span>
               </Link>
             )}
+            <Link to="/customer/points" className="btn btn--secondary">
+              <WalletCards size={20} />
+              <span>포인트 기록보기</span>
+            </Link>
           </div>
         </div>
       </main>

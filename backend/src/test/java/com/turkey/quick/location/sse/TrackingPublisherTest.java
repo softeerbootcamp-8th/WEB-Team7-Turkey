@@ -124,4 +124,43 @@ class TrackingPublisherTest {
             TransactionSynchronizationManager.clearSynchronization();
         }
     }
+
+    @Test
+    @DisplayName("종료 신호는 데이터와 다른 채널로 발행한다 (#450)")
+    void publishesCloseSignalToSeparateChannel() {
+        publisher().publishClose(1024L);
+
+        ArgumentCaptor<String> channel = ArgumentCaptor.forClass(String.class);
+        then(redisTemplate).should().convertAndSend(channel.capture(), anyString());
+
+        assertThat(channel.getValue()).isEqualTo("tracking:close:1024");
+    }
+
+    @Test
+    @DisplayName("종료 신호도 커밋 전까지 미룬다 — 커밋 전에 닫으면 재연결이 옛 상태를 읽는다 (#450)")
+    void defersCloseSignalUntilCommit() {
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            publisher().publishClose(1024L);
+
+            then(redisTemplate).should(never()).convertAndSend(anyString(), anyString());
+
+            TransactionSynchronizationUtils.triggerAfterCommit();
+
+            then(redisTemplate).should().convertAndSend(anyString(), anyString());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    @DisplayName("종료 신호 발행이 실패해도 예외를 밖으로 내지 않는다 (#450)")
+    void swallowsRedisFailureForClose() {
+        // 이 호출은 배송 완료 트랜잭션의 커밋 후 콜백에서 실행된다 — 여기서 예외가 올라가면
+        // Redis 장애가 커밋 완료 처리에까지 번진다.
+        willThrow(new RedisConnectionFailureException("down"))
+                .given(redisTemplate).convertAndSend(anyString(), anyString());
+
+        assertThatCode(() -> publisher().publishClose(1L)).doesNotThrowAnyException();
+    }
 }

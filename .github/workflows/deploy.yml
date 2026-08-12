@@ -41,6 +41,23 @@ jobs:
           name: app-jar
           path: ./deploy
 
+      - name: Configure JVM diagnostics (heap dump + GC logging)
+        # myapp.service 원본 파일은 저장소 밖(EC2)에만 있어 내용을 알 수 없으므로,
+        # 원본을 건드리지 않는 systemd override로 얹는다(#374). -Xmx228m은 지금 ergonomic
+        # 기본값(총 메모리 906MiB의 25%, #259 실측)과 동일한 값으로 고정하는 것— 힙 자체를
+        # 늘리는 게 아니라서 "단독 증설은 스와핑 위험" 판단과 충돌하지 않는다.
+        # HeapDumpPath에 %p(PID)를 넣는다 — 고정 파일명이면 JVM이 기존 파일을 안 덮어써서
+        # 두 번째 OOM부터는 덤프가 안 남는다. systemd가 재기동마다 새 PID를 배정하므로 매번
+        # 새 파일이 생긴다.
+        run: |
+          mkdir -p /home/ubuntu/app/dumps
+          sudo mkdir -p /etc/systemd/system/myapp.service.d
+          sudo tee /etc/systemd/system/myapp.service.d/jvm-diagnostics.conf > /dev/null <<'EOF'
+          [Service]
+          Environment="JAVA_TOOL_OPTIONS=-Xmx228m -XX:+UseSerialGC -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/home/ubuntu/app/dumps/heapdump-%p.hprof -Xlog:gc*:file=/home/ubuntu/app/dumps/gc.log:time,uptime,level,tags:filecount=5,filesize=20m"
+          EOF
+          sudo systemctl daemon-reload
+
       - name: Deploy jar and restart service
         run: |
           mkdir -p /home/ubuntu/app

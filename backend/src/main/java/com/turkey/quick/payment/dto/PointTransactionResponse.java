@@ -2,6 +2,7 @@ package com.turkey.quick.payment.dto;
 
 import com.turkey.quick.payment.domain.PointDirection;
 import com.turkey.quick.payment.domain.PointTransactionType;
+import com.turkey.quick.rider.domain.WithdrawalStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDateTime;
 
@@ -42,6 +43,11 @@ public record PointTransactionResponse(
 
         @Schema(description = "연관 출금 식별자(WITHDRAWAL·WITHDRAWAL_REFUND 만)", example = "12")
         Long withdrawalId,
+
+        @Schema(description = "연관 출금의 현재 상태(WITHDRAWAL·WITHDRAWAL_REFUND 만). WITHDRAWAL 행은 "
+                + "PENDING(처리 대기)·COMPLETED(송금 완료) 로 갈릴 수 있고, WITHDRAWAL_REFUND 행은 "
+                + "그 출금이 실패해 포인트가 돌아왔다는 뜻이라 항상 FAILED 다.", example = "PENDING")
+        WithdrawalStatus withdrawalStatus,
 
         @Schema(description = "거래 발생 시각", example = "2026-07-29T04:12:33")
         LocalDateTime createdAt

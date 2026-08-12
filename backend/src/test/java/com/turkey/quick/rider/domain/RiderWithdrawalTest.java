@@ -5,21 +5,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
-import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class RiderWithdrawalTest {
 
-    private RiderPayoutAccount account() {
-        RiderProfile rider = RiderProfile.create(
+    private RiderProfile rider() {
+        return RiderProfile.create(
                 Member.create("rider01", "hash", "박라이더", "01033334444", MemberRole.RIDER));
-        return RiderPayoutAccount.register(rider, "004",
-                "encrypted".getBytes(StandardCharsets.UTF_8), "1234-**-5678", "박라이더");
     }
 
     private RiderWithdrawal pending(long amount) {
-        return RiderWithdrawal.request(account(), "11111111-2222-3333-4444-555555555555", amount);
+        return RiderWithdrawal.request(rider(), "11111111-2222-3333-4444-555555555555", amount,
+                "004", "****5678", "박라이더");
     }
 
     @Test
@@ -34,31 +32,18 @@ class RiderWithdrawalTest {
         assertThat(withdrawal.getFailureReason()).isNull();
     }
 
-    /** 계좌는 in-place 로 교체되므로, 이력이 현재 계좌를 따라가지 않도록 값을 복사해 둔다. */
     @Test
-    @DisplayName("요청 시점의 계좌 정보를 스냅샷으로 복사한다")
-    void shouldCopyAccountInformationIntoRequestSnapshot() {
-        RiderPayoutAccount account = account();
+    @DisplayName("신청시점의 계좌 정보를 스냅샷으로 저장한다")
+    void shouldStoreAccountSnapshotAtRequestTime() {
+        RiderProfile rider = rider();
 
-        RiderWithdrawal withdrawal = RiderWithdrawal.request(account, "req-key-1", 30_000L);
+        RiderWithdrawal withdrawal = RiderWithdrawal.request(rider, "req-key-1", 30_000L,
+                "004", "****5678", "박라이더");
 
         assertThat(withdrawal.getBankCodeSnapshot()).isEqualTo("004");
-        assertThat(withdrawal.getMaskedAccountNumberSnapshot()).isEqualTo("1234-**-5678");
+        assertThat(withdrawal.getMaskedAccountNumberSnapshot()).isEqualTo("****5678");
         assertThat(withdrawal.getAccountHolderNameSnapshot()).isEqualTo("박라이더");
-        assertThat(withdrawal.getRider()).isSameAs(account.getRider());
-    }
-
-    @Test
-    @DisplayName("계좌를 바꿔도 기존 출금이력의 스냅샷은 변하지 않는다")
-    void shouldPreserveWithdrawalSnapshotAfterAccountChange() {
-        RiderPayoutAccount account = account();
-        RiderWithdrawal withdrawal = RiderWithdrawal.request(account, "req-key-1", 30_000L);
-
-        account.changeAccount("020", "new-encrypted".getBytes(StandardCharsets.UTF_8),
-                "9999-**-0000", "박라이더");
-
-        assertThat(withdrawal.getBankCodeSnapshot()).isEqualTo("004");
-        assertThat(withdrawal.getMaskedAccountNumberSnapshot()).isEqualTo("1234-**-5678");
+        assertThat(withdrawal.getRider()).isSameAs(rider);
     }
 
     @Test
@@ -69,16 +54,32 @@ class RiderWithdrawalTest {
     }
 
     @Test
-    @DisplayName("요청식별값은 비어있을수 없다")
+    @DisplayName("요청식별값은 비어있을 수 없다")
     void shouldRequireNonBlankRequestKey() {
-        assertThatThrownBy(() -> RiderWithdrawal.request(account(), "  ", 30_000L))
+        assertThatThrownBy(() -> RiderWithdrawal.request(rider(), "  ", 30_000L,
+                "004", "****5678", "박라이더"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    @DisplayName("출금계좌는 필수다")
-    void shouldRequirePayoutAccount() {
-        assertThatThrownBy(() -> RiderWithdrawal.request(null, "req-key-1", 30_000L))
+    @DisplayName("라이더는 필수다")
+    void shouldRequireRider() {
+        assertThatThrownBy(() -> RiderWithdrawal.request(null, "req-key-1", 30_000L,
+                "004", "****5678", "박라이더"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("계좌정보는 비어있을 수 없다")
+    void shouldRequireNonBlankAccountInformation() {
+        assertThatThrownBy(() -> RiderWithdrawal.request(rider(), "req-key-1", 30_000L,
+                " ", "****5678", "박라이더"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> RiderWithdrawal.request(rider(), "req-key-1", 30_000L,
+                "004", " ", "박라이더"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> RiderWithdrawal.request(rider(), "req-key-1", 30_000L,
+                "004", "****5678", " "))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -110,7 +111,7 @@ class RiderWithdrawalTest {
     }
 
     @Test
-    @DisplayName("이미 완료된 출금은 다시 처리할수 없다")
+    @DisplayName("이미 완료된 출금은 다시 처리할 수 없다")
     void shouldNotProcessCompletedWithdrawalAgain() {
         RiderWithdrawal withdrawal = pending(30_000L);
         withdrawal.complete();
@@ -120,7 +121,7 @@ class RiderWithdrawalTest {
     }
 
     @Test
-    @DisplayName("이미 실패한 출금은 다시 처리할수 없다")
+    @DisplayName("이미 실패한 출금은 다시 처리할 수 없다")
     void shouldNotProcessFailedWithdrawalAgain() {
         RiderWithdrawal withdrawal = pending(30_000L);
         withdrawal.fail("계좌 정보 불일치");

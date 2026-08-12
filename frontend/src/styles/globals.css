@@ -370,6 +370,36 @@ body {
     text-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
 }
 
+/* 실제 PG가 소유할 결제수단 입력 영역의 프론트 전용 모의 UI. 값은 서버로 전송하지 않는다. */
+.mock-payment-input {
+    width: 100%;
+    height: 48px;
+    padding: 0 14px;
+    border: 1px solid #d1d6db;
+    border-radius: 12px;
+    outline: none;
+    background: #ffffff;
+    color: #191f28;
+    font: inherit;
+    font-size: 14px;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.mock-payment-input::placeholder {
+    color: #b0b8c1;
+}
+
+.mock-payment-input:focus {
+    border-color: #3182f6;
+    box-shadow: 0 0 0 3px rgba(49, 130, 246, 0.14);
+}
+
+.mock-payment-input:disabled {
+    cursor: not-allowed;
+    background: #f2f4f6;
+    color: #8b95a1;
+}
+
 /* 주소 검색 출발/도착 연결선(점선) */
 .dotted-line {
     background-image: linear-gradient(to bottom, #d1d5db 40%, rgba(255, 255, 255, 0) 0%);
