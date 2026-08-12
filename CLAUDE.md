@@ -132,7 +132,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - SSE 외에 **위치 폴링 API**도 있다(`GET /api/customer/deliveries/{deliveryId}/location`, `CustomerLocationQueryService`, #311) — Redis 최신 위치를 읽는 프론트 백업 경로. SSE `subscribeTracking`은 `"connected"` 코멘트만 보내고 **위치 스냅샷 init 이벤트가 없다.**
 - 추적 스냅샷(`GET .../tracking`)과 스트림은 **같은 게이트**(`OrderStatus.isTerminal()`)를 쓴다 — **WAITING도 통과, COMPLETED·CANCELED만 409**(#401).
 - **`DeliveryOrderRepository.findWithAssignedRiderById`는 반드시 `left join fetch`**(#401/#421). WAITING은 `assigned_rider_id`가 NULL이라 inner join이면 결과가 비어 500이 난다. 같은 이유로 `DeliveryTrackingQueryService`는 라이더가 null이면 `DeliveryRouteEstimator`를 호출하지 않는다(`CustomerDeliveryTrackingE2ETest`의 WAITING 케이스가 고정).
-- **위치 전송 주기·임계값**(#81, BUSY 간격은 #391로 갱신): AVAILABLE 30초 / BUSY는 고정 주기가 아니라 최소 0.5초 간격으로 "최소 이동 20m 또는 정지 120초"일 때만 전송(#391) / UNAVAILABLE 미전송. 최대 속도 50 m/s, 정확도 상한 100m, 허용 과거 60초·미래 5초, Redis 최신 위치 TTL 10분. **이 값들은 지금 클라이언트(안드로이드)만 쓴다** — 서버측 필터(`LocationAcceptancePolicy`)는 #297에서 제거 후 안 되살렸다. 다시 만들면 두 값이 같아야 한다.
+- **위치 전송 주기·임계값**(#81, BUSY 간격은 #391로 갱신): BUSY는 고정 주기가 아니라 최소 0.5초 간격으로 "최소 이동 20m 또는 정지 120초"일 때만 전송(#391) / AVAILABLE·UNAVAILABLE은 전송 자체가 없다(#338 — 위 상태 매핑 표의 "없음(#342)"과 동일 사실). 최대 속도 50 m/s, 정확도 상한 100m, 허용 과거 60초·미래 5초, Redis 최신 위치 TTL 10분. **이 값들은 지금 클라이언트(안드로이드)만 쓴다** — 서버측 필터(`LocationAcceptancePolicy`)는 #297에서 제거 후 안 되살렸다. 다시 만들면 두 값이 같아야 한다.
 - **위치 갱신 실패 응답 경계**(#81): 좌표 범위 밖·필수 값 누락·정확도 음수·미래 시각은 400. **정확도 상한 초과·60초 초과 과거 fix는 200 + `reason`** 으로 수용·폐기(실내 측위·탭 복귀에서 정상 발생). 그래서 정확도 상한을 `@DecimalMax`로 달 수 없다(Bean Validation 위반은 400).
 - **SSE 연결 수 제한은 두지 않는다**(#317, 예전 배송당 3개 ZSET 제한 제거).
 - **끊긴 연결 탐지에는 쓰기가 최소 두 번 필요**하다(#317 실측, 첫 쓰기는 소켓 버퍼에 들어가 성공). **"한 번 보내면 정리된다"고 가정하는 테스트를 쓰지 말 것.**

@@ -12,7 +12,6 @@ import com.turkey.quick.payment.dto.WithdrawalResponse;
 import com.turkey.quick.payment.service.RiderPaymentService;
 import com.turkey.quick.rider.auth.AuthenticatedRider;
 import com.turkey.quick.rider.auth.RiderSessionInterceptor;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -74,7 +73,7 @@ public class RiderPaymentController implements RiderPointApi {
             @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
             AuthenticatedRider rider,
 
-            @Valid @RequestBody WithdrawalRequest request) {
+            @RequestBody WithdrawalRequest request) {
         return ApiResponse.ok(riderPaymentService.requestWithdrawal(rider.memberId(), request));
     }
 
@@ -86,7 +85,7 @@ public class RiderPaymentController implements RiderPointApi {
 
             @PathVariable Long withdrawalId,
 
-            @Valid @RequestBody WithdrawalProcessRequest request) {
+            @RequestBody WithdrawalProcessRequest request) {
         return ApiResponse.ok(
                 riderPaymentService.processWithdrawal(rider.memberId(), withdrawalId, request));
     }

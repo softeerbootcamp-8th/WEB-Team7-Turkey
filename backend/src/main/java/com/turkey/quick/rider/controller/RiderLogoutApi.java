@@ -6,8 +6,6 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
 
 /**
  * 라이더 로그아웃 API 계약(이슈 #51).
@@ -20,7 +18,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
  * addPathPatterns에 등록하지 않고 컨트롤러가 쿠키를 직접 읽는다(#28과 동일한 판단).
  */
 @Tag(name = "rider-logout", description = "라이더 로그아웃")
-@RequestMapping("/api/rider/logout")
 public interface RiderLogoutApi {
 
     @Operation(
@@ -34,6 +31,5 @@ public interface RiderLogoutApi {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "로그아웃 완료(세션 없음·만료 포함)"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "BUSY 상태(배송 수행 중)라 로그아웃 거부")
     })
-    @PostMapping
     ApiResponse<Void> logout(HttpServletRequest request, HttpServletResponse response);
 }

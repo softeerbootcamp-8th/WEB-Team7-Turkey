@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Path;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockMultipartFile;
@@ -14,7 +15,8 @@ class LocalRiderDeliveryProofStorageTest {
     Path tempDirectory;
 
     @Test
-    void 프로젝트_데이터_경로에_저장하고_읽는다() throws Exception {
+    @DisplayName("프로젝트 데이터 경로에 저장하고 읽는다")
+    void shouldStoreAndReadFromProjectDataPath() throws Exception {
         LocalRiderDeliveryProofStorage storage =
                 new LocalRiderDeliveryProofStorage(tempDirectory.toString());
         MockMultipartFile file = new MockMultipartFile(
@@ -31,7 +33,8 @@ class LocalRiderDeliveryProofStorageTest {
     }
 
     @Test
-    void 상위_경로로_벗어나는_키는_거부한다() {
+    @DisplayName("상위 경로로 벗어나는 키는 거부한다")
+    void shouldRejectKeyEscapingParentPath() {
         LocalRiderDeliveryProofStorage storage =
                 new LocalRiderDeliveryProofStorage(tempDirectory.toString());
 

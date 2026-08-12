@@ -3,6 +3,7 @@ package com.turkey.quick.member.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.LocalDateTime;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class TermTest {
@@ -16,42 +17,48 @@ class TermTest {
     }
 
     @Test
-    void 생성된_약관은_활성_상태다() {
+    @DisplayName("생성된 약관은 활성 상태다")
+    void shouldCreateActiveTerm() {
         Term term = term(FROM, TO);
 
         assertThat(term.isActive()).isTrue();
     }
 
     @Test
-    void 유효기간_내_시점에는_유효하다() {
+    @DisplayName("유효기간 내 시점에는 유효하다")
+    void shouldBeEffectiveWithinEffectivePeriod() {
         Term term = term(FROM, TO);
 
         assertThat(term.isEffectiveAt(LocalDateTime.of(2026, 6, 1, 0, 0))).isTrue();
     }
 
     @Test
-    void effective_from_이전_시점에는_유효하지_않다() {
+    @DisplayName("effective from 이전 시점에는 유효하지 않다")
+    void shouldNotBeEffectiveBeforeEffectiveFrom() {
         Term term = term(FROM, TO);
 
         assertThat(term.isEffectiveAt(LocalDateTime.of(2025, 12, 31, 23, 59))).isFalse();
     }
 
     @Test
-    void effective_to_시점_이후에는_유효하지_않다() {
+    @DisplayName("effective to 시점 이후에는 유효하지 않다")
+    void shouldNotBeEffectiveAtOrAfterEffectiveTo() {
         Term term = term(FROM, TO);
 
         assertThat(term.isEffectiveAt(TO)).isFalse();
     }
 
     @Test
-    void effective_to_가_null이면_effective_from_이후로_계속_유효하다() {
+    @DisplayName("effective to 가 null이면 effective from 이후로 계속 유효하다")
+    void shouldRemainEffectiveAfterEffectiveFromWhenEffectiveToIsNull() {
         Term term = term(FROM, null);
 
         assertThat(term.isEffectiveAt(LocalDateTime.of(2099, 1, 1, 0, 0))).isTrue();
     }
 
     @Test
-    void 비활성화하면_유효기간_내라도_유효하지_않다() {
+    @DisplayName("비활성화하면 유효기간 내라도 유효하지 않다")
+    void shouldNotBeEffectiveAfterDeactivation() {
         Term term = term(FROM, TO);
 
         term.deactivate();

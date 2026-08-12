@@ -22,6 +22,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -68,7 +69,7 @@ class RiderSignupE2ETest extends IntegrationTestSupport {
     private PointWalletRepository pointWalletRepository;
 
     @AfterEach
-    void 만든_약관을_정리한다() {
+    void cleanupCreatedTerms() {
         memberTermAgreementRepository.deleteAll();
         termRepository.deleteAll();
     }
@@ -80,7 +81,8 @@ class RiderSignupE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 정상_가입하면_200과_UNAVAILABLE_상태의_라이더_프로필을_생성한다() {
+    @DisplayName("정상 가입하면 200과 UNAVAILABLE 상태의 라이더 프로필을 생성한다")
+    void shouldCreateUnavailableRiderProfileOnSignup() {
         String phoneNumber = "01011112222";
         String token = issueVerifiedToken(phoneNumber);
 
@@ -105,7 +107,8 @@ class RiderSignupE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 필수_약관에_동의하지_않으면_400을_반환하고_라이더_프로필도_생성되지_않는다() {
+    @DisplayName("필수 약관에 동의하지 않으면 400을 반환하고 라이더 프로필도 생성되지 않는다")
+    void shouldReturnBadRequestAndNotCreateProfileWithoutRequiredAgreement() {
         Term required = termRepository.save(Term.create("RIDER_TERM", TermTargetRole.RIDER, "필수 약관", "본문", "1.0",
                 true, LocalDateTime.of(2026, 1, 1, 0, 0), null));
         String phoneNumber = "01033334444";
@@ -127,7 +130,8 @@ class RiderSignupE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 이미_사용중인_아이디로_가입하면_409를_반환한다() {
+    @DisplayName("이미 사용중인 아이디로 가입하면 409를 반환한다")
+    void shouldReturnConflictForAlreadyUsedLoginId() {
         memberRepository.save(Member.create("taken_rider_login", "hash", "기존라이더", "01055556666", MemberRole.RIDER));
         String phoneNumber = "01077778888";
         String token = issueVerifiedToken(phoneNumber);
@@ -147,7 +151,8 @@ class RiderSignupE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 휴대전화_인증_없이_가입하면_400을_반환한다() {
+    @DisplayName("휴대전화 인증 없이 가입하면 400을 반환한다")
+    void shouldReturnBadRequestWithoutPhoneVerification() {
         var signupRequest = Map.of(
                 "loginId", "e2e_rider05",
                 "password", "aaa",

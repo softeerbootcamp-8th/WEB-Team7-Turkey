@@ -104,14 +104,22 @@ function DeliveryTracking() {
   if (detailQuery.isError || !detail) {
     return (
       <div role="alert" className="w-full max-w-md min-h-screen flex flex-col items-center justify-center gap-4 bg-white px-6 text-center">
-        <p className="text-sm text-gray-600">배송 정보를 불러오지 못했습니다. 본인 주문이 맞는지 확인해 주세요.</p>
-        <button
-          type="button"
-          onClick={() => detailQuery.refetch()}
-          className="text-sm font-medium text-blue-600 border border-blue-600 rounded-lg px-4 py-2"
-        >
-          다시 시도
-        </button>
+        <p className="text-xl text-gray-900">배송 정보를 불러오지 못했습니다.<br />본인 주문이 맞는지 확인해 주세요.</p>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => detailQuery.refetch()}
+            className="text-sm font-medium text-blue-600 border border-blue-600 rounded-lg px-4 py-2"
+          >
+            다시 시도
+          </button>
+          <Link
+            to="/customer"
+            className="text-sm font-medium text-gray-600 border border-gray-300 rounded-lg px-4 py-2"
+          >
+            홈으로
+          </Link>
+        </div>
       </div>
     )
   }

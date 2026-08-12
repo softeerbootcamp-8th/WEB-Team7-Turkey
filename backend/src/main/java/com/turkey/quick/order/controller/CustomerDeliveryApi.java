@@ -2,7 +2,6 @@ package com.turkey.quick.order.controller;
 
 import com.turkey.quick.common.response.ApiResponse;
 import com.turkey.quick.customer.auth.AuthenticatedCustomer;
-import com.turkey.quick.customer.auth.CustomerSessionInterceptor;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.ActiveDeliveryResponse;
 import com.turkey.quick.order.dto.DeliveryCancelRequest;
@@ -22,23 +21,12 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestAttribute;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseStatus;
 
 /**
  * 고객 배송요청 API 계약
  *
- * <p>경로·HTTP 메서드·스키마를 여기에 고정하고, 구현체는 {@code @RestController} 만 붙여
- * 이 인터페이스를 구현한다. 매핑과 검증 어노테이션을 구현체에서 다시 선언하지 않는다
- * (Bean Validation 은 오버라이드에서 제약을 재선언하면 HV000151 로 실패한다).
+ * <p>이 인터페이스에는 Swagger 문서화와 호출자 계약인 Bean Validation 어노테이션을 둔다.
+ * 경로·HTTP 메서드 매핑과 바인딩 어노테이션은 실제 동작을 담당하는 구현체에 둔다.
  *
  * <p><b>이 인터페이스만으로는 /v3/api-docs 에 아무것도 나오지 않는다.</b> springdoc 은 빈으로
  * 등록된 컨트롤러를 스캔하므로, 구현체가 생겨야 문서와 Orval 훅이 만들어진다.
@@ -51,7 +39,6 @@ import org.springframework.web.bind.annotation.ResponseStatus;
  * 초안 문서의 {@code /api/orders} 와는 다르다.
  */
 @Tag(name = "customer-delivery", description = "고객 배송요청 — 견적, 생성, 조회, 추적, 취소")
-@RequestMapping("/api/customer/deliveries")
 public interface CustomerDeliveryApi {
 
     @Operation(summary = "요금 견적",
@@ -75,8 +62,7 @@ public interface CustomerDeliveryApi {
                         "longitude": 127.1059
                       }
                     }""")))
-    @PostMapping("/quote")
-    ApiResponse<FareQuoteResponse> quoteFare(@RequestBody FareQuoteRequest request);
+    ApiResponse<FareQuoteResponse> quoteFare(FareQuoteRequest request);
 
     @Operation(operationId = "createCustomerDelivery",
             summary = "배송요청 생성",
@@ -134,16 +120,13 @@ public interface CustomerDeliveryApi {
                         "phoneNumber": "010-9876-5432"
                       }
                     }""")))
-    @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
     ApiResponse<DeliveryCreateResponse> createDelivery(
             // 세션에서 얻은 고객이 곧 주문의 주인이다. 요청 바디로 받으면 남의 주문을 만들 수 있다.
             // 이 파라미터는 클라이언트가 채울 수 없으므로 스웨거 문서에도 노출되지 않는다.
-            // (RiderDeliveryRequestApi 와 같은 방식 — 이 파일은 매핑을 인터페이스에 두는 옛 형태다)
-            @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
+            @Parameter(hidden = true)
             AuthenticatedCustomer customer,
 
-            @Valid @RequestBody DeliveryCreateRequest request);
+            @Valid DeliveryCreateRequest request);
 
     @Operation(summary = "배송요청 목록",
             description = "로그인한 고객의 이용기록을 요청 시각 최신순으로 조회한다. "
@@ -154,19 +137,17 @@ public interface CustomerDeliveryApi {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400", description = "잘못된 페이지 정보(page<0 또는 size<1)")
     })
-    @GetMapping
     ApiResponse<DeliveryListResponse> getDeliveries(
             @Parameter(description = "배송 상태 필터(미지정 시 전체)")
-            @RequestParam(required = false) OrderStatus status,
+            OrderStatus status,
 
             @Parameter(description = "페이지(0부터)")
-            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @Min(0) int page,
 
             @Parameter(description = "페이지 크기")
-            @RequestParam(defaultValue = "20") @Min(1) int size,
+            @Min(1) int size,
 
             @Parameter(hidden = true)
-            @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
             AuthenticatedCustomer customer);
 
     @Operation(operationId = "getCustomerActiveDelivery",
@@ -182,10 +163,8 @@ public interface CustomerDeliveryApi {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401", description = "미로그인 또는 세션 만료")
     })
-    @GetMapping("/active")
     ApiResponse<ActiveDeliveryResponse> getActiveDelivery(
             @Parameter(hidden = true)
-            @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
             AuthenticatedCustomer customer);
 
     @Operation(summary = "배송요청 상세",
@@ -197,13 +176,11 @@ public interface CustomerDeliveryApi {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "404", description = "배송요청이 없거나 본인 것이 아님")
     })
-    @GetMapping("/{deliveryId}")
     ApiResponse<DeliveryDetailResponse> getDelivery(
             @Parameter(description = "배송요청 식별자", example = "1234")
-            @PathVariable Long deliveryId,
+            Long deliveryId,
 
             @Parameter(hidden = true)
-            @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
             AuthenticatedCustomer customer);
 
     /**
@@ -232,13 +209,11 @@ public interface CustomerDeliveryApi {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "404", description = "배송요청이 없거나 본인 것이 아님")
     })
-    @GetMapping("/{deliveryId}/eta")
     ApiResponse<DeliveryEtaResponse> getDeliveryEta(
             @Parameter(description = "배송요청 식별자", example = "1234")
-            @PathVariable Long deliveryId,
+            Long deliveryId,
 
             @Parameter(hidden = true)
-            @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
             AuthenticatedCustomer customer);
 
     @Operation(operationId = "cancelCustomerDelivery",
@@ -254,14 +229,12 @@ public interface CustomerDeliveryApi {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "409", description = "이미 배차되었거나 완료되어 취소할 수 없는 상태")
     })
-    @PatchMapping("/{deliveryId}/cancel")
     ApiResponse<DeliveryCancelResponse> cancelDelivery(
             @Parameter(description = "배송요청 식별자", example = "1024")
-            @PathVariable Long deliveryId,
+            Long deliveryId,
 
-            @Valid @RequestBody DeliveryCancelRequest request,
+            @Valid DeliveryCancelRequest request,
 
             @Parameter(hidden = true)
-            @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
             AuthenticatedCustomer customer);
 }

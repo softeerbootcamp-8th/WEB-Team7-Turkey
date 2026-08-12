@@ -15,6 +15,7 @@ import jakarta.servlet.http.Cookie;
 import java.time.Duration;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -48,7 +49,8 @@ class CustomerSessionInterceptorTest {
     }
 
     @Test
-    void 유효한_세션이면_통과하고_인증된_고객을_request_attribute에_담는다() {
+    @DisplayName("유효한 세션이면 통과하고 인증된 고객을 request attribute에 담는다")
+    void shouldAuthenticateCustomerAndContinueForValidSession() {
         String sessionId = "valid-session";
         sessionStore.create(sessionId, MEMBER_ID, "CUSTOMER", Duration.ofHours(2));
         Member member = customer();
@@ -65,7 +67,8 @@ class CustomerSessionInterceptorTest {
     }
 
     @Test
-    void 세션_쿠키가_없으면_401을_던진다() {
+    @DisplayName("세션 쿠키가 없으면 401을 던진다")
+    void shouldThrowUnauthorizedWithoutSessionCookie() {
         MockHttpServletRequest request = requestWithCookie(null);
 
         assertThatThrownBy(() -> interceptor.preHandle(request, new MockHttpServletResponse(), new Object()))
@@ -75,7 +78,8 @@ class CustomerSessionInterceptorTest {
     }
 
     @Test
-    void 인증에_실패하면_응답에_만료_쿠키를_함께_보낸다() {
+    @DisplayName("인증에 실패하면 응답에 만료 쿠키를 함께 보낸다")
+    void shouldSendExpiredCookieWhenAuthenticationFails() {
         MockHttpServletRequest request = requestWithCookie("no-such-session");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
@@ -88,7 +92,8 @@ class CustomerSessionInterceptorTest {
     }
 
     @Test
-    void 존재하지_않는_세션이면_401을_던진다() {
+    @DisplayName("존재하지 않는 세션이면 401을 던진다")
+    void shouldThrowUnauthorizedForUnknownSession() {
         MockHttpServletRequest request = requestWithCookie("no-such-session");
 
         assertThatThrownBy(() -> interceptor.preHandle(request, new MockHttpServletResponse(), new Object()))
@@ -98,7 +103,8 @@ class CustomerSessionInterceptorTest {
     }
 
     @Test
-    void 세션은_있지만_회원이_없으면_401을_던진다() {
+    @DisplayName("세션은 있지만 회원이 없으면 401을 던진다")
+    void shouldThrowUnauthorizedWhenSessionMemberDoesNotExist() {
         String sessionId = "orphan-session";
         sessionStore.create(sessionId, MEMBER_ID, "CUSTOMER", Duration.ofHours(2));
         when(memberRepository.findById(MEMBER_ID)).thenReturn(Optional.empty());
@@ -111,7 +117,8 @@ class CustomerSessionInterceptorTest {
     }
 
     @Test
-    void 라이더_세션으로_고객_API에_접근하면_401을_던진다() {
+    @DisplayName("라이더 세션으로 고객 API에 접근하면 401을 던진다")
+    void shouldThrowUnauthorizedWhenRiderSessionAccessesCustomerApi() {
         String sessionId = "rider-session";
         sessionStore.create(sessionId, MEMBER_ID, "RIDER", Duration.ofHours(2));
         Member rider = Member.create("rider01", "encoded", "라이더", "01099998888", MemberRole.RIDER);
@@ -125,7 +132,8 @@ class CustomerSessionInterceptorTest {
     }
 
     @Test
-    void 세션_생성_이후_탈퇴한_계정이면_401을_던진다() {
+    @DisplayName("세션 생성 이후 탈퇴한 계정이면 401을 던진다")
+    void shouldThrowUnauthorizedForAccountWithdrawnAfterSessionCreation() {
         String sessionId = "withdrawn-session";
         sessionStore.create(sessionId, MEMBER_ID, "CUSTOMER", Duration.ofHours(2));
         Member member = customer();

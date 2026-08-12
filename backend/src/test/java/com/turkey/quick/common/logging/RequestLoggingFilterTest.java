@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import jakarta.servlet.FilterChain;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -14,7 +15,8 @@ class RequestLoggingFilterTest {
     private final RequestLoggingFilter filter = new RequestLoggingFilter();
 
     @Test
-    void 응답_헤더에_requestId를_담는다() throws Exception {
+    @DisplayName("응답 헤더에 requestId를 담는다")
+    void shouldIncludeRequestIdInResponseHeader() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/health");
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = (req, res) -> {
@@ -26,7 +28,8 @@ class RequestLoggingFilterTest {
     }
 
     @Test
-    void 요청마다_requestId가_다르다() throws Exception {
+    @DisplayName("요청마다 requestId가 다르다")
+    void shouldCreateDifferentRequestIdForEachRequest() throws Exception {
         FilterChain chain = (req, res) -> {
         };
 
@@ -41,7 +44,8 @@ class RequestLoggingFilterTest {
     }
 
     @Test
-    void 정상_처리_후_MDC가_정리된다() throws Exception {
+    @DisplayName("정상 처리 후 MDC가 정리된다")
+    void shouldClearMdcAfterSuccessfulRequest() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/health");
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = (req, res) -> {
@@ -53,7 +57,8 @@ class RequestLoggingFilterTest {
     }
 
     @Test
-    void 체인에서_예외가_발생해도_MDC가_정리된다() {
+    @DisplayName("체인에서 예외가 발생해도 MDC가 정리된다")
+    void shouldClearMdcWhenFilterChainThrows() {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/health");
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = (req, res) -> {

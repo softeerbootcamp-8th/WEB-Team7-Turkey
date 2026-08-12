@@ -12,7 +12,6 @@ import com.turkey.quick.rider.dto.RiderDeliveryProofUploadUrlResponse;
 import com.turkey.quick.rider.dto.RiderDeliveryResponse;
 import com.turkey.quick.rider.dto.RiderDeliveryTransitionRequest;
 import com.turkey.quick.rider.service.RiderDeliveryService;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -44,7 +43,7 @@ public class RiderDeliveryController implements RiderDeliveryApi {
     public ApiResponse<RiderDeliveryResponse> transitionDelivery(
             @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE) AuthenticatedRider rider,
             @PathVariable Long deliveryId,
-            @Valid @RequestBody RiderDeliveryTransitionRequest request) {
+            @RequestBody RiderDeliveryTransitionRequest request) {
         return ApiResponse.ok(riderDeliveryService.transition(rider, deliveryId, request.action()));
     }
 
@@ -53,7 +52,7 @@ public class RiderDeliveryController implements RiderDeliveryApi {
     public ApiResponse<RiderDeliveryProofUploadUrlResponse> issueProofPhotoUploadUrl(
             @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE) AuthenticatedRider rider,
             @PathVariable Long deliveryId,
-            @Valid @RequestBody RiderDeliveryProofUploadUrlRequest request) {
+            @RequestBody RiderDeliveryProofUploadUrlRequest request) {
         return ApiResponse.ok(riderDeliveryService.issueProofPhotoUploadUrl(rider, deliveryId, request));
     }
 
@@ -86,7 +85,7 @@ public class RiderDeliveryController implements RiderDeliveryApi {
     public ApiResponse<RiderDeliveryCompleteResponse> completeDeliveryWithProofKey(
             @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE) AuthenticatedRider rider,
             @PathVariable Long deliveryId,
-            @Valid @RequestBody RiderDeliveryCompleteRequest request) {
+            @RequestBody RiderDeliveryCompleteRequest request) {
         return ApiResponse.ok(riderDeliveryService.complete(rider, deliveryId, request));
     }
 }

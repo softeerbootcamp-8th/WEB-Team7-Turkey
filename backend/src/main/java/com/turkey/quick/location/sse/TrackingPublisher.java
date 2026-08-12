@@ -15,15 +15,16 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 /**
  * 라이더의 새 위치, 그리고 배송 상태 전이(#398)를 그 배송의 Pub/Sub 채널로 발행한다(#317).
- * 둘 다 같은 채널을 쓰고 페이로드의 {@code type}으로만 구분된다({@link LocationPayload}는
- * 5초~30초 주기로 계속 오지만, {@link StatusChangedPayload}는 전이가 실제로 일어날 때만 온다).
+ * 둘 다 같은 채널을 쓰고 페이로드의 {@code type}으로만 구분된다({@link LocationPayload}는 BUSY
+ * 위치 전송 트리거(20m 이동 또는 120초 경과, #391)마다 계속 오지만, {@link StatusChangedPayload}는
+ * 전이가 실제로 일어날 때만 온다).
  *
  * <p>이 발행이 팬아웃의 전부다 — 어느 인스턴스에 SSE 연결이 있든 {@link TrackingSubscriber} 가
  * 받아서 자기 연결로만 보낸다. 발행자는 구독자가 있는지 알지 않는다.
  *
  * <p><b>어떤 예외도 밖으로 내지 않는다.</b> 이 호출은 라이더 위치 갱신 POST 경로에 있고, 여기서
  * 실패가 올라가면 위치 갱신 자체가 실패한다 — 그러면 Redis 장애가 고객 추적을 넘어 배차 후보
- * 갱신(#83)까지 같이 죽인다. 전달은 at-most-once 이고 유실은 다음 위치(BUSY 5초 주기)가 복구한다.
+ * 갱신(#83)까지 같이 죽인다. 전달은 at-most-once 이고 유실은 다음 위치 전송(BUSY, #391)이 복구한다.
  *
  * <p><b>채널 키를 정하는 책임은 여기 없다.</b> 호출자({@code RiderLocationService})가
  * {@code findInProgressByRiderId} 로 라이더의 수행 중 배송을 풀어 넘긴다 — 그래서 라이더가 자기
@@ -108,8 +109,8 @@ public class TrackingPublisher {
 
     /**
      * <b>어떤 예외도 밖으로 내지 않는다</b>(클래스 Javadoc 참고). 직렬화 실패와 Redis 실패를 함께
-     * 잡는다 — 처리 방식이 같다. 전달은 at-most-once 이고, 유실은 다음 위치(5초)나 재연결 경로가
-     * 복구한다.
+     * 잡는다 — 처리 방식이 같다. 전달은 at-most-once 이고, 유실은 다음 위치 전송(BUSY, #391)이나
+     * 재연결 경로가 복구한다.
      *
      * <p><b>본문을 {@link Supplier} 로 받는 이유</b>: 직렬화도 이 try 안에서 일어나야 한다.
      * 밖에서 미리 문자열을 만들어 넘기면 직렬화 실패가 이 방어막을 우회해 호출자에게 올라가는데,

@@ -5,17 +5,23 @@ import com.turkey.quick.member.dto.LoginIdAvailabilityResponse;
 import com.turkey.quick.member.service.LoginIdAvailabilityService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequiredArgsConstructor
 @Validated
+@RequestMapping("/api/login-ids")
 public class LoginIdController implements LoginIdApi {
 
     private final LoginIdAvailabilityService loginIdAvailabilityService;
 
     @Override
-    public ApiResponse<LoginIdAvailabilityResponse> checkAvailability(String loginId) {
+    @GetMapping("/availability")
+    public ApiResponse<LoginIdAvailabilityResponse> checkAvailability(
+            @RequestParam String loginId) {
         return ApiResponse.ok(LoginIdAvailabilityResponse.from(loginIdAvailabilityService.check(loginId)));
     }
 }

@@ -11,6 +11,7 @@ import com.turkey.quick.rider.domain.RiderProfile;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
 import java.util.Map;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -77,7 +78,8 @@ class RiderSessionE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 유효한_세션_쿠키면_200과_라이더_정보_및_운행_상태를_반환한다() {
+    @DisplayName("유효한 세션 쿠키면 200과 라이더 정보 및 운행 상태를 반환한다")
+    void shouldReturnRiderAndOperatingStatusForValidSession() {
         saveRider("e2e_rider_session01", "p@ssw0rd", "01011112222");
         String cookie = loginAndGetSessionCookie("e2e_rider_session01", "p@ssw0rd");
 
@@ -90,14 +92,16 @@ class RiderSessionE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 세션_쿠키가_없으면_401을_반환한다() {
+    @DisplayName("세션 쿠키가 없으면 401을 반환한다")
+    void shouldReturnUnauthorizedWithoutSessionCookie() {
         var response = rest.exchange(SESSION_ENDPOINT, HttpMethod.GET, withCookie(null), ApiResponse.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
     @Test
-    void 존재하지_않는_세션이면_401과_만료_쿠키를_반환한다() {
+    @DisplayName("존재하지 않는 세션이면 401과 만료 쿠키를 반환한다")
+    void shouldReturnUnauthorizedAndExpireCookieForUnknownSession() {
         var response = rest.exchange(SESSION_ENDPOINT, HttpMethod.GET,
                 withCookie("SESSION_ID=no-such-session"), ApiResponse.class);
 

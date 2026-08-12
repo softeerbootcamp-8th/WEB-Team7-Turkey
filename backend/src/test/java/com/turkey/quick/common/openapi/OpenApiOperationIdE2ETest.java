@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -44,7 +45,7 @@ class OpenApiOperationIdE2ETest extends IntegrationTestSupport {
     private final List<String> missingOperationIds = new ArrayList<>();
 
     @BeforeEach
-    void 스펙을_읽어_operationId를_수집한다() {
+    void collectOperationIdsFromSpecification() {
         var response = rest.getForEntity(API_DOCS_ENDPOINT, JsonNode.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
 
@@ -66,14 +67,16 @@ class OpenApiOperationIdE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 모든_오퍼레이션에_operationId가_있다() {
+    @DisplayName("모든 오퍼레이션에 operationId가 있다")
+    void shouldDefineOperationIdForEveryOperation() {
         assertThat(missingOperationIds)
                 .as("operationId 가 없으면 Orval 이 경로 기반으로 훅 이름을 지어낸다")
                 .isEmpty();
     }
 
     @Test
-    void operationId가_중복되지_않는다() {
+    @DisplayName("operationId가 중복되지 않는다")
+    void shouldNotDuplicateOperationIds() {
         Map<String, List<String>> duplicated = new LinkedHashMap<>(operationIds);
         duplicated.values().removeIf(locations -> locations.size() == 1);
 
@@ -83,7 +86,8 @@ class OpenApiOperationIdE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void operationId에_springdoc_중복해소_접미사가_붙지_않는다() {
+    @DisplayName("operationId에 springdoc 중복해소 접미사가 붙지 않는다")
+    void shouldNotUseSpringdocDeduplicationSuffix() {
         List<String> suffixed = operationIds.keySet().stream()
                 .filter(id -> id.matches(".*_\\d+$"))
                 .toList();
@@ -95,7 +99,8 @@ class OpenApiOperationIdE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 고객_라이더_공통_행위의_operationId는_액터를_구분한다() {
+    @DisplayName("고객 라이더 공통 행위의 operationId는 액터를 구분한다")
+    void shouldDistinguishActorsInSharedOperationNames() {
         // login/signup/session 은 두 액터가 같은 이름을 쓰기 쉬운 지점이라 여기서 못 박아 둔다.
         assertThat(operationIds.keySet()).contains(
                 "customerLogin", "customerLogout", "getCustomerSession", "customerSignup",
