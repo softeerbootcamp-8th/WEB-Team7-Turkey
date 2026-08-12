@@ -74,22 +74,29 @@ Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실�
 <br>
 
 ## 🧭 배송 상태
-실제도메인규칙확인필요
+
 ```text
-배차 대기
-    ↓
-라이더 배정
-    ↓
-픽업지 이동
-    ↓
-물품 수령
-    ↓
-배송 중
-    ↓
-배송 완료
+배차 대기(WAITING) ──취소──▶ 취소됨(CANCELED)
+      │
+      ▼
+라이더 배정(ASSIGNED)
+      │
+      ▼
+픽업지 이동(MOVING_TO_PICKUP)
+      │
+      ▼
+물품 수령(PICKED_UP)
+      │
+      ▼
+배송 중(DELIVERING)
+      │
+      ▼
+배송 완료(COMPLETED)
 ```
 
-배송 상태는 정해진 순서에 따라 변경됩니다.
+배송 상태는 정해진 순서에 따라서만 변경되며, 상태값을 요청으로 덮어쓰지 않고 **현재 상태 + 수행 행위** 기준으로 검증합니다.
+
+취소는 배차 전(`WAITING`) 상태에서만 허용됩니다. 배차 이후(`ASSIGNED` 이상) 취소는 MVP 범위에서 제외합니다.
 
 잘못된 상태 전이, 중복 요청, 권한이 없는 사용자의 상태 변경은 도메인 검증을 통해 차단합니다.
 
@@ -127,14 +134,25 @@ Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실�
 * 라이더 수익금 적립
 * 정산 내역 생성
 
-자세한 구현 과정은 [핵심 기술 과제 문서](./docs/technical-challenges.md)에서 확인할 수 있습니다.
+문제 정의와 담당자별 역할 분담은 [핵심 기술 과제 문서(Wiki)](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/기술적-난제-정의와-역할-분담)에서 확인할 수 있습니다.
 
 
 
 ## 🛠️ 기술 스택
 
 ### Frontend
-//todo: 채워주세요
+
+* TypeScript
+* React
+* Vite
+* TanStack Router (파일 기반 라우팅)
+* TanStack Query
+* Orval (OpenAPI 기반 API 클라이언트 자동 생성)
+* axios
+* Tailwind CSS
+* shadcn/ui
+* Capacitor (라이더 앱 Android 패키징)
+* Vitest
 
 ### Backend
 
@@ -164,13 +182,13 @@ Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실�
 ## 📚 상세 문서
 
 * [서비스 기획서](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/180)
-* [Frontend README](./frontend/README.md)
-* [Backend README](frontend/README.md)
-* [API 명세](링크를-입력해주세요)
-* [ERD](링크를-입력해주세요)
-* [시스템 아키텍처](./docs/architecture.md)
-* [핵심 기술 과제](./docs/technical-challenges.md)
-* [협업 규칙 및 컨벤션](./docs/conventions.md)
+* Frontend README (작성 예정)
+* Backend README (작성 예정)
+* [API 명세(초안)](./docs/04-frontend-api-map.md)
+* [ERD](./docs/03-erd.md)
+* [시스템 아키텍처](./docs/00-project-context.md)
+* [핵심 기술 과제(Wiki)](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/기술적-난제-정의와-역할-분담)
+* [협업 규칙 및 컨벤션(Wiki)](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki)
 
 <br>
 
@@ -185,25 +203,25 @@ Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실�
 
 ### 협업 기록
 
-* [회의록](링크를-입력해주세요)
-* [데일리 스크럼](링크를-입력해주세요)
-* [페어 프로그래밍 기록](링크를-입력해주세요)
-* [KPT 회고](링크를-입력해주세요)
-* [기술 의사결정 기록](링크를-입력해주세요)
+* 회의록 (작성 예정)
+* 데일리 스크럼 (작성 예정)
+* 페어 프로그래밍 기록 (작성 예정)
+* KPT 회고 (작성 예정)
+* [기술 의사결정 기록(ADR, Wiki)](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki)
 
-브랜치, 커밋, Pull Request 규칙은 [협업 규칙 및 컨벤션](./docs/conventions.md)에서 확인할 수 있습니다.
+브랜치, 커밋, Pull Request 규칙은 [협업 규칙 및 컨벤션(Wiki)](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki)에서 확인할 수 있습니다.
 
 <br>
 
 ## 👥 팀원
 
-| 이름   | 역할       | GitHub       | 담당        |
-| ---- | -------- | ------------ | --------- |
-| 팀원 1 | Backend | [GitHub](링크) | 고객 서비스    |
-| 팀원 2 | Backend | [GitHub](링크) | 라이더 서비스   |
-| 팀원 3 | Backend  | [GitHub](링크) | 배송·배차     |
-| 팀원 4 | Backend  | [GitHub](링크) | 위치·실시간 통신 |
-| 팀원 5 | Backend  | [GitHub](링크) | 결제·정산     |
+| 이름  | 역할      | GitHub                                      | 담당                              |
+| --- | ------- | -------------------------------------------- | --------------------------------- |
+| 정상진 | Backend | [jsj3473](https://github.com/jsj3473)       | 위치·실시간 통신(SSE), 인증(세션), AWS 인프라 |
+| 백홍빈 | Backend | [githings](https://github.com/githings)     | 고객 서비스, 결제·정산                    |
+| 유승종 | Backend | [bigbell999](https://github.com/bigbell999) | 위치·실시간 통신                        |
+| 박민서 | Backend | [minseo6753](https://github.com/minseo6753) | 배차 동시성, 라이더 서비스, AWS 인프라        |
+| 주민석 | Backend | [emes-g](https://github.com/emes-g)         | 배차 동시성, 라이더 서비스, AWS 인프라        |
 
 <br>
 
