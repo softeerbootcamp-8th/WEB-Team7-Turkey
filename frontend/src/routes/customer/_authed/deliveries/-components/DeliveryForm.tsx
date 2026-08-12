@@ -246,7 +246,7 @@ export function DeliveryForm() {
     <form
       onSubmit={handleSubmit}
       onBlur={() => setShowErrors(true)}
-      className="min-h-screen bg-surface pb-40 font-sans text-gray-900"
+      className="min-h-screen bg-surface pb-28 font-sans text-gray-900"
     >
       <header className="sticky top-0 z-40 flex items-center border-b border-gray-100 bg-white px-4 py-4">
         <button
@@ -373,7 +373,7 @@ export function DeliveryForm() {
         </section>
       </main>
 
-      <div className="fixed inset-x-0 bottom-0 z-50 rounded-t-2xl bg-white px-4 pb-8 pt-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+      <div className="fixed bottom-0 left-1/2 z-50 box-border w-full max-w-md -translate-x-1/2 rounded-t-2xl bg-white px-4 pb-8 pt-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
         <div className="mx-auto max-w-xl">
           <button
             type="submit"

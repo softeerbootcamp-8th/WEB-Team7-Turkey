@@ -68,7 +68,11 @@ declare global {
       }
 
       namespace services {
-        const Status: { OK: string }
+        const Status: {
+          OK: string
+          ZERO_RESULT: string
+          ERROR: string
+        }
 
         type AddressSearchResult = {
           x: string
@@ -96,6 +100,9 @@ declare global {
     type PostcodeData = {
       address: string
       roadAddress: string
+      jibunAddress: string
+      autoRoadAddress: string
+      autoJibunAddress: string
       zonecode: string
     }
 
@@ -104,7 +111,14 @@ declare global {
         oncomplete: (data: PostcodeData) => void
         onclose?: () => void
       })
-      open(): void
+      open(options?: {
+        q?: string
+        left?: number
+        top?: number
+        popupTitle?: string
+        popupKey?: string
+        autoClose?: boolean
+      }): void
       embed(element: HTMLElement): void
     }
   }
