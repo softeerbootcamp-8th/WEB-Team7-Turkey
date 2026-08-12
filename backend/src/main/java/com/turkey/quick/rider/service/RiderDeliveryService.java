@@ -63,9 +63,6 @@ public class RiderDeliveryService {
     /** #398: 배송 단계 전이·완료를 고객 추적 SSE로 실시간 전달하기 위해 주입한다. */
     private final TrackingPublisher trackingPublisher;
 
-    /** #398: 배송 단계 전이·완료를 고객 추적 SSE로 실시간 전달하기 위해 주입한다. */
-    private final TrackingPublisher trackingPublisher;
-
     /** 새로고침·재로그인 뒤 현재 배송 단계 화면을 복구한다(#86). */
     @Transactional(readOnly = true)
     public RiderDeliveryResponse getCurrentDelivery(AuthenticatedRider rider) {
