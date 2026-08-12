@@ -360,7 +360,7 @@ public class RiderDeliveryService {
         DeliveryOrder order = deliveryOrderRepository.findById(deliveryId)
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
                         "배송요청을 찾을 수 없습니다. deliveryId=" + deliveryId));
-//        validateCompletionTarget(order, rider.memberId());
+        validateCompletionTarget(order, rider.memberId());
 
         String key = riderDeliveryProofUploadService.buildUploadKey(deliveryId, request.contentType());
         String uploadUrl = riderDeliveryProofUploadService.presignUploadUrl(key, request.contentType());
