@@ -97,7 +97,7 @@ MySQL 일반 제약조건만으로 다음 정책을 직접 표현하기 어려�
 ```text
 Session
 key: session:{sessionId}
-value: memberId, role
+value: memberId
 
 Rider Current Location
 key: rider:location:{riderId}

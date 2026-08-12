@@ -15,8 +15,8 @@ public class InMemorySessionStore implements SessionStore {
     private final ConcurrentHashMap<String, Integer> extendCounts = new ConcurrentHashMap<>();
 
     @Override
-    public void create(String sessionId, Long memberId, String role, Duration ttl) {
-        sessions.put(sessionId, Map.of("memberId", String.valueOf(memberId), "role", role));
+    public void create(String sessionId, Long memberId, Duration ttl) {
+        sessions.put(sessionId, Map.of("memberId", String.valueOf(memberId)));
     }
 
     @Override

@@ -50,14 +50,13 @@ class CustomerLoginServiceTest {
     }
 
     @Test
-    void 로그인_성공_시_세션에_회원ID와_역할이_저장된다() {
+    void 로그인_성공_시_세션에_회원ID가_저장된다() {
         Member member = customer();
         when(memberRepository.findByLoginId(LOGIN_ID)).thenReturn(Optional.of(member));
 
         CustomerLoginResult result = customerLoginService.login(LOGIN_ID, RAW_PASSWORD);
 
-        assertThat(sessionStore.get(result.sessionId()))
-                .containsEntry("role", "CUSTOMER");
+        assertThat(sessionStore.get(result.sessionId())).containsKey("memberId");
     }
 
     @Test

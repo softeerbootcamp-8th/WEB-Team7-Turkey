@@ -121,7 +121,7 @@ class CustomerSessionE2ETest extends IntegrationTestSupport {
         Member rider = memberRepository.save(
                 Member.create("e2e_rider_session", PASSWORD_ENCODER.encode("p@ssw0rd"), "라이더", "01033334444", MemberRole.RIDER));
         String sessionId = "rider-session-id";
-        sessionStore.create(sessionId, rider.getId(), "RIDER", java.time.Duration.ofHours(2));
+        sessionStore.create(sessionId, rider.getId(), java.time.Duration.ofHours(2));
 
         var response = rest.exchange(SESSION_ENDPOINT, org.springframework.http.HttpMethod.GET,
                 withCookie("SESSION_ID=" + sessionId), ApiResponse.class);

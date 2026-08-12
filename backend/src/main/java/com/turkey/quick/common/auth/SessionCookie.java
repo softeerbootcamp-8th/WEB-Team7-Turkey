@@ -18,16 +18,27 @@ public final class SessionCookie {
 
     public static final String NAME = "SESSION_ID";
 
+    /**
+     * 쿠키 Max-Age는 세션 실제 수명(Redis TTL, {@link SessionStore#DEFAULT_TTL})과 더 이상
+     * 같은 값이 아니다(#439 결정을 뒤집음, 사람 확인). 실제 만료 판정은 전부 서버(Redis TTL,
+     * 슬라이딩)가 하고, 쿠키는 그저 "브라우저가 이걸 언제까지 들고 있을지"에 대한 힌트일 뿐이다
+     * — 그래서 로그인 시점에 넉넉히 길게 한 번만 발급하고 매 요청 재발급하지 않는다(브라우저가
+     * 이미 죽은 세션의 쿠키를 들고 있어도, 서버는 findMemberId()가 비어 있으면 그냥 401을 낸다).
+     * 400일인 이유는 Chrome이 Max-Age/Expires를 400일로 강제 절삭하기 때문 — 그 이상 넣어도
+     * 소용없다.
+     */
+    private static final Duration COOKIE_MAX_AGE = Duration.ofDays(400);
+
     private SessionCookie() {
     }
 
-    public static ResponseCookie of(String sessionId, Duration ttl, boolean secure) {
+    public static ResponseCookie of(String sessionId, boolean secure) {
         return ResponseCookie.from(NAME, sessionId)
                 .httpOnly(true)
                 .secure(secure)
                 .sameSite("Lax")
                 .path("/")
-                .maxAge(ttl)
+                .maxAge(COOKIE_MAX_AGE)
                 .build();
     }
 

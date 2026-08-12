@@ -55,10 +55,10 @@ public class RiderLoginService {
         RiderProfile profile = riderProfileRepository.findById(member.getId()).orElseThrow();
 
         String sessionId = generateSessionId();
-        sessionStore.create(sessionId, member.getId(), member.getRole().name(), SESSION_TTL);
+        sessionStore.create(sessionId, member.getId(), SESSION_TTL);
 
         return new RiderLoginResult(
-                sessionId, SESSION_TTL, member.getId(), member.getLoginId(), member.getName(),
+                sessionId, member.getId(), member.getLoginId(), member.getName(),
                 profile.getOperatingStatus());
     }
 

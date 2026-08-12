@@ -34,7 +34,7 @@ class RedisSessionStoreIntegrationTest extends IntegrationTestSupport {
 
     @Test
     void 남은_TTL이_짧아진_세션을_다시_전체_TTL로_늘린다() {
-        sessionStore.create(SESSION_ID, 42L, "RIDER", Duration.ofMinutes(1));
+        sessionStore.create(SESSION_ID, 42L, Duration.ofMinutes(1));
 
         sessionStore.extend(SESSION_ID, Duration.ofHours(2));
 

@@ -60,7 +60,7 @@ class RiderSessionInterceptorTest {
     @Test
     void 유효한_세션이면_통과하고_운행_상태를_포함한_인증된_라이더를_request_attribute에_담는다() {
         String sessionId = "valid-session";
-        sessionStore.create(sessionId, MEMBER_ID, "RIDER", Duration.ofHours(2));
+        sessionStore.create(sessionId, MEMBER_ID, Duration.ofHours(2));
         Member member = rider();
         when(memberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(member));
         when(riderProfileRepository.findById(MEMBER_ID)).thenReturn(Optional.of(RiderProfile.create(member)));
@@ -78,7 +78,7 @@ class RiderSessionInterceptorTest {
     @Test
     void 고객_세션으로_라이더_API에_접근하면_401을_던진다() {
         String sessionId = "customer-session";
-        sessionStore.create(sessionId, MEMBER_ID, "CUSTOMER", Duration.ofHours(2));
+        sessionStore.create(sessionId, MEMBER_ID, Duration.ofHours(2));
         Member customer = Member.create("session_customer01", "encoded", "고객", "01099998888", MemberRole.CUSTOMER);
         when(memberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(customer));
         MockHttpServletRequest request = requestWithCookie(sessionId);
@@ -92,7 +92,7 @@ class RiderSessionInterceptorTest {
     @Test
     void 라이더_프로필이_없으면_401을_던진다() {
         String sessionId = "no-profile-session";
-        sessionStore.create(sessionId, MEMBER_ID, "RIDER", Duration.ofHours(2));
+        sessionStore.create(sessionId, MEMBER_ID, Duration.ofHours(2));
         when(memberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(rider()));
         when(riderProfileRepository.findById(MEMBER_ID)).thenReturn(Optional.empty());
         MockHttpServletRequest request = requestWithCookie(sessionId);
@@ -104,11 +104,11 @@ class RiderSessionInterceptorTest {
     }
 
     @Test
-    void 배송_수행중_라이더의_요청은_세션_TTL과_쿠키를_함께_연장한다() {
+    void 배송_수행중_라이더의_요청은_세션_TTL만_연장하고_쿠키는_다시_내리지_않는다() {
         // BUSY 라이더는 5초 주기로 위치를 POST한다. 그 요청이 세션을 연장하지 못하면 배송 도중
         // 세션이 만료돼 위치 전송과 배송 완료가 함께 401로 막힌다(#439).
         String sessionId = "busy-rider-session";
-        sessionStore.create(sessionId, MEMBER_ID, "RIDER", SessionStore.DEFAULT_TTL);
+        sessionStore.create(sessionId, MEMBER_ID, SessionStore.DEFAULT_TTL);
         Member member = rider();
         RiderProfile profile = RiderProfile.create(member);
         profile.goOnline();
@@ -120,16 +120,14 @@ class RiderSessionInterceptorTest {
         interceptor.preHandle(requestWithCookie(sessionId), response, new Object());
 
         assertThat(sessionStore.extendCount(sessionId)).isEqualTo(1);
-        // 쿠키를 다시 내리지 않으면 서버 TTL만 늘고 클라이언트가 Max-Age에 먼저 죽는다.
-        String setCookie = response.getHeader("Set-Cookie");
-        assertThat(setCookie).contains("SESSION_ID=" + sessionId);
-        assertThat(setCookie).containsIgnoringCase("Max-Age=" + SessionStore.DEFAULT_TTL.toSeconds());
+        // 쿠키 Max-Age는 세션 TTL과 더 이상 묶여 있지 않다 — 로그인 시점에만 발급한다.
+        assertThat(response.getHeader("Set-Cookie")).isNull();
     }
 
     @Test
     void 인증에_실패하면_세션을_연장하지_않는다() {
         String sessionId = "customer-session";
-        sessionStore.create(sessionId, MEMBER_ID, "CUSTOMER", SessionStore.DEFAULT_TTL);
+        sessionStore.create(sessionId, MEMBER_ID, SessionStore.DEFAULT_TTL);
         Member customer = Member.create("session_customer01", "encoded", "고객", "01099998888", MemberRole.CUSTOMER);
         when(memberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(customer));
 

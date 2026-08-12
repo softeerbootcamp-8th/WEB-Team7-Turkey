@@ -1,7 +1,6 @@
 package com.turkey.quick.common.auth;
 
 import java.time.Duration;
-import java.util.Map;
 import java.util.Optional;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
@@ -18,15 +17,12 @@ public class RedisSessionStore implements SessionStore {
     }
 
     @Override
-    public void create(String sessionId, Long memberId, String role, Duration ttl) {
+    public void create(String sessionId, Long memberId, Duration ttl) {
         String key = key(sessionId);
 
-        // HSET으로 필드 두 개를 한 번에 쓰고, EXPIRE로 TTL을 건다(둘을 하나의 원자적 명령으로
-        // 묶는 대신 별도 호출 두 번 — 세션 생성 경로라 그 사이 극히 짧은 창은 감내 가능하다고 판단).
-        redisTemplate.opsForHash().putAll(key, Map.of(
-                "memberId", String.valueOf(memberId),
-                "role", role
-        ));
+        // HSET으로 필드를 쓰고 EXPIRE로 TTL을 건다(둘을 하나의 원자적 명령으로 묶는 대신 별도
+        // 호출 두 번 — 세션 생성 경로라 그 사이 극히 짧은 창은 감내 가능하다고 판단).
+        redisTemplate.opsForHash().put(key, "memberId", String.valueOf(memberId));
         redisTemplate.expire(key, ttl);
     }
 

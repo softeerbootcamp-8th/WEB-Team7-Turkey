@@ -66,23 +66,22 @@ public class RiderSessionInterceptor implements HandlerInterceptor {
             throw authFailure(response);
         }
 
-        slideSession(response, sessionId);
+        slideSession(sessionId);
         request.setAttribute(CURRENT_RIDER_ATTRIBUTE, AuthenticatedRider.from(member, profile));
         return true;
     }
 
     /**
      * 인증을 통과한 요청마다 세션 TTL을 다시 건다(슬라이딩 갱신, #439). 고객 인터셉터와 같은 처리다
-     * — 이 저장소는 두 인터셉터를 공용 추출하지 않기로 했으므로(CLAUDE.md) 같은 두 줄을 각자 둔다.
+     * — 이 저장소는 두 인터셉터를 공용 추출하지 않기로 했으므로(CLAUDE.md) 같은 줄을 각자 둔다.
      *
      * <p>BUSY 라이더에게 이게 핵심이다. 배송 중 5초 주기 위치 전송이 그대로 활동 신호가 되어 배송
      * 도중 세션이 만료되지 않는다 — 만료되면 위치 POST와 배송 완료가 함께 401로 막혔다(#439).
-     * <b>쿠키를 함께 다시 내려야</b> Max-Age 영속 쿠키를 쥔 클라이언트가 서버보다 먼저 죽지 않는다.
+     * 쿠키는 다시 내리지 않는다 — Max-Age가 이 TTL과 더 이상 묶여 있지 않아({@link SessionCookie})
+     * 클라이언트가 먼저 죽는 문제 자체가 안 생긴다.
      */
-    private void slideSession(HttpServletResponse response, String sessionId) {
+    private void slideSession(String sessionId) {
         sessionStore.extend(sessionId, SessionStore.DEFAULT_TTL);
-        response.addHeader(HttpHeaders.SET_COOKIE,
-                SessionCookie.of(sessionId, SessionStore.DEFAULT_TTL, cookieSecure).toString());
     }
 
     private BusinessException authFailure(HttpServletResponse response) {

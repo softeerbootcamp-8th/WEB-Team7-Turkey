@@ -6,20 +6,22 @@ import java.util.Optional;
 /**
  * 로그인 세션의 저장소. 운영에서는 Redis(TTL)를 쓰고, 통합·E2E 테스트에서는 로컬 Redis 없이
  * 돌 수 있도록 인메모리 구현으로 대체한다(VerificationCodeStore와 같은 이유).
- *
- * role을 회원 도메인 타입(MemberRole)이 아니라 String으로 받는 이유: 이 패키지(common/auth)는
- * 고객·라이더 모두에게 재사용될 인증 인프라라 특정 도메인 enum에 의존하지 않는다.
  */
 public interface SessionStore {
 
     /**
-     * 세션 TTL. 로그인 시점의 최초 TTL이자 슬라이딩 갱신 단위이고, 세션 쿠키 Max-Age도 같은 값이다
-     * (#439). 세 곳이 갈리면 서버 세션과 클라이언트 쿠키의 수명이 어긋나므로 여기 하나만 둔다.
+     * 세션 TTL. 로그인 시점의 최초 TTL이자 슬라이딩 갱신 단위다(#439). 세션 쿠키 Max-Age는 더
+     * 이상 이 값과 같지 않다 — 실제 만료 판정은 이 TTL(Redis) 하나만 하고, 쿠키는 그와 무관하게
+     * 길게 한 번만 발급한다({@link SessionCookie}).
      */
     Duration DEFAULT_TTL = Duration.ofHours(2);
 
-    /** 세션을 생성한다. 값 형식은 docs/03-erd.md 5절에 정의된 {memberId, role}. */
-    void create(String sessionId, Long memberId, String role, Duration ttl);
+    /**
+     * 세션을 생성한다. 값 형식은 docs/03-erd.md 5절에 정의된 {memberId}. role은 저장하지 않는다
+     * — 역할·활성 상태 확인은 항상 회원 조회 이후 최신 DB 상태로 하지 이 저장소를 안 쓴다(아래
+     * {@link #findMemberId} 참고). 저장했던 적이 있었으나 읽는 코드가 0곳이라 없앴다.
+     */
+    void create(String sessionId, Long memberId, Duration ttl);
 
     /**
      * 세션이 존재하면(=Redis TTL로 아직 만료되지 않았으면) 저장된 회원 ID를 반환한다.
