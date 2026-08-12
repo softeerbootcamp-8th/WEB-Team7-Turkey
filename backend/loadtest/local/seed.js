@@ -71,9 +71,9 @@ function checkSignup(res, label, role, termIds) {
   throw new Error(`[seed] ${label} 실패: status=${res.status} body=${res.body}`);
 }
 
-// 서울 내 좌표 두 쌍(강남 → 송파, backend/loadtest/smoke.js 와 동일 좌표) — 최대 배송거리(30km,
-// seed-fare-policy.sql)를 넘지 않는 임의의 고정 경로. 여러 쌍을 만들 때 좌표를 다양화하지 않는 이유는 #259 의
-// 종속변인(지연·용량)이 좌표가 아니라 동시 연결 수 N 에 달려 있어서다.
+// 서울 내 좌표 두 쌍(강남 → 송파) — 최대 배송거리(30km, seed-fare-policy.sql)를 넘지 않는
+// 임의의 고정 경로. 여러 쌍을 만들 때 좌표를 다양화하지 않는 이유는 #259 의 종속변인
+// (지연·용량)이 좌표가 아니라 동시 연결 수 N 에 달려 있어서다.
 const PICKUP = { roadAddress: '서울 강남구 테헤란로 152', detailAddress: '5층', postalCode: '06236', latitude: 37.5006, longitude: 127.0366 };
 const DESTINATION = { roadAddress: '서울 송파구 올림픽로 300', detailAddress: '1동', postalCode: '05551', latitude: 37.5145, longitude: 127.1059 };
 

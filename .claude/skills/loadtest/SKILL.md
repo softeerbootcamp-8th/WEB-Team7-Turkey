@@ -250,7 +250,7 @@ docs/loadtest/<YYYY-MM-DD>-<testid>.md
   지워져 **운영 지표가 밀린다** — k6 와 운영 지표를 구분하지 않는다.
 - **이 절차는 `backend/loadtest/local/` 만 다룬다.** 배포 서버 대상 측정은 별도 디렉터리
   (`backend/loadtest/remote/`)에 있고 가드가 따로 있다 — 사전 공지, 정리 의무, 부하 생성기 위치
-  기록. 사용자가 배포 대상을 요청하면 `remote/README.md` 를 먼저 읽고, **로컬 절차를 그대로
+  기록. 사용자가 배포 대상을 요청하면 `backend/loadtest/remote/README.md` 를 먼저 읽고, **로컬 절차를 그대로
   옮겨 쓰지 않는다.**
 - 호스트 `bootRun` 으로 재지 않는다(위 원칙 2).
 - `docker-compose.loadtest.yml` 을 `docker-compose.override.yml` 로 바꾸지 않는다(모니터링 EC2 에서

@@ -33,20 +33,24 @@ arm 스크립트를 대상별로 복사하지 않는 이유는, 두 벌이 되�
 #    빼면 MySQL·Redis 수치가 무관한 빈 컨테이너 값으로 채워진다.
 cd infra/monitoring-ec2
 docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.loadtest.yml up -d
-curl -sf localhost:9099/-/ready || echo "관측 스택이 안 떴다 — 리포트가 빈다"
+# 스크레이프 대상 6개가 전부 up 인지 본다(`/-/ready` 는 200 이면서 대상이 0개일 수 있다).
+curl -s 'localhost:9099/api/v1/targets?state=any' | python3 -c "import sys,json; \
+t=json.load(sys.stdin)['data']['activeTargets']; \
+print(f'타깃 {len(t)}개,', [x['labels']['job'] for x in t if x['health']!='up'] or '전부 up')"
 
 # 2) 부하 대상 + 시드
 cd ../../backend
-docker compose --profile app up -d --build
+docker compose --profile app up -d --build --wait   # healthcheck 로 기동 완료까지 블록
+./loadtest/sample-stats.sh &                        # 컨테이너 CPU 병행 샘플링(Prometheus 에 없는 값)
 docker compose exec -T mysql mysql -uturkey -plocal turkey < scripts/reset-and-seed-local.sql
 # BUSY 라이더 100명(+고객 100명, 진행 중 배송 100건). VU 수보다 많게 잡는다.
 docker compose exec -T mysql mysql -uturkey -plocal turkey < scripts/seed-loadtest-riders.sql
 
 # 3) 실행 → 리포트. testid 를 빼먹으면 Grafana 대시보드와 collect.py 가 런을 구분하지 못한다.
-ID=location-$(date +%Y%m%d-%H%M%S); S=$(date +%s)
+ID=location-$(date +%Y%m%d-%H%M%S)
 docker compose run --rm -e BASE_URL=http://app:8080 -e RIDER_COUNT=100 \
   k6 run --tag testid=$ID /scripts/local/rider-location-update.js
-./loadtest/collect.py $S $(date +%s) $ID > ../docs/loadtest/$(date +%F)-${ID}.md
+./loadtest/collect.py --latest --steps > ../docs/loadtest/$(date +%F)-${ID}.md
 ```
 
 Grafana 는 `https://localhost:8443`(자체서명, 최초 1회 "고급 > 계속 진행") 의 **k6 Prometheus**
@@ -69,9 +73,9 @@ Redis 키만 두드려 수치가 왜곡된다(아래 A vs B 비교). 계정 수�
 VU 당 라이더 1명이 배분되게 한다.
 
 `STEPS=n` 을 주면 **계단 램프**가 된다(`MAX_VU/n` 간격 n 단, 각 단 전이 `RAMP_SECONDS`(10초) +
-유지 `HOLD_SECONDS`(90초)). 유지 구간이 있어야 단계별로 `collect.py` 를 따로 돌려 **어느 동시성에서
-병목의 성격이 바뀌는지**를 볼 수 있다 — 유지 90초는 Prometheus 15초 스크레이프가 `increase()` 창을
-채우는 최소값이다. `STEPS` 를 주지 않으면 기존 4단 램프 그대로라 이전 런과 비교가 유지된다.
+유지 `HOLD_SECONDS`(90초)). 유지 구간이 있어야 **어느 동시성에서 병목의 성격이 바뀌는지**를 볼 수
+있다 — 유지 90초는 Prometheus 15초 스크레이프가 `increase()` 창을 채우는 최소값이다. 단계별 표는
+`collect.py --steps` 가 VU 타임라인에서 유지 구간을 찾아 자동으로 만든다(단 경계를 따로 넘기지 않는다). `STEPS` 를 주지 않으면 기존 4단 램프 그대로라 이전 런과 비교가 유지된다.
 
 ### 결과 (2026-08-10, dev `affb49d` + 이 브랜치, 앱 컨테이너 1GiB/2vCPU)
 

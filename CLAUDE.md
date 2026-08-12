@@ -42,7 +42,7 @@ k6 부하테스트는 `loadtest` 스킬(`.claude/skills/loadtest/`)이 정본 �
   `backend/loadtest/remote/`(배포 서버). 같은 명령처럼 보이면 실수로 팀 공용 환경을 때리기 때문이다.
   `collect.py` 와 arm 스크립트는 최상위 공용이고, 대상은 `BASE_URL` 로만 갈린다 — arm 을 대상별로
   복사하면 한쪽만 고쳐져 로컬·배포 수치를 직접 비교할 수 없게 된다.
-  - `remote/` 는 가드가 따로 있다(`remote/README.md`): 사전 공지, 끝난 뒤 정리 의무, 부하 생성기
+  - `remote/` 는 가드가 따로 있다(`backend/loadtest/remote/README.md`): 사전 공지, 끝난 뒤 정리 의무, 부하 생성기
     위치를 리포트에 기록. **로컬 절차를 그대로 옮겨 쓰지 않는다.**
   - k6 결과는 어느 대상이든 **로컬 Prometheus** 로 보낸다. 배포 Prometheus 로 밀면 보존 상한(8GB)에
     닿을 때 오래된 블록부터 지워져 **운영 지표가 밀려 사라진다** — k6 와 운영 지표를 구분하지 않는다.

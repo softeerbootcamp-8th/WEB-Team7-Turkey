@@ -613,7 +613,7 @@ def main(argv):
         elif with_panels:
             print("- `--panels` 를 줬지만 대시보드 JSON 을 못 찾았다"
                   "(`infra/monitoring-ec2/provisioning/dashboards`, gitignore 라 "
-                  "`./fetch-dashboards.sh` 로 받는다).")
+                  "`infra/monitoring-ec2/fetch-dashboards.sh` 로 받는다).")
 
 
 def selftest():

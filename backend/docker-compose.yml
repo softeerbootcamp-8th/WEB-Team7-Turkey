@@ -114,6 +114,16 @@ services:
       RIDER_DELIVERY_PROOF_STORAGE: s3mock
       AWS_S3_ENDPOINT: http://s3mock:9090
       AWS_S3_BUCKET: turkey-delivery-proof-local
+    # mysql·redis 에는 healthcheck 가 있는데 app 에만 없었다. 없으면 `up -d` 가 기동 완료를
+    # 기다려 주지 않아서 부하테스트 절차가 `sleep` 으로 감을 잡아야 한다(실제로 그랬다).
+    # 이제 `--wait` 를 주면 실제 준비 완료까지 블록한다. curl 은 eclipse-temurin JRE 이미지에
+    # 들어 있고, actuator 는 management.server.port(8081)로 분리돼 있다.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8081/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 40s
     depends_on:
       mysql:
         condition: service_healthy
@@ -122,9 +132,10 @@ services:
       s3mock:
         condition: service_started
 
-  # 부하 발생기. 시나리오는 ./loadtest/local/(로컬 대상) · ./loadtest/remote/(배포 대상)에 있고, 결과는 로컬 모니터링 스택의 Prometheus 로
-  # 밀어 넣는다(아래 K6_OUT 기본값). 관측·시각화는 전부 그쪽이 한다 — 이 파일에 influxdb·
-  # grafana 를 따로 두지 않는 이유다(로컬에 Grafana 가 둘이면 어느 쪽을 보는지 헷갈린다).
+  # 부하 발생기. 시나리오는 ./loadtest/local/(로컬 대상) · ./loadtest/remote/(배포 대상)에 있고,
+  # 결과는 로컬 모니터링 스택의 Prometheus 로 밀어 넣는다(아래 K6_OUT 기본값). 관측·시각화는
+  # 전부 그쪽이 한다 — 이 파일에 influxdb·grafana 를 따로 두지 않는 이유다(로컬에 Grafana 가
+  # 둘이면 어느 쪽을 보는지 헷갈린다).
   #
   # k6 가 이 프로젝트에 있는 이유: 측정 경로(k6 → app → mysql/redis)가 한 docker 네트워크
   # 안에서 끝나야 한다. 호스트를 경유하면 macOS·Windows 에서 Docker VM 경계를 넘어 지연이
@@ -135,15 +146,16 @@ services:
   # 실행(부하 대상은 app 컨테이너다 — 호스트 bootRun 으로 재지 말 것):
   #   cd ../infra/monitoring-ec2 && docker compose \
   #     -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.loadtest.yml up -d
-  #   curl -sf localhost:9099/-/ready || echo "관측 스택이 안 떠 있다 — 리포트가 빈다"
-  #   cd ../../backend && docker compose --profile app up -d --build
-  #   S=$(date +%s)
+  #   # 스크레이프 대상 6개가 전부 up 인지 본다(`/-/ready` 는 200 이면서 대상이 0개일 수 있다)
+  #   curl -s 'localhost:9099/api/v1/targets?state=any' | python3 -c "import sys,json; \
+  #   t=json.load(sys.stdin)['data']['activeTargets']; print(len(t), [x['labels']['job'] for x in t if x['health']!='up'])"
+  #   cd ../../backend && docker compose --profile app up -d --build --wait   # healthcheck 로 기동 완료까지 블록
+  #   ./loadtest/sample-stats.sh &                                           # 컨테이너 CPU 병행 샘플링
   #   docker compose run --rm -e BASE_URL=http://app:8080 k6 \
   #     run --tag testid=location-$(date +%Y%m%d-%H%M%S) /scripts/local/rider-location-update.js
-  #   ./loadtest/collect.py $S $(date +%s) location-<위와 같은 값>
+  #   ./loadtest/collect.py --latest --steps    # 측정 구간은 인자로 넘기지 않는다(setup 이 섞인다)
   #
-  # `--tag testid=` 를 빼먹지 말 것: Grafana k6 대시보드가 그 라벨로 런을 구분하고,
-  # collect.py 도 그것으로 런을 특정한다. 없으면 여러 런이 한 그래프에 겹친다.
+  # `--tag testid=` 를 빼먹지 말 것: Grafana k6 대시보드가 그 라벨로 런을 구분한다.
   #
   # 배포 EC2 의 Prometheus 로는 절대 밀지 않는다. 그쪽 보존 정책이 `15d 또는 8GB 중 먼저
   # 걸리는 쪽`인데, k6 시리즈는 카디널리티가 높고(URL·check·status × testid, 런마다 새 testid)
