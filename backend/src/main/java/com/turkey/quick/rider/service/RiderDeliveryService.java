@@ -224,6 +224,10 @@ public class RiderDeliveryService {
         // 경쟁 방지), 이 호출을 메서드 안 어디에 둬도 안전하다 — 순서를 맞추려고 여기 둔 것이 아니다.
         trackingPublisher.publishStatus(deliveryId, OrderStatus.COMPLETED,
                 order.getCompletedAt().toInstant(ZoneOffset.UTC));
+        // 완료되면 이 배송으로는 더 보낼 것이 없다 — 연결을 닫아 재연결 → 409 → 재조회 사슬을
+        // 즉시 발동시킨다(#450). 이 신호가 유실돼도 emitter 절대 수명(5분)이 같은 사슬을 만들므로
+        // 정합성이 아니라 지연(5분 → 약 3초)을 줄이는 최적화다.
+        trackingPublisher.publishClose(deliveryId);
 
         log.info("event=RIDER_DELIVERY_COMPLETED riderId={} orderId={} settlementAmount={}",
                 rider.memberId(), deliveryId, settlementAmount);

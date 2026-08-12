@@ -10,6 +10,7 @@ import com.turkey.quick.order.service.DeliveryDetailQueryService;
 import com.turkey.quick.order.service.DeliveryEtaQueryService;
 import com.turkey.quick.order.service.DeliveryListQueryService;
 import com.turkey.quick.order.service.DeliveryService;
+import com.turkey.quick.order.service.DeliveryTimeoutService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class CustomerDeliveryController implements CustomerDeliveryApi {
 
     private final DeliveryService deliveryService;
+    private final DeliveryTimeoutService deliveryTimeoutService;
     private final DeliveryListQueryService deliveryListQueryService;
     private final DeliveryDetailQueryService deliveryDetailQueryService;
     private final ActiveDeliveryQueryService activeDeliveryQueryService;
@@ -46,6 +48,14 @@ public class CustomerDeliveryController implements CustomerDeliveryApi {
         return ApiResponse.ok(deliveryService.quoteFare(request));
     }
 
+    /**
+     * 지연 만료 정리(#42)를 생성 트랜잭션 <b>밖</b>에서 먼저 부르는 이유는 커넥션 풀 교착 방지다
+     * (#463, #446 형제 버그). {@code createDelivery} 는 {@code @Transactional} 로 커넥션을 쥐는데,
+     * 그 안에서 {@code REQUIRES_NEW} 인 {@code expireIfStale} 를 부르면 요청 1건이 커넥션 2개를
+     * 동시에 점유한다. 여기서 먼저 호출하면 만료 정리(자기 트랜잭션에서 커밋·반납)와 생성이 커넥션을
+     * 순차로만 쓴다. {@code expireIfStale} 의 독립 커밋 의미(#42)는 그대로다 — 정리가 성립한 뒤 생성이
+     * 실패해도 되돌아가지 않는다.
+     */
     @Override
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -53,6 +63,7 @@ public class CustomerDeliveryController implements CustomerDeliveryApi {
             @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
             AuthenticatedCustomer customer,
             @Valid @RequestBody DeliveryCreateRequest request) {
+        deliveryTimeoutService.expireIfStale(customer.memberId());
         return ApiResponse.ok(deliveryService.createDelivery(request, customer.memberId()));
     }
 

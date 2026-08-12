@@ -67,4 +67,38 @@ class TrackingChannelTest {
             assertThat(TrackingChannel.deliveryIdOf(null)).isEmpty();
         }
     }
+
+    @Test
+    @DisplayName("종료 채널은 데이터 채널 패턴에 걸리지 않는다 — 이 설계의 핵심 제약 (#450)")
+    void closeChannelDoesNotMatchDataPattern() {
+        // Redis glob 의 * 는 콜론을 포함해 매칭한다. 종료 채널을 데이터 채널 아래
+        // (tracking:order:1:close) 에 두면 데이터 패턴에 걸려 TrackingSubscriber 가 종료 신호를
+        // 데이터 프레임으로 브라우저에 흘려보낸다. 접두어가 완전히 갈려야 한다.
+        String dataPrefix = TrackingChannel.pattern().replace("*", "");
+
+        assertThat(TrackingChannel.closeOf(1L)).doesNotStartWith(dataPrefix);
+        assertThat(TrackingChannel.of(1L)).doesNotStartWith(TrackingChannel.closePattern().replace("*", ""));
+    }
+
+    @Test
+    @DisplayName("종료 채널에서 배송 식별자를 되꺼낸다 (#450)")
+    void parsesDeliveryIdFromCloseChannel() {
+        assertThat(TrackingChannel.deliveryIdOfClose(TrackingChannel.closeOf(1024L))).contains(1024L);
+    }
+
+    @Test
+    @DisplayName("두 채널의 파서는 서로의 채널을 받지 않는다 (#450)")
+    void parsersDoNotAcceptEachOthersChannel() {
+        // 리스너가 뒤바뀌어 등록되면 조용히 잘못 동작하는 대신 빈 결과가 나와야 한다.
+        assertThat(TrackingChannel.deliveryIdOfClose(TrackingChannel.of(1L))).isEmpty();
+        assertThat(TrackingChannel.deliveryIdOf(TrackingChannel.closeOf(1L))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("형식이 어긋난 종료 채널은 예외가 아니라 빈 결과다 (#450)")
+    void returnsEmptyForMalformedCloseChannel() {
+        assertThat(TrackingChannel.deliveryIdOfClose("tracking:close:not-a-number")).isEmpty();
+        assertThat(TrackingChannel.deliveryIdOfClose("other:close:1")).isEmpty();
+        assertThat(TrackingChannel.deliveryIdOfClose(null)).isEmpty();
+    }
 }

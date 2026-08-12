@@ -23,7 +23,9 @@ import com.turkey.quick.rider.domain.RiderProfile;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
 import com.turkey.quick.rider.service.RiderDeliveryRequestService;
 import com.turkey.quick.support.IntegrationTestSupport;
+import com.turkey.quick.support.SseTestClient;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.UUID;
@@ -35,6 +37,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
+import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpEntity;
@@ -69,6 +72,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 class CustomerDeliveryCancelE2ETest extends IntegrationTestSupport {
 
     private static final BCryptPasswordEncoder PASSWORD_ENCODER = new BCryptPasswordEncoder();
+
+    @LocalServerPort
+    private int port;
 
     private static final AddressRequest PICKUP = new AddressRequest(
             "서울 강남구 테헤란로 152", "5층", "06236",
@@ -175,6 +181,10 @@ class CustomerDeliveryCancelE2ETest extends IntegrationTestSupport {
         return "/api/customer/deliveries/" + deliveryId + "/cancel";
     }
 
+    private String streamUrl(Long deliveryId) {
+        return "http://localhost:%d/api/customer/deliveries/%d/tracking/stream".formatted(port, deliveryId);
+    }
+
     private long balanceOf(Long memberId) {
         return pointWalletRepository.findByMemberId(memberId).orElseThrow().getBalance();
     }
@@ -212,6 +222,29 @@ class CustomerDeliveryCancelE2ETest extends IntegrationTestSupport {
                 .containsEntry("deliveryId", orderId.intValue())
                 .containsEntry("status", "CANCELED");
         assertThat(balanceOf(customerId)).isEqualTo(50_000L);
+    }
+
+    @Test
+    @DisplayName("취소하면 그 배송의 SSE 채널로 CANCELED 상태 이벤트가 발행된다(#444)")
+    void publishesCanceledStatusOverSse() {
+        saveActiveFarePolicy();
+        Long customerId = saveCustomerWithWallet("e2e_cancel05", "p@ssw0rd", "01066667777", 50_000L);
+        String cookie = loginAndGetSessionCookie("e2e_cancel05", "p@ssw0rd");
+        long fare = serverFare();
+        Long orderId = createWaitingOrder(customerId, fare);
+
+        // WAITING부터 구독 가능하다(#401) — 배차 전 취소도 이미 열려 있는 연결로 받아야 한다.
+        try (var client = SseTestClient.get(streamUrl(orderId), cookie)) {
+            assertThat(client.statusCode()).isEqualTo(200);
+
+            var response = rest.exchange(cancelUrl(orderId), HttpMethod.PATCH,
+                    withCookie(cookie, Map.of("reason", "단순 변심")), ApiResponse.class);
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+            assertThat(client.awaitData(Duration.ofSeconds(10)))
+                    .contains("\"type\":\"status\"")
+                    .contains("\"status\":\"CANCELED\"");
+        }
     }
 
     @Test

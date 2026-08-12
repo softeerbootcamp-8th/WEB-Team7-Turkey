@@ -1,0 +1,80 @@
+name: Build mobile(android) APK
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'frontend/**'
+      - 'mobile/**'
+      - '.github/workflows/build-mobile-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+      VITE_KAKAO_MAP_KEY: ${{ vars.VITE_KAKAO_MAP_KEY }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: gradle
+          cache-dependency-path: |
+            mobile/android/*.gradle
+            mobile/android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend for Android
+        working-directory: ./frontend
+        run: pnpm build:android
+
+      - name: Install Capacitor dependencies
+        working-directory: ./mobile
+        run: npm ci
+
+      - name: Sync Android project
+        working-directory: ./mobile
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: ./mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: turkey-android-debug-${{ github.sha }}
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 90
