@@ -29,6 +29,31 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 프롬프트에 이슈 번호가 나오면 `UserPromptSubmit` 훅(`.claude/hooks/issue-mvp-trigger.py`)이 스킬 로드를 안내한다.
 작업 기록은 `docs/worklog/`에 이슈당 한 파일로 남기고, 사람이 고른 선택과 근거를 적는다.
 
+## 부하테스트 절차
+
+k6 부하테스트는 `loadtest` 스킬(`.claude/skills/loadtest/`)이 정본 절차다. 목적만 정하면
+대상 선정 → 시나리오 → 계측 스택 기동 → 시드 → 실행 → 지표 수집 → 리포트까지 진행한다.
+엔드포인트별 사전조건(그 요청이 실제로 일을 하게 만드는 상태 조건)은
+`.claude/skills/loadtest/references/preconditions.md` 가 정본이다 — OpenAPI 스펙에 없는 정보이고,
+빠뜨리면 **200 만 받고 아무 일도 안 한 결과를 성능 수치로 오해**한다(AVAILABLE 라이더로 위치
+갱신을 때리는 경우가 실례다).
+
+- **대상에 따라 디렉터리가 갈린다**(2026-08-11 결정): `backend/loadtest/local/`(로컬 docker 앱) 과
+  `backend/loadtest/remote/`(배포 서버). 같은 명령처럼 보이면 실수로 팀 공용 환경을 때리기 때문이다.
+  `collect.py` 와 arm 스크립트는 최상위 공용이고, 대상은 `BASE_URL` 로만 갈린다 — arm 을 대상별로
+  복사하면 한쪽만 고쳐져 로컬·배포 수치를 직접 비교할 수 없게 된다.
+  - `remote/` 는 가드가 따로 있다(`backend/loadtest/remote/README.md`): 사전 공지, 끝난 뒤 정리 의무, 부하 생성기
+    위치를 리포트에 기록. **로컬 절차를 그대로 옮겨 쓰지 않는다.**
+  - k6 결과는 어느 대상이든 **로컬 Prometheus** 로 보낸다. 배포 Prometheus 로 밀면 보존 상한(8GB)에
+    닿을 때 오래된 블록부터 지워져 **운영 지표가 밀려 사라진다** — k6 와 운영 지표를 구분하지 않는다.
+- 측정 경로(k6 → app → mysql/redis)는 한 docker 네트워크 안에서 끝낸다. 관측(스크레이프·결과
+  전송)은 호스트를 경유해도 무해하다.
+- 런당 원본 수치는 `docs/loadtest/`에 한 파일, 여러 런을 비교한 결론은
+  `backend/loadtest/README.md`에 누적한다.
+- k6 종료 시 `PostToolUse` 훅(`.claude/hooks/k6-report.py`)이 `backend/loadtest/collect.py` 를
+  돌려 지표 표를 올려 준다. **사용자가 자기 터미널에서 돌린 k6 에는 붙지 않는다**(훅은 세션의
+  tool 호출에만 발동) — 그때는 `collect.py` 를 직접 부른다.
+
 ## 작업 원칙
 
 - 기존 디렉터리 구조와 팀 합의를 우선한다. 요청 없이 대규모 구조 변경·기술 교체를 하지 않는다.

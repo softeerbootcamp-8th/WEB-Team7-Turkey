@@ -90,6 +90,25 @@ aws:
 
 server:
   port: 8080
+  tomcat:
+    mbeanregistry:
+      # 켜면 tomcat_connections_*(현재/최대 연결), tomcat_global_*(요청 수·에러·바이트),
+      # tomcat_threads_* 가 나온다. 끄면 tomcat_sessions_* 만 남아 동시 연결이 얼마나 쌓였는지
+      # 볼 방법이 없다 — 부하 구간 진단에 실제로 필요했다(backend/loadtest/README.md).
+      # 주의: 가상 스레드(spring.threads.virtual.enabled)에서는 tomcat_threads_* 가 -1 이다.
+      # 스레드 풀이 없어 보고할 값이 없기 때문이다. 동시성은 tomcat_connections_current_connections
+      # 로 본다.
+      #
+      # **local 프로파일이 아니라 base 문서에 두는 것이 의도다**(리뷰 지적에 대한 결정,
+      # 2026-08-11). 부하테스트 전용 진단 설정이 아니라 **운영 관측에도 필요한 값**이기 때문이다:
+      #  - 배포 앱의 actuator 를 모니터링 스택이 그대로 긁고, 프로비저닝된 JVM 대시보드에
+      #    tomcat 패널이 들어 있다.
+      #  - 가상 스레드라 tomcat_threads_* 가 -1 이므로, 운영에서 동시 연결을 볼 수 있는 지표가
+      #    tomcat_connections_current_connections 하나뿐이다. 이걸 local 로 한정하면 운영에서
+      #    "연결이 얼마나 쌓였나"를 아예 못 본다.
+      # 비용은 기동 시 MBean 등록과 커넥터 카운터뿐이다. 운영에서 이 지표가 불필요하다고
+      # 판단되면 local 프로파일로 내리는 것이 맞고, 그때 위 대시보드 패널도 함께 정리한다.
+      enabled: true
 
 # --- Actuator: 모니터링(Prometheus)용 지표 노출 ---
 # 별도 포트로 분리해, 보안그룹에서 앱 포트(8080)와 독립적으로 접근을 제한할 수 있게 한다.
