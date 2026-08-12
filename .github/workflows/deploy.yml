@@ -3,36 +3,26 @@ name: Deploy to WAS
 on:
   push:
     branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+      - '.github/workflows/deploy.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-production
+  # 배포 도중 취소되면 jar 교체와 서비스 재시작 사이에서 멈출 수 있으므로 직렬화한다.
+  cancel-in-progress: false
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v5
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-
-      - name: Grant execute permission for gradlew
-        working-directory: ./backend
-        run: chmod +x gradlew
-
-      - name: Build
-        working-directory: ./backend
-        run: ./gradlew clean build -x test
-
-      - name: Upload jar artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: app-jar
-          path: backend/build/libs/*.jar
-          retention-days: 7
+  ci:
+    name: Backend CI
+    uses: ./.github/workflows/backend-ci.yml
 
   deploy:
-    needs: build
+    needs: ci
     runs-on: self-hosted
     steps:
       - name: Download jar artifact
@@ -77,15 +67,15 @@ jobs:
           systemctl is-active myapp.service
 
   notify:
-    needs: [build, deploy]
+    needs: [ci, deploy]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Notify Slack
         run: |
-          if [ "${{ needs.build.result }}" == "failure" ]; then
-            STATUS="배포 실패 (빌드 단계)"; COLOR="#e01e5a"
-          elif [ "${{ needs.deploy.result }}" == "failure" ]; then
+          if [ "${{ needs.ci.result }}" != "success" ]; then
+            STATUS="배포 중단 (테스트·빌드: ${{ needs.ci.result }})"; COLOR="#e01e5a"
+          elif [ "${{ needs.deploy.result }}" != "success" ]; then
             STATUS="배포 실패 (배포 단계)"; COLOR="#e01e5a"
           else
             STATUS="배포 성공"; COLOR="#2eb886"
