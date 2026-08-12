@@ -48,13 +48,18 @@ jobs:
         # 늘리는 게 아니라서 "단독 증설은 스와핑 위험" 판단과 충돌하지 않는다.
         # HeapDumpPath에 %p(PID)를 넣는다 — 고정 파일명이면 JVM이 기존 파일을 안 덮어써서
         # 두 번째 OOM부터는 덤프가 안 남는다. systemd가 재기동마다 새 PID를 배정하므로 매번
-        # 새 파일이 생긴다.
+        # 새 파일이 생긴다. %%p로 이스케이프해야 한다 — systemd의 Environment= 자체가
+        # %p를 "유닛 이름 프리픽스"로 먼저 치환해버려서(#487, 실측: heapdump-myapp.hprof로
+        # 고정 생성됨), %%p라야 JVM이 받는 값에 리터럴 %p가 남아 런타임에 PID로 치환된다.
+        # ADR-011(#487) 실측 근거로 GC를 G1로 되돌리고, gc+heap=debug로 세대별(Young/Old)
+        # 점유율을 남긴다 — SerialGC의 stop-the-world가 조기 승격을 유발한다는 가설을
+        # 다음 부하테스트에서 세대 단위로 직접 검증하기 위함.
         run: |
           mkdir -p /home/ubuntu/app/dumps
           sudo mkdir -p /etc/systemd/system/myapp.service.d
           sudo tee /etc/systemd/system/myapp.service.d/jvm-diagnostics.conf > /dev/null <<'EOF'
           [Service]
-          Environment="JAVA_TOOL_OPTIONS=-Xmx228m -XX:+UseSerialGC -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/home/ubuntu/app/dumps/heapdump-%p.hprof -Xlog:gc*:file=/home/ubuntu/app/dumps/gc.log:time,uptime,level,tags:filecount=5,filesize=20m"
+          Environment="JAVA_TOOL_OPTIONS=-Xmx228m -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/home/ubuntu/app/dumps/heapdump-%%p.hprof -Xlog:gc*,gc+heap=debug:file=/home/ubuntu/app/dumps/gc.log:time,uptime,level,tags:filecount=5,filesize=20m"
           EOF
           sudo systemctl daemon-reload
 

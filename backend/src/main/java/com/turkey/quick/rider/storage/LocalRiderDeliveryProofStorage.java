@@ -24,6 +24,7 @@ public class LocalRiderDeliveryProofStorage implements RiderDeliveryProofStorage
         this.rootDirectory = Path.of(rootDirectory).toAbsolutePath().normalize();
     }
 
+    /** 서버가 파일을 직접 받아 저장하는 경로(현재 호출자 없음 — presigned PUT 전환 후 보존용). */
     @Override
     public void store(String key, MultipartFile file) {
         Path target = resolveSafely(key);

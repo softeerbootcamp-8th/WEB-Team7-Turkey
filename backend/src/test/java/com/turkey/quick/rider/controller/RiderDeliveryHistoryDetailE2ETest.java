@@ -144,7 +144,7 @@ class RiderDeliveryHistoryDetailE2ETest extends IntegrationTestSupport {
         riderDeliveryService.transition(auth, ids.orderId(), RiderDeliveryAction.PICK_UP);
         riderDeliveryService.transition(auth, ids.orderId(), RiderDeliveryAction.START_DELIVERING);
         riderDeliveryService.complete(auth, ids.orderId(),
-                new RiderDeliveryCompleteRequest(ProofType.RECIPIENT_CONFIRMATION, null, "recipient-" + loginId));
+                new RiderDeliveryCompleteRequest(ProofType.RECIPIENT_CONFIRMATION, "recipient-" + loginId));
         return new Completed(loginId, ids.orderId());
     }
 
