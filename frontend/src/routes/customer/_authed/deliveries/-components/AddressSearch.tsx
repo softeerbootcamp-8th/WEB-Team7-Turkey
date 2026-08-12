@@ -15,17 +15,52 @@ declare global {
   }
 }
 
-function geocodeAddress(address: string): Promise<{ latitude: string; longitude: string }> {
-  return loadKakaoMaps().then((kakaoSdk) => new Promise((resolve, reject) => {
-    const geocoder = new kakaoSdk.maps.services.Geocoder()
+type Coordinates = { latitude: string; longitude: string }
+
+export function getGeocodeCandidates(data: daum.PostcodeData): string[] {
+  return [...new Set([
+    data.roadAddress,
+    data.jibunAddress,
+    data.autoRoadAddress,
+    data.autoJibunAddress,
+    data.address,
+  ].map((address) => address.trim()).filter(Boolean))]
+}
+
+function searchAddress(
+  geocoder: kakao.maps.services.Geocoder,
+  kakaoSdk: typeof kakao,
+  address: string,
+): Promise<{ coordinates?: Coordinates; status: string }> {
+  return new Promise((resolve) => {
     geocoder.addressSearch(address, (results, status) => {
       if (status !== kakaoSdk.maps.services.Status.OK || !results[0]) {
-        reject(new Error('선택한 주소의 좌표를 찾지 못했습니다.'))
+        resolve({ status })
         return
       }
-      resolve({ latitude: results[0].y, longitude: results[0].x })
+      resolve({
+        status,
+        coordinates: { latitude: results[0].y, longitude: results[0].x },
+      })
     })
-  }))
+  })
+}
+
+export async function geocodeAddress(addresses: string[]): Promise<Coordinates> {
+  const kakaoSdk = await loadKakaoMaps()
+  const geocoder = new kakaoSdk.maps.services.Geocoder()
+
+  for (const address of addresses) {
+    const result = await searchAddress(geocoder, kakaoSdk, address)
+    if (result.coordinates) {
+      return result.coordinates
+    }
+    if (result.status !== kakaoSdk.maps.services.Status.ZERO_RESULT) {
+      throw new Error('주소 좌표 변환 서비스에 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.')
+    }
+  }
+
+  throw new Error('선택한 주소의 좌표를 찾지 못했습니다.')
 }
 
 export function AddressSearch({ label, value, onSelect }: AddressSearchProps) {
@@ -77,33 +112,33 @@ export function AddressSearch({ label, value, onSelect }: AddressSearchProps) {
     }
 
     container.replaceChildren()
-    new postcodeSdk.Postcode({
-      oncomplete: (data) => {
-        closeAddressSearch()
-        const roadAddress = data.roadAddress || data.address
-        const selectedAddress = {
-          ...valueRef.current,
-          roadAddress,
-          postalCode: data.zonecode,
-          latitude: '',
-          longitude: '',
-        }
-        onSelectRef.current(selectedAddress)
-        setIsLoading(true)
-        void geocodeAddress(roadAddress)
-          .then((coordinates) => {
-            onSelectRef.current({
-              ...selectedAddress,
-              ...coordinates,
-            })
-          })
-          .catch((geocodeError: unknown) => {
-            setError(geocodeError instanceof Error ? geocodeError.message : '좌표 변환에 실패했습니다.')
-          })
-          .finally(() => setIsLoading(false))
-      },
-    }).embed(container)
+    new postcodeSdk.Postcode({ oncomplete: handleAddressComplete }).embed(container)
   }, [isSearchOpen])
+
+  function handleAddressComplete(data: daum.PostcodeData) {
+    closeAddressSearch()
+    const roadAddress = data.roadAddress || data.autoRoadAddress || data.address
+    const selectedAddress = {
+      ...valueRef.current,
+      roadAddress,
+      postalCode: data.zonecode,
+      latitude: '',
+      longitude: '',
+    }
+    onSelectRef.current(selectedAddress)
+    setIsLoading(true)
+    void geocodeAddress(getGeocodeCandidates(data))
+      .then((coordinates) => {
+        onSelectRef.current({
+          ...selectedAddress,
+          ...coordinates,
+        })
+      })
+      .catch((geocodeError: unknown) => {
+        setError(geocodeError instanceof Error ? geocodeError.message : '좌표 변환에 실패했습니다.')
+      })
+      .finally(() => setIsLoading(false))
+  }
 
   function closeAddressSearch() {
     isSearchOpenRef.current = false
