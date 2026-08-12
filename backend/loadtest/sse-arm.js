@@ -63,7 +63,11 @@ export const options = {
       startTime: `${RIDER_INTERVAL_SEC}s`,
     },
   },
-  setupTimeout: '180s',
+  // polling-arm.js 와 **같은 식이어야 한다.** 두 arm 은 같은 seedPairs 를 쓰므로 setup 비용이
+  // 동일한데(약 1.76초/쌍), 여기만 180s 였다. 그러면 N 이 100 을 넘는 순간 SSE arm 만 setup
+  // 타임아웃으로 죽고 polling arm 은 통과해서 **"같은 조건 비교"라는 이 실험의 전제가 깨진다**
+  // (리뷰 지적, 2026-08-11). N × 약 1.76초로 역산하고, 필요하면 SETUP_TIMEOUT 으로 덮는다.
+  setupTimeout: __ENV.SETUP_TIMEOUT || '25m',
 };
 
 export function setup() {

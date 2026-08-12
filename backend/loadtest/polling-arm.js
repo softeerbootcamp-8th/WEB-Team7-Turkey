@@ -65,7 +65,10 @@ export const options = {
       startTime: `${RIDER_INTERVAL_SEC}s`,
     },
   },
-  setupTimeout: '25m', // N=50 실측 88s(1.76s/쌍) 기준 대규모 N 역산(#259 실측, 2026-08-11).
+  // N=50 실측 88s(1.76s/쌍) 기준 대규모 N 역산(#259 실측, 2026-08-11).
+  // sse-arm.js 와 **같은 값을 유지할 것** — 달라지면 같은 N 에서 한쪽만 setup 타임아웃으로 죽어
+  // 두 arm 비교가 성립하지 않는다.
+  setupTimeout: __ENV.SETUP_TIMEOUT || '25m',
 };
 
 export function setup() {

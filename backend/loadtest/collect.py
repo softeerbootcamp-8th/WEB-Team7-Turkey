@@ -256,6 +256,11 @@ def plateaus(samples, min_hold=60, trim=15, step=10):
 def save_raw(target, start, end, testid, k6sel, step=5, panels_from=None):
     """시계열을 JSON 으로 저장하고 경로를 돌려준다. target 이 디렉터리면 파일명을 만든다."""
     path = Path(target)
+    # 확장자가 없으면 디렉터리로 보고 **없으면 만든다.** 안 만들면 is_dir() 이 False 라 그 경로에
+    # 파일이 하나 생기고, 이후 모든 런이 같은 파일을 조용히 덮어써 원본 시계열이 사라진다
+    # (리뷰 지적, 2026-08-11).
+    if path.suffix.lower() != ".json":
+        path.mkdir(parents=True, exist_ok=True)
     if path.is_dir():
         day = time.strftime("%Y-%m-%d", time.localtime(end))
         path = path / f"{day}-{testid or 'unknown'}-raw.json"
@@ -630,6 +635,25 @@ def selftest():
     assert got == [(100, 15, 90), (200, 115, 190)], got
     # 짧은 구간은 버린다.
     assert plateaus([(0, 1.0), (10, 1.0)], min_hold=60) == []
+    # --raw 대상 디렉터리가 없을 때 **파일이 아니라 디렉터리를** 만들어야 한다. 안 그러면 그
+    # 경로에 파일 하나가 생기고 이후 모든 런이 조용히 덮어써 원본이 사라진다(리뷰 지적).
+    import tempfile
+    global query_range
+    saved_qr = query_range
+    query_range = lambda *a, **k: []          # 네트워크 없이 검사한다
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "없는디렉터리"
+            out, _, _ = save_raw(target, 100, 200, "t1", "")
+            assert target.is_dir(), "디렉터리를 만들지 않았다"
+            assert out.parent == target and out.suffix == ".json", out
+            # 경로에 .json 을 직접 주면 그 파일로 쓴다(디렉터리로 만들지 않는다).
+            exact = Path(tmp) / "sub" / "run.json"
+            exact.parent.mkdir()
+            out2, _, _ = save_raw(exact, 100, 200, "t1", "")
+            assert out2 == exact and exact.is_file(), out2
+    finally:
+        query_range = saved_qr
     assert fmt(None) == "-"
     assert fmt(1234.5, " req/s", 1, 0) == "1,234 req/s"
     assert fmt(0.0123, "%", 100, 2) == "1.23%"

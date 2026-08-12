@@ -45,7 +45,10 @@ def main():
 
     tool_input = payload.get("tool_input") or {}
     command = tool_input.get("command") or ""
-    if not re.search(r"\bk6\b.*\brun\b", command):
+    # `k6` 와 `run` 이 **인접**해야 한다(이미지 태그 `k6:latest run` 은 허용). `\bk6\b.*\brun\b`
+    # 로 두면 `.*` 가 문장을 건너뛰어 `echo "…(k6 inspect)…"; docker run …` 같은 명령까지 잡는다
+    # (실제로 걸렸다).
+    if not re.search(r"\bk6(:[\w.\-]+)?\s+run\b", command):
         return
 
     collect = find_collect(payload.get("cwd") or ".")
@@ -85,13 +88,17 @@ def main():
 
     # 같은 런을 두 번 보고하지 않는다. 명령문에 `k6 run` 이라는 문자열만 들어 있는 경우
     # (문서 수정 등)가 방금 끝난 런의 신선도 창 안에 들어오면 표가 중복으로 올라온다.
+    # 읽고-고쳐-쓰기 대신 **append** 다. 병렬 세션에서 k6 런이 겹치면 read-modify-write 는
+    # 나중에 쓰는 쪽이 먼저 쓴 기록을 지워, 한쪽 런의 보고가 조용히 누락되거나 중복된다
+    # (리뷰 지적, 2026-08-11). append 는 짧은 한 줄이면 원자적으로 붙고, 파일도 런당 수십 바이트만
+    # 자라서 잘라낼 필요가 없다.
     seen = collect.parent / ".reported-runs"
     run_id = re.search(r"testid=`([^`]+)`", done.stdout)
     if run_id:
-        already = seen.read_text(encoding="utf-8").split() if seen.is_file() else []
-        if run_id.group(1) in already:
+        if seen.is_file() and run_id.group(1) in seen.read_text(encoding="utf-8").split():
             return
-        seen.write_text(" ".join(already[-49:] + [run_id.group(1)]), encoding="utf-8")
+        with seen.open("a", encoding="utf-8") as f:
+            f.write(run_id.group(1) + "\n")
 
     emit("부하테스트가 끝났다. 아래는 Prometheus 에서 모은 이 런의 지표다.\n"
          "이 표를 그대로 쓰고 해석을 붙여 `docs/loadtest/<날짜>-<testid>.md` 로 남긴다. "
