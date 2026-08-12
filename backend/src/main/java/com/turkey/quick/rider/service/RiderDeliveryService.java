@@ -1,6 +1,7 @@
 package com.turkey.quick.rider.service;
 
 import com.turkey.quick.common.exception.BusinessException;
+import com.turkey.quick.location.sse.TrackingPublisher;
 import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.DeliveryProof;
 import com.turkey.quick.order.domain.FareType;
@@ -47,6 +48,9 @@ public class RiderDeliveryService {
     private final PointWalletRepository pointWalletRepository;
     private final PointTransactionRepository pointTransactionRepository;
     private final RiderDeliveryProofUploadService riderDeliveryProofUploadService;
+
+    /** #398: 배송 단계 전이·완료를 고객 추적 SSE로 실시간 전달하기 위해 주입한다. */
+    private final TrackingPublisher trackingPublisher;
 
     /** 새로고침·재로그인 뒤 현재 배송 단계 화면을 복구한다(#86). */
     @Transactional(readOnly = true)
@@ -141,6 +145,7 @@ public class RiderDeliveryService {
 
         log.info("event=RIDER_DELIVERY_STATUS_CHANGED riderId={} orderId={} previousStatus={} newStatus={}",
                 rider.memberId(), deliveryId, previousStatus, nextStatus);
+        trackingPublisher.publishStatus(deliveryId, nextStatus, transitionedAt.toInstant(ZoneOffset.UTC));
         return RiderDeliveryResponse.from(order, estimate.getTotalFare());
     }
 
@@ -214,6 +219,15 @@ public class RiderDeliveryService {
         wallet.credit(settlementAmount);
         pointTransactionRepository.save(PointTransaction.forSettlement(
                 wallet, settlementAmount, balanceBefore, settlementRequestKey(deliveryId), settlement));
+
+        // TrackingPublisher.publishStatus가 이 트랜잭션의 커밋 후로 발행을 미루므로("이른 재조회"
+        // 경쟁 방지), 이 호출을 메서드 안 어디에 둬도 안전하다 — 순서를 맞추려고 여기 둔 것이 아니다.
+        trackingPublisher.publishStatus(deliveryId, OrderStatus.COMPLETED,
+                order.getCompletedAt().toInstant(ZoneOffset.UTC));
+        // 완료되면 이 배송으로는 더 보낼 것이 없다 — 연결을 닫아 재연결 → 409 → 재조회 사슬을
+        // 즉시 발동시킨다(#450). 이 신호가 유실돼도 emitter 절대 수명(5분)이 같은 사슬을 만들므로
+        // 정합성이 아니라 지연(5분 → 약 3초)을 줄이는 최적화다.
+        trackingPublisher.publishClose(deliveryId);
 
         log.info("event=RIDER_DELIVERY_COMPLETED riderId={} orderId={} settlementAmount={}",
                 rider.memberId(), deliveryId, settlementAmount);

@@ -51,7 +51,7 @@ public class DeliveryListQueryService {
      * N+1 을 피하려고 완료/미완료로 나눠 두 번의 배치 조회로 끝낸다
      * ({@link OrderFareSnapshotRepository#findByOrder_IdInAndFareType} 는 이 목록 조회를 위해
      * 미리 만들어져 있었다). 없으면 데이터 불변식 위반이라 500 이다
-     * (DeliveryTrackingQueryService.totalFare 와 같은 판단) — 목록 전체를 실패시키는 대신 항목별로
+     * (DeliveryDetailQueryService.fare 와 같은 판단) — 목록 전체를 실패시키는 대신 항목별로
      * 조용히 null 을 내보내면 결제 금액이 빠진 이용기록이 화면에 나갈 수 있다.
      */
     private Map<Long, Long> fareByOrderId(List<DeliveryOrder> orders) {

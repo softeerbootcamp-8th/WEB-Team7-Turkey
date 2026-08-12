@@ -20,6 +20,7 @@ import com.turkey.quick.order.dto.DeliveryCreateRequest;
 import com.turkey.quick.order.dto.DeliveryCreateResponse;
 import com.turkey.quick.order.dto.FareQuoteRequest;
 import com.turkey.quick.order.dto.FareQuoteResponse;
+import com.turkey.quick.location.sse.TrackingPublisher;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.order.repository.FarePolicyRepository;
 import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
@@ -71,9 +72,9 @@ class DeliveryServiceTest {
     @Mock
     private CustomerPaymentService customerPaymentService;
 
-    /** #42 지연 만료 호출용. 이 테스트가 보는 분기와 무관하므로 별도 스텁 없이 존재만 시킨다. */
+    /** #444 CANCELED SSE 발행용. */
     @Mock
-    private DeliveryTimeoutService deliveryTimeoutService;
+    private TrackingPublisher trackingPublisher;
 
     //  픽스 데이터를 상수로 분리
     private static final AddressRequest YANGJAE_STATION = new AddressRequest(
@@ -381,6 +382,7 @@ class DeliveryServiceTest {
             assertThat(response.canceledAt()).isEqualTo(order.getCanceledAt());
             verify(deliveryOrderRepository, never()).cancelIfWaiting(any(), any(), any());
             verifyNoInteractions(customerPaymentService);
+            verifyNoInteractions(trackingPublisher);
         }
 
         @Test
@@ -402,6 +404,7 @@ class DeliveryServiceTest {
             assertThat(response.deliveryId()).isEqualTo(CANCEL_DELIVERY_ID);
             assertThat(response.status()).isEqualTo(OrderStatus.CANCELED);
             verify(customerPaymentService).refundForCancel(CANCEL_CUSTOMER_ID, orderRef, 4_500L);
+            verify(trackingPublisher).publishStatus(eq(CANCEL_DELIVERY_ID), eq(OrderStatus.CANCELED), any());
         }
 
         @Test
@@ -423,6 +426,7 @@ class DeliveryServiceTest {
             assertThat(thrown).isInstanceOf(BusinessException.class);
             assertThat(((BusinessException) thrown).getStatus()).isEqualTo(HttpStatus.CONFLICT);
             verifyNoInteractions(customerPaymentService);
+            verifyNoInteractions(trackingPublisher);
         }
 
         @Test
@@ -445,6 +449,7 @@ class DeliveryServiceTest {
             assertThat(response.status()).isEqualTo(OrderStatus.CANCELED);
             assertThat(response.canceledAt()).isEqualTo(canceledByOther.getCanceledAt());
             verifyNoInteractions(customerPaymentService);
+            verifyNoInteractions(trackingPublisher);
         }
 
         @Test

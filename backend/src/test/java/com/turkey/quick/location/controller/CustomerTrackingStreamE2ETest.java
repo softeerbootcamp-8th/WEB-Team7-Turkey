@@ -23,7 +23,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -38,6 +39,7 @@ import org.springframework.test.context.ActiveProfiles;
  * SSE가 실제 소켓 스트림이라, 가짜 요청/응답으로는 "연결이 열려 있다"·"끊겼다"를 재현할 수 없기
  * 때문이다.
  */
+@AutoConfigureTestRestTemplate
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
                 properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")
@@ -122,14 +124,21 @@ class CustomerTrackingStreamE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("아직 배차되지 않은(WAITING) 배송을 구독하면 409를 반환한다")
-    void rejectsNotYetAssignedDelivery() throws IOException, InterruptedException {
+    @DisplayName("아직 배차되지 않은(WAITING) 배송도 구독하면 event-stream 응답을 받는다(#401)")
+    void subscribingToWaitingDeliveryRegistersConnection() throws IOException, InterruptedException {
+        // WAITING→ASSIGNED 전이 자체를 실시간으로 알리려면, 그 전이가 일어나기 전부터 연결이
+        // 열려 있어야 한다 — 위치를 보여줄 수 없는 것과 상태 전이 이벤트를 받을 수 없는 것은
+        // 다른 질문이다(OrderStatus.isTerminal()).
         TrackingFixture.Scenario scenario = fixture.deliveryWithStatus(OrderStatus.WAITING);
         String cookie = login(scenario.customerLoginId());
 
-        HttpResponse<String> response = openStreamExpectingError(scenario.deliveryId(), cookie);
-
-        assertThat(response.statusCode()).isEqualTo(409);
+        HttpResponse<InputStream> response = openStream(scenario.deliveryId(), cookie);
+        try {
+            assertThat(response.statusCode()).isEqualTo(200);
+            assertThat(registry.connectionOf(scenario.deliveryId())).hasSize(1);
+        } finally {
+            response.body().close();
+        }
     }
 
     @Test

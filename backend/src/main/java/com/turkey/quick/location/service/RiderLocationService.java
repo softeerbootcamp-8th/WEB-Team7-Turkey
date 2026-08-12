@@ -4,6 +4,8 @@ import com.turkey.quick.common.exception.BusinessException;
 import com.turkey.quick.location.dto.LocationPayload;
 import com.turkey.quick.location.repository.RiderLocationRepository;
 import com.turkey.quick.location.sse.TrackingPublisher;
+import com.turkey.quick.order.domain.OrderStatus;
+import com.turkey.quick.order.dto.InProgressDelivery;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.rider.auth.AuthenticatedRider;
 import com.turkey.quick.rider.domain.OperatingStatus;
@@ -72,7 +74,7 @@ public class RiderLocationService {
      *
      * <p><b>5초 주기로 불리는 조회다</b>(BUSY 전송 주기, #81). 그래서 이력 전체를 훑는
      * {@code findInProgressByRiderId} 가 아니라 생성 컬럼의 유니크 인덱스를 그대로 타는
-     * {@link DeliveryOrderRepository#findInProgressIdByActiveRiderId} 를 쓴다 — 주문 이력이 쌓여도
+     * {@link DeliveryOrderRepository#findInProgressByActiveRiderId} 를 쓴다 — 주문 이력이 쌓여도
      * 비용이 늘지 않는다.
      *
      * <p><b>조회(5초마다 다시 조회하잖아)를 없애고 라이더→배송 매핑을 캐시하지 않는 이유</b>:
@@ -88,16 +90,22 @@ public class RiderLocationService {
      */
     private void relayToTrackingCustomers(AuthenticatedRider rider, LocationPayload location) {
         try {
-            Optional<Long> deliveryId = deliveryOrderRepository
-                    .findInProgressIdByActiveRiderId(rider.memberId());
-            if (deliveryId.isEmpty()) {
+            Optional<InProgressDelivery> delivery = deliveryOrderRepository
+                    .findInProgressByActiveRiderId(rider.memberId());
+            if (delivery.isEmpty()) {
                 log.warn("event=RIDER_LOCATION_RELAY_SKIPPED riderId={} reason={}",
                         rider.memberId(), "NO_IN_PROGRESS_DELIVERY");
                 return;
             }
+            // 네이티브 쿼리라 상태가 문자열로 온다(InProgressDelivery Javadoc). 여기서 한 번만
+            // 변환하고, 값이 열거형에 없으면 그건 데이터 정합성 오류라 아래 catch 로 떨어진다.
+            OrderStatus status = OrderStatus.valueOf(delivery.get().getStatus());
             // 로컬 레지스트리(SseRelay)를 직접 부르지 않는 것이 핵심이다 — 고객은 다른 인스턴스에
             // 연결돼 있을 수 있다(#317). TrackingPublisher 는 스스로 예외를 삼킨다.
-            trackingPublisher.publish(deliveryId.get(), location);
+            //
+            // 상태를 실은 사본만 발행한다(#449) — 저장소로 간 원본에는 상태가 없다. 주기적으로
+            // 흐르는 이 프레임이 일회성 상태 전이 이벤트의 유실을 최대 5초 안에 덮는다.
+            trackingPublisher.publish(delivery.get().getOrderId(), location.withStatus(status));
         } catch (RuntimeException e) {
             log.warn("event=RIDER_LOCATION_RELAY_FAILED riderId={} reason={}",
                     rider.memberId(), e.getClass().getSimpleName(), e);

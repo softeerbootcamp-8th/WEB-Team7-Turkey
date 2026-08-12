@@ -22,7 +22,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -36,6 +37,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 운행 상태 조회(#53) E2E. 실제 HTTP 로 이슈의 성공/예외 흐름을 통과시킨다. 쿠키 없이 호출하면 401 이
  * 나오는지도 한 케이스로 덮어, 인터셉터 {@code addPathPatterns} 등록 누락을 회귀로 잡는다.
  */
+@AutoConfigureTestRestTemplate
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")
 class RiderOperatingStatusE2ETest extends IntegrationTestSupport {

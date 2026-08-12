@@ -2,6 +2,7 @@ package com.turkey.quick.order.repository;
 
 import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.OrderStatus;
+import com.turkey.quick.order.dto.InProgressDelivery;
 import com.turkey.quick.order.dto.TrackableDelivery;
 import jakarta.persistence.LockModeType;
 import java.math.BigDecimal;
@@ -109,6 +110,35 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
     Optional<DeliveryOrder> findByIdAndCustomer_Id(Long id, Long customerId);
 
     /**
+     * ETA 폴링(#447)이 필요한 것만 <b>한 번에</b> 읽는다.
+     *
+     * <p><b>{@code left} join fetch 여야 한다.</b> WAITING 주문은 {@code assigned_rider_id} 가 NULL
+     * 이라 inner join 이면 주문이 존재하는데도 결과가 비어 404 가 된다 — ETA API 는 그 상태를 404 가
+     * 아니라 200 + null 로 응답해야 한다.
+     *
+     * <p>배정 라이더를 fetch 하는 이유는 <b>호출자가 트랜잭션 밖에서 경로를 산정하기 때문이다.</b>
+     * OSRM 호출(최대 1초)이 DB 커넥션을 잡지 않도록 조회를 먼저 끝내는데, 그러면 엔터티가 곧바로
+     * 준영속이 되어 지연 로딩 연관을 만지는 순간 {@code LazyInitializationException} 이다
+     * (OSIV 가 꺼져 있다). {@code DeliveryRouteEstimator} 가 {@code assignedRider.memberId} 를
+     * 읽으므로 여기서 미리 채운다. 회원({@code r.member})까지는 fetch 하지 않는다 — ETA 응답에
+     * 라이더 이름·연락처가 없다.
+     *
+     * <p><b>고객 조건이 쿼리에 있다.</b> ETA API 는 추적 게이트
+     * ({@code DeliveryTrackingAccessService})를 쓰지 않기 때문이다 —
+     * 그 게이트는 종료 상태를 409 로 막는데, 폴링 응답은 200 + null 이어야 한다(사람 확인).
+     * 소유권 판정을 여기서 하고, 결과가 비면 없음·타인 것을 같은 404 로 응답한다.
+     */
+    @Query("""
+            select o
+            from DeliveryOrder o
+            left join fetch o.assignedRider
+            where o.id = :deliveryId
+              and o.customer.id = :customerId
+            """)
+    Optional<DeliveryOrder> findWithAssignedRiderByIdAndCustomerId(@Param("deliveryId") Long deliveryId,
+                                                                   @Param("customerId") Long customerId);
+
+    /**
      * 라이더 본인의 운행 기록 상세 조회(#71)용. 목록({@link #findByAssignedRider_MemberIdAndStatus})과
      * 대칭으로 배정 조건을 쿼리에 두고(없음/타인 것을 같은 404 로 응답), 상태까지 조건에 넣어
      * COMPLETED 만 통과시킨다. 운행 기록은 완료 배송의 기록이므로, 진행 중 주문 id 를 넣어도 404 다 —
@@ -132,7 +162,7 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
      * <p><b>위치 갱신 핫패스는 이 메서드를 쓰지 않는다.</b> 이 조회는
      * {@code idx_delivery_rider_completed (assigned_rider_id, completed_at DESC)} 를 타고 그 라이더의
      * <b>전체 주문 이력</b>을 훑은 뒤 상태로 걸러서, 운행 기간이 길어질수록 비용이 커진다. 5초 주기로
-     * 불리는 쪽은 {@link #findInProgressIdByActiveRiderId} 를 쓴다.
+     * 불리는 쪽은 {@link #findInProgressByActiveRiderId} 를 쓴다.
      */
     @Query("""
             select new com.turkey.quick.order.dto.TrackableDelivery(
@@ -178,13 +208,25 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
      * 된다</b> — 그 동치는 {@code DeliveryOrderActiveRiderIntegrationTest} 가 모든 상태를 돌며
      * 고정한다. 열거형에 상태를 추가하고 마이그레이션을 빠뜨리면 그 테스트가 깨진다.
      *
-     * <p>JPQL 이 아니라 네이티브 쿼리인 이유: 생성 컬럼을 엔터티에 매핑하지 않아도 되고
-     * ({@code ddl-auto: validate} 와 얽히지 않는다), 호출자가 필요한 것은 식별자 하나뿐이다.
-     * 같은 리포지토리의 {@link #assignIfWaiting} 도 네이티브 쿼리다.
+     * <p>JPQL 이 아니라 네이티브 쿼리인 이유: 생성 컬럼을 엔터티에 매핑하지 않아도 된다
+     * ({@code ddl-auto: validate} 와 얽히지 않는다). 같은 리포지토리의 {@link #assignIfWaiting}
+     * 도 네이티브 쿼리다. 반환 타입이 record 가 아니라 인터페이스 투영인 것도 이 때문이다 —
+     * 네이티브 쿼리는 JPQL 생성자 표현식을 쓸 수 없다({@link InProgressDelivery} 참고).
+     *
+     * <p><b>{@code status} 를 함께 읽는 비용</b>(#449): {@code order_id} 는 보조 인덱스
+     * {@code uk_delivery_active_rider} 에 PK 로 포함돼 있어 <b>인덱스만으로</b> 끝났지만,
+     * {@code status} 는 인덱스에 없어 클러스터드 인덱스 조회가 한 번 더 붙는다. 단일 행 PK
+     * 조회라 절대 비용은 작지만 <b>BUSY 5초 주기 × 동시 배송 수</b>로 호출되므로 부하 테스트
+     * 확인 항목이다. 이 대가를 치르는 이유는, 주기적으로 흐르는 위치 프레임에 상태를 실어
+     * <b>일회성인 상태 전이 이벤트가 유실돼도 다음 위치(최대 5초)로 복구</b>되게 하기 위해서다.
+     *
+     * <p>컬럼 별칭을 명시하는 이유: 인터페이스 투영이 ResultSet 의 컬럼 라벨로 프로퍼티를
+     * 찾으므로, {@code order_id} 를 게터명({@code getOrderId})과 맞춰 준다.
      */
-    @Query(value = "SELECT order_id FROM delivery_order WHERE active_rider_id = :riderId",
+    @Query(value = "SELECT order_id AS orderId, status AS status "
+                 + "FROM delivery_order WHERE active_rider_id = :riderId",
            nativeQuery = true)
-    Optional<Long> findInProgressIdByActiveRiderId(@Param("riderId") Long riderId);
+    Optional<InProgressDelivery> findInProgressByActiveRiderId(@Param("riderId") Long riderId);
 
     List<DeliveryOrder> findByStatus(OrderStatus status);
 
@@ -230,7 +272,7 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
      * 그대로 읽는다 — "진행 중"의 정의(WAITING~DELIVERING)를 JPQL 에 다시 나열하지 않기 위해서다.
      * 그 컬럼의 UNIQUE 제약상 결과는 최대 1건이다.
      *
-     * <p>{@link #findInProgressIdByActiveRiderId} 와 같은 이유로 네이티브 쿼리다 — 생성 컬럼은
+     * <p>{@link #findInProgressByActiveRiderId} 와 같은 이유로 네이티브 쿼리다 — 생성 컬럼은
      * 엔터티에 매핑돼 있지 않다.
      */
     @Query(value = "SELECT * FROM delivery_order WHERE active_customer_id = :customerId",

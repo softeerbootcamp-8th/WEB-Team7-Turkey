@@ -1,6 +1,6 @@
 plugins {
     id 'java'
-    id 'org.springframework.boot' version '3.4.1'
+    id 'org.springframework.boot' version '4.1.0'
     id 'io.spring.dependency-management' version '1.1.7'
 }
 
@@ -24,7 +24,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 
@@ -46,11 +46,17 @@ dependencies {
     // "/swagger-ui/**/*swagger-initializer.js" 패턴을 등록해 PathPatternParser 가 거부하고
     // 애플리케이션이 아예 기동하지 못한다. 2.7.0 은 기동·문서·UI 모두 정상 동작을 확인했다.
     // 올릴 때는 반드시 로컬 기동과 /v3/api-docs 응답을 확인하고 올린다.
-    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0'
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'
 
-    // DB 스키마 버전 관리. flyway-core 만 있으면 앱 기동 시 db/migration 의
-    // 마이그레이션이 자동 실행된다(별도 Gradle 플러그인 불필요).
-    implementation 'org.flywaydb:flyway-core'
+    // DB 스키마 버전 관리. Spring Boot 3.x 까지는 flyway-core 만 있으면 앱 기동 시
+    // db/migration 의 마이그레이션이 자동 실행됐다(별도 Gradle 플러그인 불필요). Spring Boot 4.0
+    // 이 거대한 spring-boot-autoconfigure 를 기능별 모듈로 쪼개면서 FlywayAutoConfiguration 이
+    // spring-boot-flyway 모듈로 빠졌다 — flyway-core 만으로는 더 이상 자동 실행되지 않고
+    // spring-boot-starter-flyway 를 명시적으로 더해야 한다(#373 작업 중 발견, 2026-08-11:
+    // V1~V18 은 Boot 3.4 시절 실행이 로컬 Docker MySQL 볼륨에 이미 심어 둔 스키마라
+    // ddl-auto=validate 가 조용히 통과했을 뿐, 그 이후로는 신규 마이그레이션이 한 번도
+    // 자동 적용된 적이 없었다).
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'
     implementation 'org.flywaydb:flyway-mysql'
 
     // 로컬·배포 모두 MySQL 을 사용한다(로컬은 Docker 컨테이너, docs/05-local-dev.md 참고).
@@ -60,7 +66,7 @@ dependencies {
     // 버전 고정: 이 SDK의 BOM(dependency-management)을 따로 안 불러왔으므로 버전 없이는
     // Gradle이 해석하지 못한다.
     // Source: https://mvnrepository.com/artifact/com.amazonaws/aws-java-sdk-s3
-    implementation 'com.amazonaws:aws-java-sdk-s3:1.12.797'
+    implementation 'software.amazon.awssdk:s3:2.45.1'
 
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
@@ -68,6 +74,8 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
+    testImplementation 'org.springframework.boot:spring-boot-resttestclient'
+    testImplementation 'org.springframework.boot:spring-boot-starter-restclient'
     // 통합·E2E 테스트는 로컬 개발과 같은 Docker MySQL 에 붙는다(위 mysql-connector-j 를 그대로 쓴다).
     // H2 는 걷어냈다 — 호환 모드는 MySQL 이 아니라서 통과해도 배포를 보장하지 못한다(docs/05-local-dev.md).
 }

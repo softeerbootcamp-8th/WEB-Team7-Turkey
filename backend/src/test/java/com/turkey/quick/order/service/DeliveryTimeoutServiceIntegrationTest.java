@@ -249,28 +249,10 @@ class DeliveryTimeoutServiceIntegrationTest extends IntegrationTestSupport {
                 .doesNotContain(freshOrderId, assignedOrderId);
     }
 
-    @Test
-    @DisplayName("지연 만료: 만료된 기존 주문이 있으면 새 주문 생성 시 자동 정리되고 새 주문이 만들어진다")
-    void expiresStaleOrderLazilyOnNewOrderCreation() {
-        long fare = serverFare();
-        Long customerId = saveCustomerWithBalance(50_000L);
-        Long staleOrderId = createWaitingOrder(customerId, fare);
-        backdateRequestedAt(staleOrderId, LocalDateTime.now(ZoneOffset.UTC).minusMinutes(10));
-
-        // 진행 중 주문이 있는 상태에서 새 주문을 시도한다 — 스캐너를 기다리지 않는다.
-        DeliveryCreateResponse second = deliveryService.createDelivery(request(fare), customerId);
-
-        DeliveryOrder stale = deliveryOrderRepository.findById(staleOrderId).orElseThrow();
-        assertThat(stale.getStatus()).isEqualTo(OrderStatus.CANCELED);
-
-        DeliveryOrder created = deliveryOrderRepository.findById(second.deliveryId()).orElseThrow();
-        assertThat(created.getStatus()).isEqualTo(OrderStatus.WAITING);
-        assertThat(created.getId()).isNotEqualTo(staleOrderId);
-
-        // 만료 주문 환급 + 새 주문 차감이 상쇄되어 최종 잔액은 fare 하나만큼만 줄어 있어야 한다.
-        assertThat(balanceOf(customerId)).isEqualTo(50_000L - fare);
-        assertThat(pointTransactionRepository.findAll()).hasSize(3); // 1차 차감, 1차 환급, 2차 차감
-    }
+    // 지연 만료: "만료된 기존 주문이 있으면 새 주문 생성 시 자동 정리된다"는 이제 만료 트리거가
+    // 서비스가 아니라 컨트롤러(CustomerDeliveryController)에 있다(#463 — 커넥션 풀 교착 회피로
+    // expireIfStale 를 createDelivery 트랜잭션 밖으로 이동). 서비스를 직접 부르면 만료 정리가 걸리지
+    // 않으므로 이 시나리오는 실제 HTTP → 컨트롤러 배선을 타는 CustomerDeliveryCreateE2ETest 로 옮겼다.
 
     @Test
     @DisplayName("배차 확정과 자동 취소가 동시에 실행되면 정확히 하나만 성공한다")

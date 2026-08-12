@@ -1,6 +1,7 @@
 package com.turkey.quick.rider.service;
 
 import com.turkey.quick.common.exception.BusinessException;
+import com.turkey.quick.location.sse.TrackingPublisher;
 import com.turkey.quick.order.domain.Address;
 import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.FareType;
@@ -56,9 +57,8 @@ public class RiderDeliveryRequestService {
     private final RiderProfileRepository riderProfileRepository;
     private final DeliveryService deliveryService;
 
-    /** #42: 만료된 주문을 수락 시도 시점에 정리하기 위해 주입한다. */
-    private final DeliveryTimeoutService deliveryTimeoutService;
-
+    /** #398: 배차 확정을 고객 추적 SSE로 실시간 전달하기 위해 주입한다. */
+    private final TrackingPublisher trackingPublisher;
     private static final int MAX_PAGE_SIZE = 100;
 
     /**
@@ -209,10 +209,19 @@ public class RiderDeliveryRequestService {
      * <ol>
      *   <li>라이더가 AVAILABLE 상태인지 검사한다(위반 시 403) — 세션 정보 기준 1차 검사일 뿐,
      *       최종 판정은 아래 조건부 UPDATE가 한다(세션과 DB 사이에 시차가 있을 수 있어서다).</li>
-     *   <li><b>만료 정리(#42)</b>: 이 주문이 배차 대기 타임아웃을 이미 넘겼는데 능동 스캐너가 아직
-     *       훑지 않았다면, 여기서 먼저 취소·환급을 마친다({@link DeliveryTimeoutService#cancelIfExpired}).
-     *       그러면 아래 조건부 UPDATE가 자연히 0행이 되어 "이미 취소됨" 사유로 409가 나간다 — 스캐너의
-     *       최대 폴링 간격만큼 라이더가 만료된 주문을 여전히 수락할 수 있는 창을 없앤다.</li>
+     *   <li><b>만료 정리(#42)는 이 트랜잭션 밖, 컨트롤러에서 먼저 수행된다.</b>
+     *       {@code RiderDeliveryRequestController}가 이 메서드를 부르기 전에
+     *       {@link DeliveryTimeoutService#cancelIfExpired}를 호출해, 배차 대기 타임아웃을 넘긴 주문을
+     *       취소·환급까지 끝낸다. 그러면 아래 조건부 UPDATE가 자연히 0행이 되어 "이미 취소됨" 사유로
+     *       409가 나간다 — 스캐너의 최대 폴링 간격만큼 라이더가 만료된 주문을 여전히 수락할 수 있는
+     *       창을 없앤다. <b>왜 여기(이 트랜잭션 안)서 부르지 않는가</b>: {@code cancelIfExpired}는
+     *       {@code REQUIRES_NEW}라, 이 {@code @Transactional}이 이미 확보한 커넥션(C1)을 정지시킨 채
+     *       두 번째 커넥션(C2)을 요구한다. 동시 요청이 풀 크기에 도달해 모든 커넥션이 C1로 점유되면
+     *       여유가 0이 되어, 아무도 C2를 얻지 못하고 서로 대기하는 순환 교착에 빠진다(#446, 부하 40건에서
+     *       실측). 여유가 하나라도 남으면 C2가 순차 처리돼 배수되므로, 임계는 "풀의 절반"이 아니라
+     *       "동시 C1 점유 수 = 풀 크기"다.
+     *       컨트롤러에서 먼저 부르면 바깥 트랜잭션이 없어 만료 정리와 이 트랜잭션이 커넥션을 순차로만
+     *       쓴다.</li>
      *   <li><b>주문 조건부 UPDATE</b>: {@code UPDATE delivery_order SET status=ASSIGNED, ... WHERE
      *       order_id=:deliveryId AND status='WAITING'}. 영향 행이 0이면 이 요청이 배차 경쟁에서
      *       졌거나(다른 라이더가 먼저 확정) 주문이 취소됐거나 존재하지 않는다는 뜻이다 — 주문을
@@ -238,7 +247,7 @@ public class RiderDeliveryRequestService {
     @Transactional
     public RiderDeliveryRequestAcceptResponse acceptDeliveryRequest(AuthenticatedRider rider, Long deliveryId) {
         requireAvailable(rider);
-        deliveryTimeoutService.cancelIfExpired(deliveryId);
+        // 만료 정리(#42)는 컨트롤러가 이 트랜잭션 밖에서 먼저 호출한다(위 동작 순서 참고, #446).
 
         LocalDateTime assignedAt = LocalDateTime.now(ZoneOffset.UTC);
         int orderUpdated;
@@ -269,6 +278,8 @@ public class RiderDeliveryRequestService {
         DeliveryOrder assigned = deliveryOrderRepository.findById(deliveryId)
                 .orElseThrow(() -> new IllegalStateException(
                         "방금 배차 확정한 주문을 다시 조회할 수 없습니다. orderId=" + deliveryId));
+
+        trackingPublisher.publishStatus(deliveryId, assigned.getStatus(), assignedAt.toInstant(ZoneOffset.UTC));
 
         return new RiderDeliveryRequestAcceptResponse(
                 assigned.getId(), assigned.getStatus(), OperatingStatus.BUSY, assigned.getAssignedAt());

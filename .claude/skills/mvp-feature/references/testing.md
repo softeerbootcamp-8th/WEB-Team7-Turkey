@@ -22,9 +22,9 @@
   @DisplayName("진행 중 배송요청이 있으면 새 요청을 거부한다")
   void shouldRejectNewOrderWhenOngoingOrderExists() { ... }
   ```
-  **기존 테스트 196개는 한글 스네이크 케이스다. 일괄 개명하지 않는다** — 기능과 무관한 대량 변경이라
-  `CLAUDE.md` 작업 원칙에 어긋난다. 새로 쓰는 테스트부터 위 형식을 따르고, 이미 있는 파일에 케이스를
-  덧붙일 때는 그 파일의 기존 스타일에 맞춘다(한 파일 안에서 두 스타일이 섞이는 게 더 나쁘다).
+  초기 테스트는 한글 스네이크 케이스였고 아직 일부 남아 있다(2026-08-10 기준 151개, camelCase 466개).
+  **일괄 개명하지 않는다** — 기능과 무관한 대량 변경이라 `CLAUDE.md` 작업 원칙에 어긋난다. 이미 있는
+  파일에 케이스를 덧붙일 때는 그 파일의 기존 스타일에 맞춘다(한 파일 안에서 두 스타일이 섞이는 게 더 나쁘다).
 - 파일 위치는 대상 클래스와 같은 패키지: `src/test/java/com/turkey/quick/{도메인}/...`
 - 클래스는 `class XxxTest`(public 불필요), 테스트 메서드도 package-private.
 - 왜 이런 값을 썼는지 자명하지 않으면 주석으로 남긴다. 기존 `FarePolicyTest`가 좋은 예다
@@ -41,37 +41,8 @@
 - 계산 로직 (요금, 정산액, 포인트 증감)
 - 경계값 — 0, 최대 거리, 정확히 같은 시각
 
-```java
-@Nested
-@DisplayName("거리 계산 알고리즘 검증")
-class DistanceAlgorithmTest {
-
-  @Test
-  @DisplayName("하버사인 공식은 평면 피타고라스 공식보다 실측 지도 거리에 더 가까워야 한다")
-  void haversineShouldBeMoreAccurateThanPythagoras() {
-    // given
-    BigDecimal naverRealDistance = new BigDecimal("451.0"); // 네이버 지도 실측 451.0
-
-    // when
-    BigDecimal haversine = deliveryService.distance(
-            YANGJAE_STATION.latitude(), YANGJAE_STATION.longitude(),
-            JEJU_AIRPORT.latitude(), JEJU_AIRPORT.longitude()
-    );
-    BigDecimal pythagoras = deliveryService.pureStraightDistance(
-            YANGJAE_STATION.latitude(), YANGJAE_STATION.longitude(),
-            JEJU_AIRPORT.latitude(), JEJU_AIRPORT.longitude()
-    );
-
-    // then
-    BigDecimal haversineDiff = haversine.subtract(naverRealDistance).abs();
-    BigDecimal pythagorasDiff = pythagoras.subtract(naverRealDistance).abs();
-
-    assertThat(haversineDiff)
-            .as("하버사인 오차가 피타고라스 오차보다 작아야 함")
-            .isLessThan(pythagorasDiff);
-  }
-}
-```
+본보기: `order/service/DeliveryServiceTest`(거리 계산을 실측값과 대조), `order/domain/FarePolicyTest`.
+단언에 `.as("...")`로 무엇이 성립해야 하는지 붙이면 실패 출력만 보고도 원인을 안다.
 
 ## 통합 테스트
 
@@ -85,8 +56,9 @@ class DistanceAlgorithmTest {
 Connector/J가 `BIT`으로 보고해 `ddl-auto: validate`가 깨진 사고가 실제로 있었고, H2에서는 재현되지
 않아 배포 후에야 드러났다. **테스트가 통과해도 배포에서 깨지면 그 테스트는 값을 못 한 것이다.**
 
-Testcontainers는 여전히 쓰지 않는다(`CLAUDE.md` 금지 사항). 테스트가 컨테이너를 띄우는 게 아니라,
-**개발자가 이미 띄워 둔 로컬 개발 컨테이너에 붙는 것**이라 그 규칙과 충돌하지 않는다.
+Testcontainers는 **금지가 아니다**(`CLAUDE.md` 금지 사항이 2026-07-29에 "Docker 사용 제약 없음"으로
+바뀌었다). 다만 지금 방식은 테스트가 컨테이너를 띄우는 게 아니라 **개발자가 이미 띄워 둔 로컬 개발
+컨테이너에 붙는 것**이고, 기존 테스트가 전부 그 전제로 쓰여 있다. 바꾸려면 별도 이슈로 논의한다.
 
 테스트 전에 컨테이너가 `healthy`여야 한다:
 
@@ -117,14 +89,8 @@ Flyway는 이 프로파일에서도 실제로 돌아간다. 마이그레이션�
 
 그래서 DB를 쓰는 테스트는 `com.turkey.quick.support.IntegrationTestSupport`를 상속한다.
 `@BeforeEach`로 `DatabaseCleaner`가 모든 테이블을 TRUNCATE 한다(`flyway_schema_history`는 제외 —
-지우면 다음 기동에서 스키마를 처음부터 다시 적용하려 든다).
-
-```java
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-                properties = "spring.autoconfigure.exclude=")
-@ActiveProfiles("integration")
-class DeliveryOrderE2ETest extends IntegrationTestSupport { ... }
-```
+지우면 다음 기동에서 스키마를 처음부터 다시 적용하려 든다). E2E도 같은 어노테이션 조합에
+`webEnvironment = RANDOM_PORT`만 더한 형태다(아래 「백엔드 E2E」).
 
 - **`@Transactional` 롤백으로 대신할 수 없다.** E2E는 HTTP로 다른 스레드·커넥션에서 커밋되므로
   테스트 트랜잭션이 그 데이터를 되돌리지 못한다. 동시성 테스트도 마찬가지다(아래 참고).
@@ -142,7 +108,7 @@ class DeliveryOrderE2ETest extends IntegrationTestSupport { ... }
 - **단위 테스트는 여전히 인메모리 대체를 쓴다.** `new InMemorySessionStore()`처럼 직접 만들어 넣는다.
   단위 테스트가 컨테이너를 요구하면 위 층 구분표(단위: 스프링 없음, DB 없음)가 무너진다.
 - **E2E는 `@TestConfiguration`으로 Redis 저장소를 덮지 않는다.** `SessionStore`·`VerificationCodeStore`·
-  `RiderLocationStore`를 그냥 주입받아 쓰고, 저장 형태를 확인해야 하면 `StringRedisTemplate`으로
+  `RiderLocationRepository`를 그냥 주입받아 쓰고, 저장 형태를 확인해야 하면 `StringRedisTemplate`으로
   실제 키를 읽는다(그게 실제 Redis로 바꿔서 얻는 이득이다).
 - 외부 벤더 대체(`FakeSmsSender`)는 그대로 `@Primary`로 끼운다. 이건 Redis와 무관하다.
 - **테스트는 개발용과 다른 로직 DB(`database: 1`)를 쓴다.** MySQL은 개발 스키마를 공유해 테스트가
@@ -168,45 +134,18 @@ class DeliveryOrderE2ETest extends IntegrationTestSupport { ... }
 - **동시성** — 배차처럼 경쟁이 있는 곳. 두 스레드가 동시에 수락하면 **정확히 하나만** 성공하고
   나머지는 명확한 실패를 받아야 한다(부분 성공 없음).
 
-  ```java
-  // 위 형태의 통합 테스트 클래스(extends IntegrationTestSupport) 안. @Transactional 은 붙이지 않는다.
-  @Test
-  @DisplayName("두 라이더가 동시에 수락하면 한 명만 배차된다")
-  void shouldAssignExactlyOneRiderOnConcurrentAccept() throws Exception {
-      int attempts = 2;
-      var start = new CountDownLatch(1);
-      var done = new CountDownLatch(attempts);
-      var succeeded = new AtomicInteger();
+  형태는 `CountDownLatch` 두 개(출발 신호 + 완료 대기)로 스레드를 같은 순간에 풀고, 성공 횟수를
+  `AtomicInteger`로 세어 **정확히 1**인지 본다. 경쟁에서 진 쪽이 예외로 거부되는 것은 정상이므로
+  삼킨다. 기존 예: `payment/service/CustomerPaymentServiceIntegrationTest`,
+  `order/service/DeliveryCancelIntegrationTest`.
 
-      try (var pool = Executors.newFixedThreadPool(attempts)) {
-          for (long riderId : List.of(riderA, riderB)) {
-              pool.submit(() -> {
-                  try {
-                      start.await();
-                      matchingService.accept(orderId, riderId);
-                      succeeded.incrementAndGet();
-                  } catch (Exception ignored) {
-                      // 경쟁 패배는 예외로 거부되는 것이 정상이다
-                  } finally {
-                      done.countDown();
-                  }
-              });
-          }
-          start.countDown();
-          done.await(5, TimeUnit.SECONDS);
-      }
-
-      assertThat(succeeded.get()).isEqualTo(1);
-  }
-  ```
-
-  주의: 동시성 테스트에 `@Transactional`을 붙이면 안 된다. 테스트 트랜잭션 안에서는
+  **주의: 동시성 테스트에 `@Transactional`을 붙이면 안 된다.** 테스트 트랜잭션 안에서는
   다른 스레드가 그 데이터를 볼 수 없어 경쟁 자체가 재현되지 않는다. 정리는 `IntegrationTestSupport`가
   하므로 직접 지울 필요는 없다.
 
   DB가 실제 MySQL/InnoDB이므로 **갭 락, `SELECT ... FOR UPDATE`, 유니크 인덱스 경쟁이 배포와 같은
-  방식으로 재현된다.** 배차 동시성 방식(DB 락 vs 조건부 업데이트, `CLAUDE.md` 「확인이 필요한 항목」)은
-  추정하지 말고 여기서 실증하고, 그 결과를 단계 6 문서에 남긴다.
+  방식으로 재현된다.** 배차 동시성은 조건부 UPDATE(CAS)로 확정돼 있으므로(ADR-006, `CLAUDE.md`
+  「확정된 결정」) 방식을 다시 고르지 말고, 그 구현이 실제로 하나만 성공시키는지를 여기서 실증한다.
 
 - **읽기 전용 경계** — `@Transactional(readOnly = true)` 메서드에서 변경이 반영되지 않는지 (필요할 때만).
 
@@ -220,43 +159,20 @@ class DeliveryOrderE2ETest extends IntegrationTestSupport { ... }
 실제 HTTP로 요청한다. 필터·MDC·`ApiResponse` 래핑·상태 코드까지 전부 진짜로 지나간다.
 `MockMvc`가 아니라 `webEnvironment = RANDOM_PORT` + `TestRestTemplate`을 쓰는 이유가 이것이다.
 
-뼈대는 아래 네 줄이 전부다. **`properties = "spring.autoconfigure.exclude="`**(DB 자동설정 되살리기)와
-**`extends IntegrationTestSupport`**(테이블 정리)를 빠뜨리면, 각각 컨텍스트가 뜨지 않거나 두 번째
-실행부터 unique 제약으로 깨진다. 저장소의 기존 E2E가 전부 이 형태다(`CustomerSessionE2ETest` 참고).
+**`customer/controller/CustomerSessionE2ETest`를 복사해서 시작한다** — 저장소의 기존 E2E가 전부 같은
+형태다. 클래스 선언 세 줄이 뼈대의 전부이고, 그중 두 가지를 빠뜨리면 각각 컨텍스트가 뜨지 않거나
+두 번째 실행부터 unique 제약으로 깨진다:
 
 ```java
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-                properties = "spring.autoconfigure.exclude=")
+                properties = "spring.autoconfigure.exclude=")   // ← DB 자동설정 되살리기
 @ActiveProfiles("integration")
-class DeliveryOrderE2ETest extends IntegrationTestSupport {
-
-    @Autowired
-    private TestRestTemplate rest;
-
-    @Autowired
-    private MemberRepository memberRepository;
-
-    // Redis 저장소는 덮지 않는다 — 실제 컨테이너 Redis 를 쓴다(위 「Redis도 컨테이너에 붙는다」).
-    // 외부 벤더 대체(SmsSender)가 필요하면 그것만 @TestConfiguration + @Primary 로 끼운다.
-
-    @Test
-    @DisplayName("고객이 배송요청을 생성하고 조회하면 WAITING 상태로 보인다")
-    void shouldExposeCreatedOrderAsWaiting() {
-        // 픽스처는 매 테스트가 직접 만든다 — 앞 테스트가 남긴 데이터는 이미 비워져 있다.
-        Member customer = memberRepository.save(
-                Member.create("e2e_customer", PASSWORD_ENCODER.encode("pw"), "홍길동", "01011112222", MemberRole.CUSTOMER));
-        String cookie = loginAndGetSessionCookie("e2e_customer", "pw");
-
-        var created = rest.exchange("/api/customer/deliveries", HttpMethod.POST,
-                new HttpEntity<>(request, withCookie(cookie)), ApiResponse.class);
-        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-
-        var found = rest.exchange("/api/customer/deliveries/" + id, HttpMethod.GET,
-                new HttpEntity<>(withCookie(cookie)), ApiResponse.class);
-        assertThat(found.getBody()).extracting("data.status").isEqualTo("WAITING");
-    }
-}
+class DeliveryOrderE2ETest extends IntegrationTestSupport { ... }   // ← 테이블·Redis 정리
 ```
+
+나머지는 `TestRestTemplate`을 주입받아 실제 HTTP로 부르는 것뿐이다. 픽스처는 매 테스트가 직접 만든다
+(앞 테스트 데이터는 이미 비워져 있다). Redis 저장소는 덮지 않고, 외부 벤더 대체(`SmsSender`)가
+필요하면 그것만 `@TestConfiguration` + `@Primary`로 끼운다.
 
 쿠키를 직접 실어 보내는 것도 형식이 아니다. 인증은 인터셉터의 `addPathPatterns` 등록에 달려 있어
 **등록을 빠뜨리면 그 API는 인증 없이 열린다**(`CLAUDE.md` 「확정된 결정」). 쿠키 없이 호출해 401이

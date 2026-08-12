@@ -45,9 +45,8 @@ spring:
       max-file-size: 50MB
       max-request-size: 50MB
 
-# --- S3: 배송 완료 인증 사진 저장 ---
-# 자격 증명은 기본 프로바이더 체인(환경변수/인스턴스 프로파일)을 쓴다. 버킷은 배포 시 환경변수로 채운다.
-aws:
-  s3:
-    bucket: ${AWS_S3_BUCKET:}
-    region: ${AWS_REGION:ap-northeast-2}
+# 통합 테스트는 AWS 자격 증명이나 외부 S3에 의존하지 않고 임시 디렉터리를 사용한다.
+rider:
+  delivery-proof:
+    storage: local
+    local-root: ${java.io.tmpdir}/turkey-test-proof

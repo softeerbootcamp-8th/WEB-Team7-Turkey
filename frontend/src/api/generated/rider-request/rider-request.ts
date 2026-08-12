@@ -25,9 +25,9 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
-  ApiResponseListRiderDeliveryRequestSummaryResponse,
   ApiResponseRiderDeliveryRequestAcceptResponse,
   ApiResponseRiderDeliveryRequestDetailResponse,
+  ApiResponseRiderDeliveryRequestPageResponse,
   ApiResponseVoid,
   GetRiderDeliveryRequestsParams
 } from '../turkeyQuickDeliveryAPI.schemas';
@@ -41,7 +41,7 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 
 /**
- * AVAILABLE 인 라이더에게 수락 가능한 WAITING 요청을 반환한다. 라이더 좌표(latitude/longitude)를 요청 파라미터로 받아 그 반경 내 주문만 bounding box 인덱스로 거른다(#367). 좌표를 안 보내면 위치 필터 없이 전체를 반환하고, 거리 필드는 null, DISTANCE 정렬은 REQUESTED_AT 으로 대체한다 (#55 계약 확정 — 위치 없음은 에러가 아니다). (#55) 라이더 식별을 위한 인증 파라미터가 이 계약에 빠져 있었어 추가함 — 다른 세 메서드(상세/수락/넘기기)는 각자 이슈에서 채운다.
+ * AVAILABLE 인 라이더에게 수락 가능한 WAITING 요청을 반환한다. 라이더 좌표(latitude/longitude)를 요청 파라미터로 받아 그 반경 내 주문만 bounding box 인덱스로 거른다(#367). 좌표를 안 보내면 위치 필터 없이 전체를 반환하고, 거리 필드는 null, DISTANCE 정렬은 REQUESTED_AT 으로 대체한다 (#55 계약 확정 — 위치 없음은 에러가 아니다). 운임·배송거리 범위 필터와 keyset(커서) 페이지네이션이 추가됐다(#60). 커서는 이전 페이지 마지막 항목의 정렬값(sort에 해당하는 after* 필드 하나)과 afterId를 그대로 돌려보내면 된다 — 첫 페이지는 전부 생략한다. (#55) 라이더 식별을 위한 인증 파라미터가 이 계약에 빠져 있었어 추가함 — 다른 세 메서드(상세/수락/넘기기)는 각자 이슈에서 채운다.
  * @summary 배차 대기 콜 목록
  */
 export const getRiderDeliveryRequests = (
@@ -50,7 +50,7 @@ export const getRiderDeliveryRequests = (
 ) => {
       
       
-      return customInstance<ApiResponseListRiderDeliveryRequestSummaryResponse>(
+      return customInstance<ApiResponseRiderDeliveryRequestPageResponse>(
       {url: `/api/rider/requests`, method: 'GET',
         params, signal
     },

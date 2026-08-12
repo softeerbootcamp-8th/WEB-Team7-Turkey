@@ -3,6 +3,7 @@ package com.turkey.quick.order.repository;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.turkey.quick.order.domain.OrderStatus;
+import com.turkey.quick.order.dto.InProgressDelivery;
 import com.turkey.quick.support.IntegrationTestSupport;
 import com.turkey.quick.support.TrackingFixture;
 import java.util.Arrays;
@@ -20,7 +21,7 @@ import org.springframework.test.context.ActiveProfiles;
  * 고정한다</b>(#317).
  *
  * <p><b>왜 필요한가</b>: 위치 갱신 핫패스가
- * {@link DeliveryOrderRepository#findInProgressIdByActiveRiderId} 로 바뀌면서 "어느 상태가 진행
+ * {@link DeliveryOrderRepository#findInProgressByActiveRiderId} 로 바뀌면서 "어느 상태가 진행
  * 중인가"라는 지식이 <b>DDL 의 CASE 식과 자바 열거형 두 곳에 존재</b>하게 됐다. 둘이 갈리면
  * 조용히 틀린다 — 새 상태를 추가하고 마이그레이션을 빠뜨리면 그 상태의 라이더 위치가 고객에게
  * 전달되지 않거나(누락), 완료된 배송이 계속 걸려 <b>다음 배송 경로가 이전 고객에게 흘러간다</b>.
@@ -45,13 +46,18 @@ class DeliveryOrderActiveRiderIntegrationTest extends IntegrationTestSupport {
     void lookupPresenceMatchesTrackable(OrderStatus status) {
         TrackingFixture.Scenario scenario = fixture.deliveryWithStatus(status);
 
-        Optional<Long> found = deliveryOrderRepository.findInProgressIdByActiveRiderId(scenario.riderId());
+        Optional<InProgressDelivery> found =
+                deliveryOrderRepository.findInProgressByActiveRiderId(scenario.riderId());
 
         assertThat(found.isPresent())
                 .as("%s 는 isTrackable()=%s 이므로 조회 결과도 그와 같아야 한다", status, status.isTrackable())
                 .isEqualTo(status.isTrackable());
         if (status.isTrackable()) {
-            assertThat(found).contains(scenario.deliveryId());
+            assertThat(found.get().getOrderId()).isEqualTo(scenario.deliveryId());
+            // #449: 위치 프레임에 실을 상태를 이 조회가 함께 돌려준다. 네이티브 쿼리라 문자열로
+            // 오므로, 열거형 이름과 정확히 맞는지 여기서 고정한다 — 어긋나면 호출부의
+            // OrderStatus.valueOf 가 런타임에 터진다.
+            assertThat(found.get().getStatus()).isEqualTo(status.name());
         }
     }
 
@@ -76,6 +82,6 @@ class DeliveryOrderActiveRiderIntegrationTest extends IntegrationTestSupport {
         // 없다"를 확인하는 것이다.
         TrackingFixture.Scenario waiting = fixture.deliveryWithStatus(OrderStatus.WAITING);
 
-        assertThat(deliveryOrderRepository.findInProgressIdByActiveRiderId(waiting.riderId())).isEmpty();
+        assertThat(deliveryOrderRepository.findInProgressByActiveRiderId(waiting.riderId())).isEmpty();
     }
 }

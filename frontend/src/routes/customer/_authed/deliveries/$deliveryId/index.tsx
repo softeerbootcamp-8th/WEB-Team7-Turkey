@@ -9,6 +9,7 @@ import {
 } from '@/api/generated/customer-delivery/customer-delivery'
 import type { DeliveryDetailResponse } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
 import { getCustomerDeliveryStatusLabel, isTrackableDeliveryStatus } from '@/shared/delivery/status'
+import { useWaitingExpiryTimer } from '@/shared/hooks/useWaitingExpiryTimer'
 import {
   formatDetailAddress,
   formatDetailContact,
@@ -36,11 +37,17 @@ function DeliveryDetail() {
   const [cancelError, setCancelError] = useState<string | null>(null)
 
   const detailQuery = useGetDelivery(deliveryId, {
-    query: { enabled: isValidDeliveryId, retry: false },
+    // 다른 탭/기기가 먼저 취소·배차했을 수 있으니, 이 화면으로 포커스가 돌아올 때마다
+    // 다시 확인한다(Discussion #402·#432, #444) — 최종 백스톱, 타이머·SSE와 겹쳐 방어한다.
+    query: { enabled: isValidDeliveryId, retry: false, refetchOnWindowFocus: true, staleTime: 0 },
   })
   const cancelMutation = useCancelCustomerDelivery()
   const detail = detailQuery.data?.data
   const invalidResponse = detailQuery.isSuccess && detail == null
+
+  // 논리적 만료(생성+5분) 이후 물리적 만료(스캐너)를 기다리지 않고, 화면이 보고 있는 시점마다
+  // 스스로 판정해 기존 취소 API를 대신 호출한다(Discussion #402, #444).
+  useWaitingExpiryTimer(isValidDeliveryId ? deliveryId : undefined, detail?.status, detail?.requestedAt)
 
   function cancelDelivery() {
     if (!isValidDeliveryId || cancelMutation.isPending) {

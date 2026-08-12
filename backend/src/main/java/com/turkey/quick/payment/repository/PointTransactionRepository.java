@@ -6,6 +6,8 @@ import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface PointTransactionRepository extends JpaRepository<PointTransaction, Long> {
 
@@ -19,10 +21,24 @@ public interface PointTransactionRepository extends JpaRepository<PointTransacti
     Optional<PointTransaction> findByPointCharge_IdAndTransactionType(
             Long pointChargeId, PointTransactionType transactionType);
 
-    /** 회원 지갑의 거래 내역 전체(유형 미필터, #69). 정렬·페이지는 {@link Pageable}이 담당한다. */
-    Page<PointTransaction> findByWallet_MemberId(Long memberId, Pageable pageable);
+    /**
+     * 회원 지갑의 거래 내역 전체(유형 미필터, #69). 정렬·페이지는 {@link Pageable}이 담당한다.
+     *
+     * <p>{@code riderWithdrawal}을 fetch join 하는 이유: WITHDRAWAL 행의 화면 표시가 그 출금의
+     * 현재 상태(PENDING/COMPLETED/FAILED)를 필요로 하게 되면서({@code PointTransactionResponse
+     * #withdrawalStatus}) 페이지 단위로 라이더 출금을 함께 읽어야 한다. join 없이 매핑하면 행마다
+     * lazy 프록시 초기화가 일어나 N+1 이 된다. {@code left} 인 이유는 SETTLEMENT 등 다른 유형은
+     * riderWithdrawal 이 null 이기 때문(ck_point_transaction_source).
+     */
+    @Query("select t from PointTransaction t left join fetch t.riderWithdrawal "
+            + "where t.wallet.memberId = :memberId")
+    Page<PointTransaction> findByWallet_MemberId(@Param("memberId") Long memberId, Pageable pageable);
 
-    /** 회원 지갑의 거래 내역 중 특정 유형만(#69, 화면 필터 탭). */
+    /** 회원 지갑의 거래 내역 중 특정 유형만(#69, 화면 필터 탭). fetch join 이유는 위와 같다. */
+    @Query("select t from PointTransaction t left join fetch t.riderWithdrawal "
+            + "where t.wallet.memberId = :memberId and t.transactionType = :transactionType")
     Page<PointTransaction> findByWallet_MemberIdAndTransactionType(
-            Long memberId, PointTransactionType transactionType, Pageable pageable);
+            @Param("memberId") Long memberId,
+            @Param("transactionType") PointTransactionType transactionType,
+            Pageable pageable);
 }

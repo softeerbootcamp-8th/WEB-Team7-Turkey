@@ -2,7 +2,6 @@ package com.turkey.quick.location.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.turkey.quick.common.response.ApiResponse;
 import com.turkey.quick.location.dto.LocationPayload;
 import com.turkey.quick.location.repository.RiderLocationRepository;
@@ -16,22 +15,26 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
+import tools.jackson.databind.JsonNode;
 
 /**
  * #311 완료 조건을 사용자 시나리오로 검증한다(고객 위치 폴링, 부하테스트용 실험 arm).
  *
  * <p>인가 게이트는 {@code CustomerDeliveryTrackingE2ETest}(#79)와 같은
- * {@code DeliveryTrackingAccessService}를 공유하므로 404/409 케이스는 그쪽과 같은 시맨틱이다. 여기서
+ * {@code DeliveryTrackingAccessService}를 공유하므로 404/409 케이스는 그쪽과 같은 시맨틱이다(#401로
+ * WAITING은 두 경로 모두 409에서 200으로 바뀌었다 — 라이더가 없을 뿐 구독 자체는 막지 않는다). 여기서
  * 추가로 보는 것은 이 경로만의 것 — <b>Redis 위치 유무에 따른 응답 분기</b>와
  * <b>{@code CustomerWebMvcConfig} 경로 등록 여부</b>(쿠키 없이 401)다.
  */
+@AutoConfigureTestRestTemplate
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
                 properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("integration")
@@ -139,12 +142,17 @@ class CustomerLocationPollingE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("배차 전(WAITING)은 409 다 — 스트림·스냅샷과 같은 판정")
-    void rejectsWaitingDelivery() {
+    @DisplayName("배차 전(WAITING)은 200과 location null 을 준다 — 라이더가 아직 없다(#401)")
+    void returnsNullLocationForWaitingDelivery() {
         var scenario = fixture.deliveryWithStatus(OrderStatus.WAITING);
         String cookie = loginAndGetSessionCookie(CUSTOMER_LOGIN, scenario.customerLoginId());
 
-        assertThat(get(scenario.deliveryId(), cookie).getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        var response = get(scenario.deliveryId(), cookie);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode data = response.getBody().get("data");
+        assertThat(data.get("status").asText()).isEqualTo("WAITING");
+        assertThat(data.get("location").isNull()).isTrue();
     }
 
     @Test

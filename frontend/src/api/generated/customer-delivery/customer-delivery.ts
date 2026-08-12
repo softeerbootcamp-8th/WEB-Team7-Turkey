@@ -29,8 +29,8 @@ import type {
   ApiResponseDeliveryCancelResponse,
   ApiResponseDeliveryCreateResponse,
   ApiResponseDeliveryDetailResponse,
+  ApiResponseDeliveryEtaResponse,
   ApiResponseDeliveryListResponse,
-  ApiResponseDeliveryTrackingResponse,
   ApiResponseFareQuoteResponse,
   DeliveryCancelRequest,
   DeliveryCreateRequest,
@@ -522,17 +522,17 @@ export const useCancelCustomerDelivery = <TError = ErrorType<ApiResponseDelivery
       return useMutation(mutationOptions, queryClient);
     }
     /**
- * 추적 화면 진입 시 한 번 그릴 상태·타임라인·라이더 정보를 조회한다. 이후 위치·상태 갱신은 location 도메인의 SSE 스트림이 밀어 준다(폴링하지 않는다(변동가능)). 실패 판정은 스트림과 동일하다: 404(없거나 타인 주문), 409(WAITING·COMPLETED·CANCELED).
- * @summary 배송 추적 스냅샷
+ * 라이더 현재 위치에서 지금 향하는 지점까지의 도착 예정 시각을 조회한다. 픽업 전(ASSIGNED·MOVING_TO_PICKUP)은 픽업지, 픽업 후(PICKED_UP·DELIVERING)는 도착지 기준이며 어느 쪽인지는 함께 내려주는 status 로 판단한다. 추적 화면이 주기적으로 호출하는 경량 엔드포인트라 변하는 값만 담는다 — 상태 타임라인·주소·라이더 정보는 배송요청 상세 API 를 쓴다. 산정할 수 없으면(배차 전·완료·취소, 라이더 위치 없음, 경로 서버 장애) 오류가 아니라 estimatedArrivalAt 이 null 인 200 이다.
+ * @summary 배송 도착 예정 시각(폴링)
  */
-export const getDeliveryTracking = (
+export const getCustomerDeliveryEta = (
     deliveryId: number,
  options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
 ) => {
       
       
-      return customInstance<ApiResponseDeliveryTrackingResponse>(
-      {url: `/api/customer/deliveries/${deliveryId}/tracking`, method: 'GET', signal
+      return customInstance<ApiResponseDeliveryEtaResponse>(
+      {url: `/api/customer/deliveries/${deliveryId}/eta`, method: 'GET', signal
     },
       options);
     }
@@ -540,69 +540,69 @@ export const getDeliveryTracking = (
 
 
 
-export const getGetDeliveryTrackingQueryKey = (deliveryId?: number,) => {
+export const getGetCustomerDeliveryEtaQueryKey = (deliveryId?: number,) => {
     return [
-    `/api/customer/deliveries/${deliveryId}/tracking`
+    `/api/customer/deliveries/${deliveryId}/eta`
     ] as const;
     }
 
     
-export const getGetDeliveryTrackingQueryOptions = <TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<ApiResponseDeliveryTrackingResponse>>(deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryTracking>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+export const getGetCustomerDeliveryEtaQueryOptions = <TData = Awaited<ReturnType<typeof getCustomerDeliveryEta>>, TError = ErrorType<ApiResponseDeliveryEtaResponse>>(deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCustomerDeliveryEta>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetDeliveryTrackingQueryKey(deliveryId);
+  const queryKey =  queryOptions?.queryKey ?? getGetCustomerDeliveryEtaQueryKey(deliveryId);
 
   
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDeliveryTracking>>> = ({ signal }) => getDeliveryTracking(deliveryId, requestOptions, signal);
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCustomerDeliveryEta>>> = ({ signal }) => getCustomerDeliveryEta(deliveryId, requestOptions, signal);
 
       
 
       
 
-   return  { queryKey, queryFn, enabled: !!(deliveryId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDeliveryTracking>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+   return  { queryKey, queryFn, enabled: !!(deliveryId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCustomerDeliveryEta>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
 }
 
-export type GetDeliveryTrackingQueryResult = NonNullable<Awaited<ReturnType<typeof getDeliveryTracking>>>
-export type GetDeliveryTrackingQueryError = ErrorType<ApiResponseDeliveryTrackingResponse>
+export type GetCustomerDeliveryEtaQueryResult = NonNullable<Awaited<ReturnType<typeof getCustomerDeliveryEta>>>
+export type GetCustomerDeliveryEtaQueryError = ErrorType<ApiResponseDeliveryEtaResponse>
 
 
-export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<ApiResponseDeliveryTrackingResponse>>(
- deliveryId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryTracking>>, TError, TData>> & Pick<
+export function useGetCustomerDeliveryEta<TData = Awaited<ReturnType<typeof getCustomerDeliveryEta>>, TError = ErrorType<ApiResponseDeliveryEtaResponse>>(
+ deliveryId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCustomerDeliveryEta>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getDeliveryTracking>>,
+          Awaited<ReturnType<typeof getCustomerDeliveryEta>>,
           TError,
-          Awaited<ReturnType<typeof getDeliveryTracking>>
+          Awaited<ReturnType<typeof getCustomerDeliveryEta>>
         > , 'initialData'
       >, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<ApiResponseDeliveryTrackingResponse>>(
- deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryTracking>>, TError, TData>> & Pick<
+export function useGetCustomerDeliveryEta<TData = Awaited<ReturnType<typeof getCustomerDeliveryEta>>, TError = ErrorType<ApiResponseDeliveryEtaResponse>>(
+ deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCustomerDeliveryEta>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getDeliveryTracking>>,
+          Awaited<ReturnType<typeof getCustomerDeliveryEta>>,
           TError,
-          Awaited<ReturnType<typeof getDeliveryTracking>>
+          Awaited<ReturnType<typeof getCustomerDeliveryEta>>
         > , 'initialData'
       >, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<ApiResponseDeliveryTrackingResponse>>(
- deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryTracking>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+export function useGetCustomerDeliveryEta<TData = Awaited<ReturnType<typeof getCustomerDeliveryEta>>, TError = ErrorType<ApiResponseDeliveryEtaResponse>>(
+ deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCustomerDeliveryEta>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
- * @summary 배송 추적 스냅샷
+ * @summary 배송 도착 예정 시각(폴링)
  */
 
-export function useGetDeliveryTracking<TData = Awaited<ReturnType<typeof getDeliveryTracking>>, TError = ErrorType<ApiResponseDeliveryTrackingResponse>>(
- deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeliveryTracking>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+export function useGetCustomerDeliveryEta<TData = Awaited<ReturnType<typeof getCustomerDeliveryEta>>, TError = ErrorType<ApiResponseDeliveryEtaResponse>>(
+ deliveryId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCustomerDeliveryEta>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient 
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getGetDeliveryTrackingQueryOptions(deliveryId,options)
+  const queryOptions = getGetCustomerDeliveryEtaQueryOptions(deliveryId,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
