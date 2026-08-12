@@ -10,8 +10,6 @@ import com.turkey.quick.rider.dto.RiderDeliveryRequestDetailResponse;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestFilter;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestPageResponse;
 import com.turkey.quick.rider.service.RiderDeliveryRequestService;
-import jakarta.validation.constraints.DecimalMax;
-import jakarta.validation.constraints.DecimalMin;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
@@ -28,8 +26,8 @@ import org.springframework.web.bind.annotation.RestController;
  * 목록 조회(#55)·상세 조회(#57)·수락(#56)을 구현한다. 넘기기는 각자 이슈에서 채운다
  * ({@code RiderPaymentController}와 같은 방식으로 나머지는 스켈레톤으로 남긴다).
  *
- * <p>{@code @Validated}는 {@code getDeliveryRequests} 의 latitude/longitude 에 건
- * {@code @DecimalMin}/{@code @DecimalMax} 메서드 파라미터 검증(AOP)을 활성화한다.
+ * <p>{@code @Validated}는 {@link RiderDeliveryRequestApi}에 선언한 latitude/longitude
+ * 메서드 파라미터 제약 검증(AOP)을 활성화한다.
  */
 @RestController
 @RequiredArgsConstructor
@@ -53,8 +51,8 @@ public class RiderDeliveryRequestController implements RiderDeliveryRequestApi {
     public ApiResponse<RiderDeliveryRequestPageResponse> getDeliveryRequests(
             @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
             AuthenticatedRider rider,
-            @RequestParam(required = false) @DecimalMin("-90") @DecimalMax("90") BigDecimal latitude,
-            @RequestParam(required = false) @DecimalMin("-180") @DecimalMax("180") BigDecimal longitude,
+            @RequestParam(required = false) BigDecimal latitude,
+            @RequestParam(required = false) BigDecimal longitude,
             @RequestParam(defaultValue = "3000") int radiusMeters,
             @RequestParam(defaultValue = "DISTANCE") String sort,
             @RequestParam(required = false) String sortDirection,

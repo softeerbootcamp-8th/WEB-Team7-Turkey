@@ -4,7 +4,6 @@ import com.turkey.quick.common.response.ApiResponse;
 import com.turkey.quick.customer.dto.CustomerSignupRequest;
 import com.turkey.quick.customer.dto.CustomerSignupResponse;
 import com.turkey.quick.customer.service.CustomerSignupService;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -21,7 +20,7 @@ public class CustomerSignupController implements CustomerSignupApi {
     @Override
     @PostMapping
     public ApiResponse<CustomerSignupResponse> signup(
-            @Valid @RequestBody CustomerSignupRequest request) {
+            @RequestBody CustomerSignupRequest request) {
         return ApiResponse.ok(CustomerSignupResponse.from(customerSignupService.signup(request)));
     }
 }

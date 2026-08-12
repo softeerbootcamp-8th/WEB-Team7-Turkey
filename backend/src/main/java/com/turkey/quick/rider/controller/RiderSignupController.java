@@ -4,7 +4,6 @@ import com.turkey.quick.common.response.ApiResponse;
 import com.turkey.quick.rider.dto.RiderSignupRequest;
 import com.turkey.quick.rider.dto.RiderSignupResponse;
 import com.turkey.quick.rider.service.RiderSignupService;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -21,7 +20,7 @@ public class RiderSignupController implements RiderSignupApi {
     @Override
     @PostMapping
     public ApiResponse<RiderSignupResponse> signup(
-            @Valid @RequestBody RiderSignupRequest request) {
+            @RequestBody RiderSignupRequest request) {
         return ApiResponse.ok(RiderSignupResponse.from(riderSignupService.signup(request)));
     }
 }

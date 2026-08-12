@@ -7,7 +7,6 @@ import com.turkey.quick.rider.dto.RiderOperatingStatusResponse;
 import com.turkey.quick.rider.dto.RiderOperatingStatusUpdateRequest;
 import com.turkey.quick.rider.service.RiderOperatingStatusChangeService;
 import com.turkey.quick.rider.service.RiderOperatingStatusQueryService;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -41,7 +40,7 @@ public class RiderOperatingStatusController implements RiderOperatingStatusApi {
     public ApiResponse<RiderOperatingStatusResponse> changeOperatingStatus(
             @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
             AuthenticatedRider rider,
-            @Valid @RequestBody RiderOperatingStatusUpdateRequest request) {
+            @RequestBody RiderOperatingStatusUpdateRequest request) {
         return ApiResponse.ok(
                 riderOperatingStatusChangeService.changeOperatingStatus(rider.memberId(), request.action()));
     }

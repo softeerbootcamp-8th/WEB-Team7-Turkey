@@ -11,6 +11,7 @@ import com.turkey.quick.rider.dto.RiderDeliveryResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
@@ -57,7 +58,7 @@ public interface RiderDeliveryApi extends RiderDeliveryTransitionApi {
     ApiResponse<RiderDeliveryProofUploadUrlResponse> issueProofPhotoUploadUrl(
             AuthenticatedRider rider,
             Long deliveryId,
-            RiderDeliveryProofUploadUrlRequest request);
+            @Valid RiderDeliveryProofUploadUrlRequest request);
 
     @Operation(operationId = "completeRiderDelivery", summary = "배송 완료(멀티파트, 서버 직접 업로드 경로)",
             description = "DELIVERING→COMPLETED + 라이더 BUSY→AVAILABLE + 정산 생성을 한 트랜잭션으로 처리하고 "
@@ -116,5 +117,5 @@ public interface RiderDeliveryApi extends RiderDeliveryTransitionApi {
     ApiResponse<RiderDeliveryCompleteResponse> completeDeliveryWithProofKey(
             AuthenticatedRider rider,
             Long deliveryId,
-            RiderDeliveryCompleteRequest request);
+            @Valid RiderDeliveryCompleteRequest request);
 }

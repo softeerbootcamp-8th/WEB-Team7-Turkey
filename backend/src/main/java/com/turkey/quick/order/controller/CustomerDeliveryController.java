@@ -11,8 +11,6 @@ import com.turkey.quick.order.service.DeliveryEtaQueryService;
 import com.turkey.quick.order.service.DeliveryListQueryService;
 import com.turkey.quick.order.service.DeliveryService;
 import com.turkey.quick.order.service.DeliveryTimeoutService;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.annotation.Validated;
@@ -62,7 +60,7 @@ public class CustomerDeliveryController implements CustomerDeliveryApi {
     public ApiResponse<DeliveryCreateResponse> createDelivery(
             @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
             AuthenticatedCustomer customer,
-            @Valid @RequestBody DeliveryCreateRequest request) {
+            @RequestBody DeliveryCreateRequest request) {
         deliveryTimeoutService.expireIfStale(customer.memberId());
         return ApiResponse.ok(deliveryService.createDelivery(request, customer.memberId()));
     }
@@ -71,8 +69,8 @@ public class CustomerDeliveryController implements CustomerDeliveryApi {
     @GetMapping
     public ApiResponse<DeliveryListResponse> getDeliveries(
             @RequestParam(required = false) OrderStatus status,
-            @RequestParam(defaultValue = "0") @Min(0) int page,
-            @RequestParam(defaultValue = "20") @Min(1) int size,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
             @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
             AuthenticatedCustomer customer) {
         return ApiResponse.ok(deliveryListQueryService.getDeliveries(customer.memberId(), status, page, size));
@@ -108,7 +106,7 @@ public class CustomerDeliveryController implements CustomerDeliveryApi {
     @PatchMapping("/{deliveryId}/cancel")
     public ApiResponse<DeliveryCancelResponse> cancelDelivery(
             @PathVariable Long deliveryId,
-            @Valid @RequestBody DeliveryCancelRequest request,
+            @RequestBody DeliveryCancelRequest request,
             @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
             AuthenticatedCustomer customer) {
         return ApiResponse.ok(deliveryService.cancelDelivery(deliveryId, customer.memberId(), request.reason()));

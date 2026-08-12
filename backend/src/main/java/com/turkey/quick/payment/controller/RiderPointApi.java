@@ -17,12 +17,13 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 
 /**
- * 라이더 포인트 API 계약(문서 전용)
+ * 라이더 포인트 API 계약
  *
  * <p>역할 분담 규칙·springdoc 스캔 조건·프록시 주의사항은 {@link CustomerPointApi} 와 동일하다 —
- * 이 인터페이스에는 순수 문서화 어노테이션만 두고, 매핑·바인딩·검증은 구현체에 둔다.
+ * 이 인터페이스에는 문서화와 Bean Validation을 두고, 매핑·바인딩은 구현체에 둔다.
  * 인증 경로 등록은 {@code RiderWebMvcConfig}(라이더 인터셉터) 쪽에 해야 한다 — 고객 설정에 등록하면
  * 역할 검증이 어긋난다.
  *
@@ -119,7 +120,7 @@ public interface RiderPointApi {
                     }""")))
     ApiResponse<WithdrawalResponse> requestWithdrawal(
             AuthenticatedRider rider,
-            WithdrawalRequest request);
+            @Valid WithdrawalRequest request);
 
     @Operation(
             operationId = "processRiderWithdrawal",
@@ -151,7 +152,7 @@ public interface RiderPointApi {
             @Parameter(description = "처리할 출금 식별자")
             Long withdrawalId,
 
-            WithdrawalProcessRequest request);
+            @Valid WithdrawalProcessRequest request);
 
     @Operation(
             operationId = "getRiderWithdrawals",

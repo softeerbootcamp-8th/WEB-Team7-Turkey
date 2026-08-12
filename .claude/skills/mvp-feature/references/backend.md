@@ -40,19 +40,19 @@ Repository → Service → DTO → Controller. 바깥에서 안으로 쓰면 아
 
 ### Controller
 
-**명세(인터페이스)와 구현(클래스)을 분리한다**(Discussion #245, 팀 합의 완료). 기준은 **"문서에만 쓰이나, 실제 동작에 영향을 주나"**.
+**API 계약(인터페이스)과 HTTP 처리 구현(클래스)을 분리한다**(Discussion #245, 팀 합의 완료). 문서와 호출자 사전조건은 계약에, Spring MVC의 매핑·바인딩은 구현에 둔다.
 
-- `{도메인}Api` 인터페이스 — **순수 문서화 애노테이션만**: `@Tag`, `@Operation`, `@ApiResponses`, `@Parameter`, swagger `@RequestBody`(`io.swagger.v3.oas.annotations.parameters.RequestBody`). 메서드 파라미터는 타입·이름만 적고 애노테이션을 붙이지 않는다.
-- `{도메인}Controller` 클래스 — `@RestController`(+ `@RequiredArgsConstructor`, 필요하면 `@Validated`)로 그 인터페이스를 `implements`하고, **동작에 영향을 주는 애노테이션은 전부 여기에**: 매핑(`@RequestMapping`, `@GetMapping` … `@ResponseStatus`), 바인딩(`@PathVariable`, `@RequestParam`, `@RequestBody`, `@RequestAttribute`), 검증(`@Valid`, `@NotBlank` 등). 메서드에는 `@Override`.
+- `{도메인}Api` 인터페이스 — **API 문서와 호출자 계약**: `@Tag`, `@Operation`, `@ApiResponses`, `@Parameter`, swagger `@RequestBody`(`io.swagger.v3.oas.annotations.parameters.RequestBody`) 및 Bean Validation(`@Valid`, `@NotBlank`, `@Min` 등). 메서드 파라미터에는 문서화·검증 애노테이션만 붙인다.
+- `{도메인}Controller` 클래스 — `@RestController`(+ `@RequiredArgsConstructor`, 필요하면 `@Validated`)로 그 인터페이스를 `implements`하고, **Spring MVC 실행 방식에 영향을 주는 애노테이션은 여기에**: 매핑(`@RequestMapping`, `@GetMapping` … `@ResponseStatus`)과 바인딩(`@PathVariable`, `@RequestParam`, `@RequestBody`, `@RequestAttribute`). 메서드에는 `@Override`.
 
-이유 둘: ① 라우팅·파라미터 바인딩 애노테이션이 **로직과 같은 파일에서 보인다**(긴 설명 문자열에 묻히지 않음). ② 인터페이스에 Bean Validation 제약이 없으므로 구현체가 제약을 "재정의"하는 상황이 성립하지 않아 `ConstraintDeclarationException`(HV000151)이 날 여지가 없다. springdoc은 상위 타입 애노테이션을 함께 읽으므로 문서는 정상 생성된다. 실례: `CustomerPointApi`/`CustomerPaymentController`, `RiderPointApi`/`RiderPaymentController`.
+라우팅·파라미터 바인딩 애노테이션은 로직과 같은 구현 파일에서 보이게 한다. 반면 Bean Validation은 호출자가 지켜야 할 사전조건이므로 API 계약에 둔다. 구현 메서드가 인터페이스에 없던 파라미터 제약을 추가하면 호출 조건을 강화해 Bean Validation 상속 규칙을 위반하고 `ConstraintDeclarationException`(HV000151)이 발생한다. 따라서 구현체에는 제약을 중복 선언하지 않는다. springdoc은 상위 타입 애노테이션을 함께 읽으므로 문서는 정상 생성된다.
 
 주의:
 
 - 매핑이 구현체에만 있으므로 컨트롤러가 **JDK 동적 프록시**로 감싸이면 매핑이 유실돼 404가 난다. Boot는 CGLIB 프록시가 기본이라 보통 문제없지만 `spring.aop.proxy-target-class=false`면 확인 필요.
-- `@RequestParam @NotBlank`처럼 파라미터에 직접 건 제약은 Spring 6.1(Boot 3.2)부터 메서드 검증(AOP)으로 걸린다 → 그런 제약을 쓰는 구현 클래스에 `@Validated`를 붙인다(`LoginIdController` 참고). `@RequestBody @Valid`는 별도 경로라 `@Validated` 없이도 동작.
-- 기존 컨트롤러도 이 분리 원칙으로 마이그레이션을 마쳤다(2026-08-11). 새 컨트롤러에서 인터페이스에
-  매핑·바인딩·검증 애노테이션을 다시 추가하지 않는다.
+- 인터페이스 파라미터에 직접 건 `@NotBlank`, `@Min` 등의 제약은 메서드 검증(AOP)으로 걸린다 → 그런 계약을 구현하는 클래스에 `@Validated`를 붙인다(`LoginIdController` 참고). `@RequestBody`의 캐스케이드 검증을 뜻하는 `@Valid`도 인터페이스에 두며, MVC 요청 바디 검증은 `@Validated` 없이 동작한다.
+- 기존 컨트롤러도 이 분리 원칙으로 마이그레이션을 마쳤다(2026-08-12). 새 컨트롤러에서 인터페이스에
+  매핑·바인딩 애노테이션을 추가하거나, 구현체에 Bean Validation 제약을 추가하지 않는다.
 
 반환은 항상 `ApiResponse<T>`로 감싼다(`common/response/ApiResponse.java`의 `ok`/`fail`). 경로는 액터를 앞에 둔다: `/api/customer/...`, `/api/rider/...`, 공용 `/api/...`. 동적 세그먼트는 프론트와 맞춰 `{deliveryId}`. 컨트롤러는 얇게 유지하고 비즈니스 분기(상태 검사, 권한 판정)를 넣지 않는다.
 
@@ -61,7 +61,7 @@ Repository → Service → DTO → Controller. 바깥에서 안으로 쓰면 아
 프론트 API 클라이언트는 `/v3/api-docs`에서 **자동 생성**된다. 인터페이스에 붙인 애노테이션이 그대로 프론트의 타입·훅 이름이 되므로, 대충 달면 `postApiCustomerDeliveries` 같은 이름과 `unknown` 타입이 생긴다. 인터페이스 타입에 `@Tag`, 메서드에 `@Operation`을 반드시 단다.
 
 ```java
-// CustomerDeliveryApi.java — 명세(문서 전용)
+// CustomerDeliveryApi.java — API 계약(문서 + Bean Validation)
 @Tag(name = "customer-delivery", description = "고객 배송요청")
 public interface CustomerDeliveryApi {
 

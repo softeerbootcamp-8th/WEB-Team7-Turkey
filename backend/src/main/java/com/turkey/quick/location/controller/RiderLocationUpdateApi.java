@@ -5,6 +5,7 @@ import com.turkey.quick.location.dto.RiderLocationUpdateRequest;
 import com.turkey.quick.rider.auth.AuthenticatedRider;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 
 @Tag(name = "rider-location", description = "라이더 현재 위치 갱신")
 public interface RiderLocationUpdateApi {
@@ -16,7 +17,7 @@ public interface RiderLocationUpdateApi {
      */
     @Operation(operationId = "updateRiderLocation", summary = "라이더 현재 위치 갱신",
                description = "좌표만 전송한다. 추적 대상 배송은 서버가 판정한다. 운행 중(AVAILABLE·BUSY)이 아니면 409.")
-    ApiResponse<Void> updateRiderLocation(RiderLocationUpdateRequest request,
+    ApiResponse<Void> updateRiderLocation(@Valid RiderLocationUpdateRequest request,
                                           AuthenticatedRider rider);
 
 }

@@ -7,7 +7,6 @@ import com.turkey.quick.customer.dto.CustomerLoginResponse;
 import com.turkey.quick.customer.service.CustomerLoginResult;
 import com.turkey.quick.customer.service.CustomerLoginService;
 import jakarta.servlet.http.HttpServletResponse;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -29,7 +28,7 @@ public class CustomerLoginController implements CustomerLoginApi {
     @Override
     @PostMapping
     public ApiResponse<CustomerLoginResponse> login(
-            @Valid @RequestBody CustomerLoginRequest request,
+            @RequestBody CustomerLoginRequest request,
             HttpServletResponse response) {
         CustomerLoginResult result = customerLoginService.login(request.loginId(), request.password());
 

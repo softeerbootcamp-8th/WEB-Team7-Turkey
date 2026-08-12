@@ -3,7 +3,6 @@ package com.turkey.quick.member.controller;
 import com.turkey.quick.common.response.ApiResponse;
 import com.turkey.quick.member.dto.LoginIdAvailabilityResponse;
 import com.turkey.quick.member.service.LoginIdAvailabilityService;
-import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,7 +21,7 @@ public class LoginIdController implements LoginIdApi {
     @Override
     @GetMapping("/availability")
     public ApiResponse<LoginIdAvailabilityResponse> checkAvailability(
-            @RequestParam @NotBlank(message = "로그인 ID는 필수입니다.") String loginId) {
+            @RequestParam String loginId) {
         return ApiResponse.ok(LoginIdAvailabilityResponse.from(loginIdAvailabilityService.check(loginId)));
     }
 }
