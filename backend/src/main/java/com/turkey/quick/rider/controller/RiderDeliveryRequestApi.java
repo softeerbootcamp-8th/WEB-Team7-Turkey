@@ -10,6 +10,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
@@ -48,10 +50,10 @@ public interface RiderDeliveryRequestApi {
             AuthenticatedRider rider,
 
             @Parameter(description = "라이더 현재 위도(선택, 없으면 위치 무시하고 전체 반환)", example = "37.5006")
-            BigDecimal latitude,
+            @DecimalMin("-90") @DecimalMax("90") BigDecimal latitude,
 
             @Parameter(description = "라이더 현재 경도(선택, 없으면 위치 무시하고 전체 반환)", example = "127.0366")
-            BigDecimal longitude,
+            @DecimalMin("-180") @DecimalMax("180") BigDecimal longitude,
 
             @Parameter(description = "검색 반경(m)", example = "3000")
             int radiusMeters,

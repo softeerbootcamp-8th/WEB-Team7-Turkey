@@ -5,7 +5,6 @@ import com.turkey.quick.location.dto.RiderLocationUpdateRequest;
 import com.turkey.quick.location.service.RiderLocationService;
 import com.turkey.quick.rider.auth.AuthenticatedRider;
 import com.turkey.quick.rider.auth.RiderSessionInterceptor;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
@@ -23,7 +22,7 @@ public class RiderLocationUpdateController implements RiderLocationUpdateApi {
     @Override
     @PostMapping
     public ApiResponse<Void> updateRiderLocation(
-            @Valid @RequestBody RiderLocationUpdateRequest request,
+            @RequestBody RiderLocationUpdateRequest request,
             @RequestAttribute(RiderSessionInterceptor.CURRENT_RIDER_ATTRIBUTE)
             AuthenticatedRider rider) {
         riderLocationService.update(rider, request.toLocationPayload());

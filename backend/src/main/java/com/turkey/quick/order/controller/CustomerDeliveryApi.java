@@ -19,12 +19,14 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
 
 /**
  * 고객 배송요청 API 계약
  *
- * <p>이 인터페이스에는 Swagger 문서화 어노테이션만 둔다. 경로·HTTP 메서드 매핑과
- * 바인딩·검증 어노테이션은 실제 동작을 담당하는 구현체에 둔다.
+ * <p>이 인터페이스에는 Swagger 문서화와 호출자 계약인 Bean Validation 어노테이션을 둔다.
+ * 경로·HTTP 메서드 매핑과 바인딩 어노테이션은 실제 동작을 담당하는 구현체에 둔다.
  *
  * <p><b>이 인터페이스만으로는 /v3/api-docs 에 아무것도 나오지 않는다.</b> springdoc 은 빈으로
  * 등록된 컨트롤러를 스캔하므로, 구현체가 생겨야 문서와 Orval 훅이 만들어진다.
@@ -124,7 +126,7 @@ public interface CustomerDeliveryApi {
             @Parameter(hidden = true)
             AuthenticatedCustomer customer,
 
-            DeliveryCreateRequest request);
+            @Valid DeliveryCreateRequest request);
 
     @Operation(summary = "배송요청 목록",
             description = "로그인한 고객의 이용기록을 요청 시각 최신순으로 조회한다. "
@@ -140,10 +142,10 @@ public interface CustomerDeliveryApi {
             OrderStatus status,
 
             @Parameter(description = "페이지(0부터)")
-            int page,
+            @Min(0) int page,
 
             @Parameter(description = "페이지 크기")
-            int size,
+            @Min(1) int size,
 
             @Parameter(hidden = true)
             AuthenticatedCustomer customer);
@@ -231,7 +233,7 @@ public interface CustomerDeliveryApi {
             @Parameter(description = "배송요청 식별자", example = "1024")
             Long deliveryId,
 
-            DeliveryCancelRequest request,
+            @Valid DeliveryCancelRequest request,
 
             @Parameter(hidden = true)
             AuthenticatedCustomer customer);

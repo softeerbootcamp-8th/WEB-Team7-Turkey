@@ -7,7 +7,6 @@ import com.turkey.quick.rider.dto.RiderLoginResponse;
 import com.turkey.quick.rider.service.RiderLoginResult;
 import com.turkey.quick.rider.service.RiderLoginService;
 import jakarta.servlet.http.HttpServletResponse;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -29,7 +28,7 @@ public class RiderLoginController implements RiderLoginApi {
     @Override
     @PostMapping
     public ApiResponse<RiderLoginResponse> login(
-            @Valid @RequestBody RiderLoginRequest request,
+            @RequestBody RiderLoginRequest request,
             HttpServletResponse response) {
         RiderLoginResult result = riderLoginService.login(request.loginId(), request.password());
 

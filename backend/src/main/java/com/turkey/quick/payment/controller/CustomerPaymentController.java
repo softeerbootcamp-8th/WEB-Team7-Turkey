@@ -12,7 +12,6 @@ import com.turkey.quick.payment.dto.PointChargeRequest;
 import com.turkey.quick.payment.dto.PointChargeResponse;
 import com.turkey.quick.payment.dto.PointTransactionListResponse;
 import com.turkey.quick.payment.service.CustomerPaymentService;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -62,7 +61,7 @@ public class CustomerPaymentController implements CustomerPointApi {
             @RequestAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE)
             AuthenticatedCustomer customer,
 
-            @Valid @RequestBody PointChargeRequest request) {
+            @RequestBody PointChargeRequest request) {
         return ApiResponse.ok(customerPaymentService.chargePointRequest(request, customer.memberId()));
     }
 
@@ -74,7 +73,7 @@ public class CustomerPaymentController implements CustomerPointApi {
 
             @PathVariable("pointChargeId") Long pointChargeId,
 
-            @Valid @RequestBody PointChargeConfirmRequest request) {
+            @RequestBody PointChargeConfirmRequest request) {
         return ApiResponse.ok(customerPaymentService.confirmPointCharge(
                 pointChargeId, request, customer.memberId()));
     }
