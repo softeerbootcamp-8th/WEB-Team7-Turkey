@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Capacitor } from '@capacitor/core'
 import { loadDaumPostcode } from '@/lib/daumPostcode'
 import { loadKakaoMaps } from '@/lib/kakaoMaps'
 import type { AddressField } from '../-deliveryForm'
@@ -64,6 +65,7 @@ export async function geocodeAddress(addresses: string[]): Promise<Coordinates> 
 }
 
 export function AddressSearch({ label, value, onSelect }: AddressSearchProps) {
+  const usesEmbeddedSearch = Capacitor.isNativePlatform()
   const [isLoading, setIsLoading] = useState(false)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [error, setError] = useState<string>()
@@ -76,6 +78,10 @@ export function AddressSearch({ label, value, onSelect }: AddressSearchProps) {
   onSelectRef.current = onSelect
 
   useEffect(() => {
+    if (!usesEmbeddedSearch) {
+      return
+    }
+
     let active = true
     void loadDaumPostcode().then((postcodeSdk) => {
       if (active) {
@@ -88,7 +94,7 @@ export function AddressSearch({ label, value, onSelect }: AddressSearchProps) {
     return () => {
       active = false
     }
-  }, [])
+  }, [usesEmbeddedSearch])
 
   useEffect(() => {
     window.__turkeyCloseOverlay = () => {
@@ -107,13 +113,13 @@ export function AddressSearch({ label, value, onSelect }: AddressSearchProps) {
   useEffect(() => {
     const container = postcodeContainerRef.current
     const postcodeSdk = postcodeSdkRef.current
-    if (!isSearchOpen || !container || !postcodeSdk) {
+    if (!usesEmbeddedSearch || !isSearchOpen || !container || !postcodeSdk) {
       return
     }
 
     container.replaceChildren()
-    new postcodeSdk.Postcode({ oncomplete: handleAddressComplete }).embed(container)
-  }, [isSearchOpen])
+    createPostcode(postcodeSdk).embed(container)
+  }, [isSearchOpen, usesEmbeddedSearch])
 
   function handleAddressComplete(data: daum.PostcodeData) {
     closeAddressSearch()
@@ -140,6 +146,10 @@ export function AddressSearch({ label, value, onSelect }: AddressSearchProps) {
       .finally(() => setIsLoading(false))
   }
 
+  function createPostcode(postcodeSdk: typeof daum) {
+    return new postcodeSdk.Postcode({ oncomplete: handleAddressComplete })
+  }
+
   function closeAddressSearch() {
     isSearchOpenRef.current = false
     setIsSearchOpen(false)
@@ -151,8 +161,15 @@ export function AddressSearch({ label, value, onSelect }: AddressSearchProps) {
 
     try {
       postcodeSdkRef.current ??= await loadDaumPostcode()
-      isSearchOpenRef.current = true
-      setIsSearchOpen(true)
+      if (usesEmbeddedSearch) {
+        isSearchOpenRef.current = true
+        setIsSearchOpen(true)
+      } else {
+        createPostcode(postcodeSdkRef.current).open({
+          popupKey: 'turkeyPostcodeSearch',
+          popupTitle: `${label} 주소 검색`,
+        })
+      }
       setIsLoading(false)
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '주소 검색을 시작하지 못했습니다.')
@@ -181,7 +198,7 @@ export function AddressSearch({ label, value, onSelect }: AddressSearchProps) {
         </p>
       )}
       {error && <p role="alert" className="mt-1 text-xs text-red-600">{error}</p>}
-      {isSearchOpen && (
+      {usesEmbeddedSearch && isSearchOpen && (
         <div className="fixed inset-0 z-[100] flex flex-col bg-white" role="dialog" aria-modal="true" aria-label={`${label} 주소 검색`}>
           <header className="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 px-4">
             <h2 className="text-base font-bold">{label} 주소 검색</h2>

@@ -111,7 +111,14 @@ declare global {
         oncomplete: (data: PostcodeData) => void
         onclose?: () => void
       })
-      open(): void
+      open(options?: {
+        q?: string
+        left?: number
+        top?: number
+        popupTitle?: string
+        popupKey?: string
+        autoClose?: boolean
+      }): void
       embed(element: HTMLElement): void
     }
   }
