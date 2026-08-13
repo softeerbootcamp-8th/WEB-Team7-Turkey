@@ -65,8 +65,21 @@ public class CustomerSessionInterceptor implements HandlerInterceptor {
             throw authFailure(response);
         }
 
+        slideSession(sessionId);
         request.setAttribute(CURRENT_CUSTOMER_ATTRIBUTE, AuthenticatedCustomer.from(member));
         return true;
+    }
+
+    /**
+     * 인증을 통과한 요청마다 세션 TTL을 다시 건다(슬라이딩 갱신, #439 — #27의 "고정 TTL, 슬라이딩
+     * 없음"을 뒤집은 결정).
+     *
+     * <p>쿠키는 다시 내리지 않는다 — Max-Age가 실제 세션 수명과 더 이상 묶여 있지 않기 때문이다
+     * ({@link SessionCookie}). 실제 만료 판정은 전부 이 Redis TTL이 하므로, 브라우저가 아직
+     * "유효하다"고 믿는 낡은 쿠키를 들고 와도 {@link #preHandle}이 이미 앞에서 401로 걸러낸다.
+     */
+    private void slideSession(String sessionId) {
+        sessionStore.extend(sessionId, SessionStore.DEFAULT_TTL);
     }
 
     private BusinessException authFailure(HttpServletResponse response) {

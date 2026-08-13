@@ -24,6 +24,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -208,7 +209,8 @@ public class RiderLocationService extends Service implements LocationListener {
 
             int status = connection.getResponseCode();
             Log.i(TAG, "Location POST response status=" + status);
-            if (status == HttpURLConnection.HTTP_CONFLICT) {
+            storeRefreshedCookies(endpoint, connection);
+            if (status == HttpURLConnection.HTTP_CONFLICT || status == HttpURLConnection.HTTP_UNAUTHORIZED) {
                 Log.w(TAG, "Location tracking stopped by server status=" + status);
                 preferences.edit().clear().apply();
                 stopSelf();
@@ -222,6 +224,27 @@ public class RiderLocationService extends Service implements LocationListener {
                 connection.disconnect();
             }
         }
+    }
+
+    /**
+     * 응답의 Set-Cookie 를 WebView 쿠키 저장소에 되돌려 놓는다.
+     *
+     * <p>이게 없으면 서버가 세션 TTL 을 슬라이딩해도(#439) <b>이 서비스만 먼저 로그아웃된다</b>.
+     * 세션 쿠키는 Max-Age 가 붙은 영속 쿠키라 로그인 +2시간이면 CookieManager 에서 사라지는데,
+     * 이 POST 는 WebView 가 아니라 HttpURLConnection 으로 나가므로 갱신된 Max-Age 가 저장소에
+     * 자동 반영되지 않는다. 배송 중 WebView 가 API 를 한 번도 부르지 않는 시간(화면을 켜 둔 채
+     * 백그라운드로 내려간 상태)이 2시간을 넘기면 쿠키를 잃고 401 이 된다.
+     */
+    private void storeRefreshedCookies(String endpoint, HttpURLConnection connection) {
+        List<String> setCookies = connection.getHeaderFields().get("Set-Cookie");
+        if (setCookies == null) {
+            return;
+        }
+        CookieManager cookieManager = CookieManager.getInstance();
+        for (String setCookie : setCookies) {
+            cookieManager.setCookie(endpoint, setCookie);
+        }
+        cookieManager.flush();
     }
 
     private String createRequestBody(Location location) throws JSONException {
