@@ -26,26 +26,58 @@ Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실�
 
 <br>
 
-## 📌 주요 기능
+# Turkey 사용자 흐름도
 
-**레디스 사용** — 세션, 휴대전화 인증번호, 라이더 최신 위치, SSE 이벤트 팬아웃까지 하나의 Redis 인스턴스를 자료구조별로 나눠 쓴다.
-[ADR-002](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐002-Redis-사용)
-
-**라이더 상태와 배송 상태 분리** — 라이더의 배차 가능 여부와 배송 주문의 진행 단계를 서로 다른 축으로 관리해 상태 전이 책임을 분리한다.
-[ADR-003](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐003-라이더-상태와-배송-상태-분리)
-
-**배차 동시성 처리** — 조건부 UPDATE(CAS)로 하나의 배송 요청에 라이더 한 명만 배정되도록 보장한다.
-[ADR-006](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐006-배차-동시성-처리)
+고객과 라이더가 각자 화면을 거치며 하나의 배송이 완성되기까지의 경로입니다.
 
 <br>
 
-## 🔥 기술적 도전 / 트러블슈팅
+## 1. 전체 흐름
 
-**SSE vs Polling** — 라이더 위치를 고객에게 전달하는 방식을 SSE와 Polling 두 후보로 놓고 부하테스트로 비교해 SSE로 확정했다.
-[ADR-010](<https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐010:-위치-전달-방식(SSE)-부하테스트-검증>)
+| 표기 | 뜻 |
+| --- | --- |
+| 🟦 파란 노드 | 고객 · 웹 브라우저 |
+| 🟨 노란 노드 | 라이더 · 안드로이드 앱 |
+| 🔴 빨간 화살표 | 두 액터가 서버를 통해 서로를 움직이는 지점 |
+| 🟠 주황 화살표 | 고객이 흐름에서 빠져나가는 분기(취소) |
+| 굵은 테두리 | **클릭하면 그 지점의 의사결정 기록(ADR)으로 이동** |
 
-**GC 방식 선택** — SerialGC와 G1GC를 N=500 부하테스트로 비교해 GC 전략을 검증했다.
-[ADR-011](<https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐011:-GC-방식-비교-부하테스트-검증(SerialGC-vs-G1GC,-N=500)>)
+```mermaid
+flowchart LR
+    C1["🧑 ① 회원가입<br>/customer/signup"] --> C2["🧑 ② 로그인<br>/customer/login"] --> C3["🧑 ③ 포인트 충전<br>/points/charge"] --> C4["🧑 ④ 배송요청 생성<br>/deliveries/new"] --> C5["🧑 ⑤ 실시간 위치 추적<br>/deliveries/$id/tracking"]
+    C5 --> C6["🧑 ⑥ 포인트 내역<br>/points"]
+    C5 --> C7["🧑 ⑦ 배송 내역<br>/deliveries"]
+    C5 -->|"WAITING 중에만 '주문취소'"| C8["🧑 ⑧ 취소 · 포인트 환급<br>WAITING → CANCELED"]
+
+    R1["🛵 ① 회원가입<br>/rider/signup"] --> R2["🛵 ② 로그인<br>/rider/login"] --> R3["🛵 ③ 콜 받기<br>UNAVAILABLE → AVAILABLE"] --> R4["🛵 ④ 콜 목록<br>/requests"] --> R5["🛵 ⑤ 수락 · 배차<br>AVAILABLE → BUSY"] --> R6["🛵 ⑥ 진행 배송<br>픽업 → 인수 → 배송"] --> R7["🛵 ⑦ 완료 인증<br>BUSY → AVAILABLE"]
+    R7 --> R8["🛵 ⑧ 포인트 · 정산<br>/points"]
+    R7 --> R9["🛵 ⑨ 운행 기록<br>/history"]
+
+    C4 -->|"WAITING 주문이 콜 목록에 뜬다"| R4
+    R5 -->|"배차 확정 · '라이더가 배정됐어요'"| C5
+    R6 -->|"위치 POST → Redis Pub/Sub → SSE"| C5
+    R7 -->|"COMPLETED · 운임 확정 · 정산 생성"| C7
+
+    click C2 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐002-Redis-사용" "ADR-002 · 세션을 Redis에 저장"
+    click C3 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/TBD-포인트-충전-결제" "TBD · 포인트 충전 / PG 파사드"
+    click C4 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/TBD-주문-생성과-포인트-차감" "TBD · 요금 대조 + 포인트 차감 단일 트랜잭션"
+    click C5 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐010:-위치-전달-방식(SSE)-부하테스트-검증" "ADR-010 · SSE vs Polling"
+    click R3 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐003-라이더-상태와-배송-상태-분리" "ADR-003 · 라이더 상태와 배송 상태 분리"
+    click R4 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/TBD-배차-위치-검색-방향" "TBD · 주문 GEO 인덱싱 vs MySQL 쿼리"
+    click R5 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐006-배차-동시성-처리" "ADR-006 · 조건부 UPDATE(CAS)"
+    click R6 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐010:-위치-전달-방식(SSE)-부하테스트-검증" "ADR-010 · 위치 전송 · SSE 팬아웃"
+    click R7 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/TBD-배송-완료와-정산" "TBD · 완료 인증 + 정산 생성 트랜잭션"
+    click C8 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/TBD-고객-취소와-환급" "TBD · 취소=환급, 배차 전에만 허용"
+
+    classDef cus fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
+    classDef rid fill:#fef3c7,stroke:#f59e0b,color:#5c4813
+    classDef adr stroke-width:3px
+    class C1,C2,C3,C4,C5,C6,C7,C8 cus
+    class R1,R2,R3,R4,R5,R6,R7,R8,R9 rid
+    class C2,C3,C4,C5,C8,R3,R4,R5,R6,R7 adr
+    linkStyle 15,16,17,18 stroke:#dc2626,stroke-width:3px
+    linkStyle 6 stroke:#ea580c,stroke-width:3px
+```
 
 <br>
 
@@ -61,45 +93,6 @@ Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실�
 
 <br>
 
-## 🤝 협업 기록
-
-- 📋 [GitHub Project](https://github.com/orgs/softeerbootcamp-8th/projects/7)
-- 💬 [GitHub Discussions](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions)
-
-### 주요 회의록
-
-**초기 설계**
-- [세션 기반 인증 vs 토큰 기반 인증](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/11)
-- [클라이언트 구현 방식 비교: 반응형 웹 vs 하이브리드 앱 vs 네이티브 앱](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/13)
-- [데이터베이스 개념적 설계](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/107)
-- [배차 동시성 처리](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/84)
-- [루트 디렉터리 구조](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/108)
-- [프론트엔드 구조 결정](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/112)
-- [프로젝트 구조](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/115)
-- [OSIV 설정 ON/OFF 결정](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/125)
-- [\[성능\] 제한된 인프라 환경에서의 부하 테스트 및 튜닝 방향](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/16)
-
-**인프라·운영**
-- [AWS 인프라 환경 세팅](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/124)
-- [\[CI/CD\] 프론트엔드 자동배포 — AWS 인증 방식 결정](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/229)
-
-**아키텍처 재검토**
-- [location 패키지 코드 단순화](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/286)
-- [배차 위치 검색 방향 — GEO를 라이더가 아니라 주문에](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/338)
-- [주문 위치 검색을 MySQL 쿼리로? Redis GEO search로? 실험 보고서](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/380)
-
-**성능·장애 대응**
-- [라이더 위치 정보 전달 방식 부하 테스트 계획](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/270)
-- [배차 수락 시 데드락 발생: 원인과 해결 과정](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/468)
-- [배차 수락 데드락 해소 테스트 해설](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/467)
-- [부하테스트 자동화 skill 결과물](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/481)
-- [배차 동시성 테스트 결과](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/491)
-
-**도메인·상태 정합성**
-- [주문 취소 관련](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/402)
-- [completed, canceled 상태 정합성 문제에 ack 프로토콜 도입 검토](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/432)
-
-<br>
 
 ## 🏗️ 인프라 아키텍처
 
