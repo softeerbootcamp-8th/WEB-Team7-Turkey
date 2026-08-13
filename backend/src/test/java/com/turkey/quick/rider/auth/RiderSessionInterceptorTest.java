@@ -11,7 +11,6 @@ import com.turkey.quick.common.auth.SessionStore;
 import com.turkey.quick.common.exception.BusinessException;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
-import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.rider.domain.OperatingStatus;
 import com.turkey.quick.rider.domain.RiderProfile;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
@@ -34,16 +33,14 @@ class RiderSessionInterceptorTest {
     private static final Long MEMBER_ID = 1L;
 
     private InMemorySessionStore sessionStore;
-    private MemberRepository memberRepository;
     private RiderProfileRepository riderProfileRepository;
     private RiderSessionInterceptor interceptor;
 
     @BeforeEach
     void setUp() {
         sessionStore = new InMemorySessionStore();
-        memberRepository = mock(MemberRepository.class);
         riderProfileRepository = mock(RiderProfileRepository.class);
-        interceptor = new RiderSessionInterceptor(sessionStore, memberRepository, riderProfileRepository, true);
+        interceptor = new RiderSessionInterceptor(sessionStore, riderProfileRepository, true);
     }
 
     private Member rider() {
@@ -64,8 +61,7 @@ class RiderSessionInterceptorTest {
         String sessionId = "valid-session";
         sessionStore.create(sessionId, MEMBER_ID, Duration.ofHours(2));
         Member member = rider();
-        when(memberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(member));
-        when(riderProfileRepository.findById(MEMBER_ID)).thenReturn(Optional.of(RiderProfile.create(member)));
+        when(riderProfileRepository.findWithMemberById(MEMBER_ID)).thenReturn(Optional.of(RiderProfile.create(member)));
         MockHttpServletRequest request = requestWithCookie(sessionId);
 
         boolean result = interceptor.preHandle(request, new MockHttpServletResponse(), new Object());
@@ -83,7 +79,7 @@ class RiderSessionInterceptorTest {
         String sessionId = "customer-session";
         sessionStore.create(sessionId, MEMBER_ID, Duration.ofHours(2));
         Member customer = Member.create("session_customer01", "encoded", "고객", "01099998888", MemberRole.CUSTOMER);
-        when(memberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(customer));
+        when(riderProfileRepository.findWithMemberById(MEMBER_ID)).thenReturn(Optional.of(RiderProfile.create(customer)));
         MockHttpServletRequest request = requestWithCookie(sessionId);
 
         assertThatThrownBy(() -> interceptor.preHandle(request, new MockHttpServletResponse(), new Object()))
@@ -97,8 +93,7 @@ class RiderSessionInterceptorTest {
     void shouldThrowUnauthorizedWithoutRiderProfile() {
         String sessionId = "no-profile-session";
         sessionStore.create(sessionId, MEMBER_ID, Duration.ofHours(2));
-        when(memberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(rider()));
-        when(riderProfileRepository.findById(MEMBER_ID)).thenReturn(Optional.empty());
+        when(riderProfileRepository.findWithMemberById(MEMBER_ID)).thenReturn(Optional.empty());
         MockHttpServletRequest request = requestWithCookie(sessionId);
 
         assertThatThrownBy(() -> interceptor.preHandle(request, new MockHttpServletResponse(), new Object()))
@@ -118,8 +113,7 @@ class RiderSessionInterceptorTest {
         RiderProfile profile = RiderProfile.create(member);
         profile.goOnline();
         profile.assign();
-        when(memberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(member));
-        when(riderProfileRepository.findById(MEMBER_ID)).thenReturn(Optional.of(profile));
+        when(riderProfileRepository.findWithMemberById(MEMBER_ID)).thenReturn(Optional.of(profile));
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         interceptor.preHandle(requestWithCookie(sessionId), response, new Object());
@@ -135,7 +129,7 @@ class RiderSessionInterceptorTest {
         String sessionId = "customer-session";
         sessionStore.create(sessionId, MEMBER_ID, SessionStore.DEFAULT_TTL);
         Member customer = Member.create("session_customer01", "encoded", "고객", "01099998888", MemberRole.CUSTOMER);
-        when(memberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(customer));
+        when(riderProfileRepository.findWithMemberById(MEMBER_ID)).thenReturn(Optional.of(RiderProfile.create(customer)));
 
         assertThatThrownBy(() ->
                 interceptor.preHandle(requestWithCookie(sessionId), new MockHttpServletResponse(), new Object()))
