@@ -52,15 +52,15 @@ class CustomerLoginServiceTest {
     }
 
     @Test
-    @DisplayName("로그인 성공 시 세션에 회원ID와 역할이 저장된다")
-    void shouldStoreMemberIdAndRoleInSessionAfterLogin() {
+    // 세션 해시에서 role 을 없앴으므로(#439) 역할 저장은 더 이상 검증 대상이 아니다.
+    @DisplayName("로그인 성공 시 세션에 회원ID가 저장된다")
+    void shouldStoreMemberIdInSessionAfterLogin() {
         Member member = customer();
         when(memberRepository.findByLoginId(LOGIN_ID)).thenReturn(Optional.of(member));
 
         CustomerLoginResult result = customerLoginService.login(LOGIN_ID, RAW_PASSWORD);
 
-        assertThat(sessionStore.get(result.sessionId()))
-                .containsEntry("role", "CUSTOMER");
+        assertThat(sessionStore.get(result.sessionId())).containsKey("memberId");
     }
 
     @Test

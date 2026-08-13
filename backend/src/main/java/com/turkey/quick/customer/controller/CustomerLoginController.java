@@ -32,7 +32,7 @@ public class CustomerLoginController implements CustomerLoginApi {
             HttpServletResponse response) {
         CustomerLoginResult result = customerLoginService.login(request.loginId(), request.password());
 
-        var cookie = SessionCookie.of(result.sessionId(), result.sessionTtl(), cookieSecure);
+        var cookie = SessionCookie.of(result.sessionId(), cookieSecure);
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
 
         return ApiResponse.ok(CustomerLoginResponse.from(result));

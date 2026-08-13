@@ -53,7 +53,7 @@ class CustomerLoginE2ETest extends IntegrationTestSupport {
     @Test
     @DisplayName("올바른 로그인 정보면 200과 세션 쿠키를 반환한다")
     void shouldReturnSessionCookieForValidCredentials() {
-        saveCustomer("e2e_login01", "p@ssw0rd", "01011112222");
+        Member member = saveCustomer("e2e_login01", "p@ssw0rd", "01011112222");
 
         var response = rest.postForEntity(LOGIN_ENDPOINT,
                 Map.of("loginId", "e2e_login01", "password", "p@ssw0rd"), ApiResponse.class);
@@ -73,7 +73,8 @@ class CustomerLoginE2ETest extends IntegrationTestSupport {
         // 실제 Redis 에 세션이 이 형태로 저장됐는지 확인한다. 인메모리 대체를 쓸 때는 대체 구현의
         // 자료구조만 보는 셈이어서 저장 형태를 전혀 보장하지 못했다. 키 형식은 RedisSessionStore 의
         // 내부지만 "세션에 무엇이 담기는가"는 docs/03-erd.md 5절이 정한 계약이라 검증할 가치가 있다.
-        assertThat(redisTemplate.opsForHash().get("session:" + sessionId, "role")).isEqualTo("CUSTOMER");
+        assertThat(redisTemplate.opsForHash().get("session:" + sessionId, "memberId"))
+                .isEqualTo(String.valueOf(member.getId()));
         assertThat(sessionStore.findMemberId(sessionId)).isPresent();
     }
 

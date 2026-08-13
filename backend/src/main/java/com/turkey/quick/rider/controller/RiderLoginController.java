@@ -32,7 +32,7 @@ public class RiderLoginController implements RiderLoginApi {
             HttpServletResponse response) {
         RiderLoginResult result = riderLoginService.login(request.loginId(), request.password());
 
-        var cookie = SessionCookie.of(result.sessionId(), result.sessionTtl(), cookieSecure);
+        var cookie = SessionCookie.of(result.sessionId(), cookieSecure);
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
 
         return ApiResponse.ok(RiderLoginResponse.from(result));

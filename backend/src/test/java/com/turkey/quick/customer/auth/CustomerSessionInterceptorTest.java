@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 
 import com.turkey.quick.common.auth.InMemorySessionStore;
 import com.turkey.quick.common.auth.SessionCookie;
+import com.turkey.quick.common.auth.SessionStore;
 import com.turkey.quick.common.exception.BusinessException;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
@@ -52,7 +53,7 @@ class CustomerSessionInterceptorTest {
     @DisplayName("유효한 세션이면 통과하고 인증된 고객을 request attribute에 담는다")
     void shouldAuthenticateCustomerAndContinueForValidSession() {
         String sessionId = "valid-session";
-        sessionStore.create(sessionId, MEMBER_ID, "CUSTOMER", Duration.ofHours(2));
+        sessionStore.create(sessionId, MEMBER_ID, Duration.ofHours(2));
         Member member = customer();
         when(memberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(member));
         MockHttpServletRequest request = requestWithCookie(sessionId);
@@ -64,6 +65,21 @@ class CustomerSessionInterceptorTest {
                 request.getAttribute(CustomerSessionInterceptor.CURRENT_CUSTOMER_ATTRIBUTE);
         assertThat(customer.loginId()).isEqualTo("session_user01");
         assertThat(customer.name()).isEqualTo("홍길동");
+    }
+
+    @Test
+    @DisplayName("인증을 통과한 요청은 세션 TTL만 연장하고 쿠키는 다시 내리지 않는다")
+    void shouldExtendSessionTtlWithoutReissuingCookie() {
+        String sessionId = "sliding-session";
+        sessionStore.create(sessionId, MEMBER_ID, SessionStore.DEFAULT_TTL);
+        when(memberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(customer()));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        interceptor.preHandle(requestWithCookie(sessionId), response, new Object());
+
+        assertThat(sessionStore.extendCount(sessionId)).isEqualTo(1);
+        // 쿠키 Max-Age는 세션 TTL과 더 이상 묶여 있지 않다 — 로그인 시점에만 발급한다.
+        assertThat(response.getHeader("Set-Cookie")).isNull();
     }
 
     @Test
@@ -106,7 +122,7 @@ class CustomerSessionInterceptorTest {
     @DisplayName("세션은 있지만 회원이 없으면 401을 던진다")
     void shouldThrowUnauthorizedWhenSessionMemberDoesNotExist() {
         String sessionId = "orphan-session";
-        sessionStore.create(sessionId, MEMBER_ID, "CUSTOMER", Duration.ofHours(2));
+        sessionStore.create(sessionId, MEMBER_ID, Duration.ofHours(2));
         when(memberRepository.findById(MEMBER_ID)).thenReturn(Optional.empty());
         MockHttpServletRequest request = requestWithCookie(sessionId);
 
@@ -120,7 +136,7 @@ class CustomerSessionInterceptorTest {
     @DisplayName("라이더 세션으로 고객 API에 접근하면 401을 던진다")
     void shouldThrowUnauthorizedWhenRiderSessionAccessesCustomerApi() {
         String sessionId = "rider-session";
-        sessionStore.create(sessionId, MEMBER_ID, "RIDER", Duration.ofHours(2));
+        sessionStore.create(sessionId, MEMBER_ID, Duration.ofHours(2));
         Member rider = Member.create("rider01", "encoded", "라이더", "01099998888", MemberRole.RIDER);
         when(memberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(rider));
         MockHttpServletRequest request = requestWithCookie(sessionId);
@@ -135,7 +151,7 @@ class CustomerSessionInterceptorTest {
     @DisplayName("세션 생성 이후 탈퇴한 계정이면 401을 던진다")
     void shouldThrowUnauthorizedForAccountWithdrawnAfterSessionCreation() {
         String sessionId = "withdrawn-session";
-        sessionStore.create(sessionId, MEMBER_ID, "CUSTOMER", Duration.ofHours(2));
+        sessionStore.create(sessionId, MEMBER_ID, Duration.ofHours(2));
         Member member = customer();
         member.withdraw();
         when(memberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(member));
