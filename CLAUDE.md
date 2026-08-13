@@ -255,6 +255,7 @@ k6 부하테스트는 `loadtest` 스킬(`.claude/skills/loadtest/`)이 정본 �
 - **인증번호 확인(`PhoneVerificationService.confirm`)에 원자적 보호가 없다**(#21). 같은 유효 코드로 동시 확인 시 인증 완료 토큰이 중복 발급될 수 있다.
 - **heartbeat가 없다.** 프록시 유휴 타임아웃에 조용한 스트림이 끊길 수 있고, #401로 WAITING 구간이 무음이라 emitter 타임아웃(5분)에 더 쉽게 걸린다(5분이 정책값인지도 미확정).
 - **SSE 연결 중 세션이 만료돼도 스트림이 안 끊긴다**(인터셉터는 연결 시점 1회만). 뒤집어서, **긴 SSE 연결은 슬라이딩 갱신도 못 받는다**(#439) — 요청이 한 번뿐이라 연장 시점도 한 번이다. 고객 추적 화면은 ETA 폴링(1분, `DeliveryEta`)이 같은 인터셉터를 지나며 대신 연장하지만 **그 폴링은 탭이 백그라운드면 멈춘다** — 배경에 둔 추적 탭은 여전히 만료될 수 있다.
+- **배차 수락 후 BUSY 위치 전송이 권한 거부 등으로 실패해도 아무에게도 알리지 않는다**(#496에서 발견). `useLocationSender`(`frontend/src/shared/hooks/useLocationSender.ts`)는 `RiderLocationPlugin.start()` 실패를 `console.error`로만 남기고 라이더·고객 누구에게도 표시하지 않는다 — 이 상태로 배송을 진행하면 고객이 실시간 위치를 전혀 못 본다. #496(콜 목록 좌표 전송)과는 독립된 별도 설계 주제라 별도 이슈로 다룰지 미정.
 - ~~**주문 완료·취소 시 능동적 SSE 종료가 없다.**~~ **해소(#450, 2026-08-10)**: 완료(`RiderDeliveryService.complete`)와 자동 취소(`DeliveryTimeoutService.cancelAndRefund`)가 `TrackingPublisher.publishClose`로 **별도 채널**(`tracking:close:{id}`, `TrackingCloseSubscriber`)에 발행해 emitter를 닫는다. 닫는 것 자체는 신호가 아니라 **재질의를 유발하는 계기**다 — 브라우저 자동 재연결 → 서버 409 → `EventSource` CLOSED → 프론트 REST 재조회. **이 신호가 유실돼도 정합성은 안 깨진다**(emitter 5분 만료가 같은 사슬을 만든다). 종료 채널 접두어는 데이터 채널과 **완전히 분리해야 한다** — Redis glob의 `*`는 콜론을 포함해 매칭하므로 `tracking:order:{id}:close`로 두면 `TrackingSubscriber`가 종료 신호를 데이터 프레임으로 흘려보낸다. 수동 취소는 일부러 발행하지 않는다(취소한 당사자의 화면이 재조회로 스스로 닫는다).
 - **오래 PENDING인 충전 요청을 정리할 방법이 없다**(#34). 결제창을 연 채 브라우저를 닫으면 영구 PENDING.
 - **자동 취소 스캐너에 최대 1분의 창이 남는다**(#42). 감내 가능한 백스톱으로 명시 확정은 안 됨.
