@@ -28,13 +28,24 @@ Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실�
 
 ## 📌 주요 기능
 
-> 기능별 간단 설명과 관련 ADR(Wiki) 링크 정리 예정
+**레디스 사용** — 세션, 휴대전화 인증번호, 라이더 최신 위치, SSE 이벤트 팬아웃까지 하나의 Redis 인스턴스를 자료구조별로 나눠 쓴다.
+[ADR-002](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐002-Redis-사용)
+
+**라이더 상태와 배송 상태 분리** — 라이더의 배차 가능 여부와 배송 주문의 진행 단계를 서로 다른 축으로 관리해 상태 전이 책임을 분리한다.
+[ADR-003](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐003-라이더-상태와-배송-상태-분리)
+
+**배차 동시성 처리** — 조건부 UPDATE(CAS)로 하나의 배송 요청에 라이더 한 명만 배정되도록 보장한다.
+[ADR-006](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐006-배차-동시성-처리)
 
 <br>
 
 ## 🔥 기술적 도전 / 트러블슈팅
 
-> 배차 동시성, 실시간 위치 전달, 상태 정합성 등 핵심 기술 과제 정리 예정
+**SSE vs Polling** — 라이더 위치를 고객에게 전달하는 방식을 SSE와 Polling 두 후보로 놓고 부하테스트로 비교해 SSE로 확정했다.
+[ADR-010](<https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐010:-위치-전달-방식(SSE)-부하테스트-검증>)
+
+**GC 방식 선택** — SerialGC와 G1GC를 N=500 부하테스트로 비교해 GC 전략을 검증했다.
+[ADR-011](<https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐011:-GC-방식-비교-부하테스트-검증(SerialGC-vs-G1GC,-N=500)>)
 
 <br>
 
