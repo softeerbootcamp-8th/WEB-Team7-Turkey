@@ -53,7 +53,7 @@ Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실�
 
 | 이름 | 담당 도메인 |
 | --- | --- |
-| [정상진](https://github.com/jsj3473) | 위치·실시간 통신(SSE), 인증(세션), AWS 인프라 |
+| [정상진](https://github.com/jsj3473) | 위치·실시간 통신, 인증 |
 | [백홍빈](https://github.com/githings) | 고객 서비스, 결제·정산, 웹앱 |
 | [유승종](https://github.com/bigbell999) | 위치·실시간 통신, AWS 인프라 |
 | [박민서](https://github.com/minseo6753) | 배차 동시성, 라이더 서비스, AWS 인프라 |
