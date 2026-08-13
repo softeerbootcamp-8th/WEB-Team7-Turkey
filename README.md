@@ -117,7 +117,3 @@ Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실�
 | 협업 | ![Figma](https://img.shields.io/badge/Figma-F24E1E?style=for-the-badge&logo=figma&logoColor=white) ![Slack](https://img.shields.io/badge/Slack-4A154B?style=for-the-badge&logo=slack&logoColor=white) ![GitHub](https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white) |
 
 <br>
-
-## 📝 안내
-
-본 프로젝트는 Softeer Bootcamp 8기 교육 과정에서 제작되었습니다.
