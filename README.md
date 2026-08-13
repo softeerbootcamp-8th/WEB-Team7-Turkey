@@ -26,8 +26,7 @@ Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실�
 
 <br>
 
-# Turkey 사용자 흐름도
-
+## 🗺️ 사용자 흐름도
 
 | 표기 | 뜻 |
 | --- | --- |
@@ -35,7 +34,7 @@ Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실�
 | 🟨 노란 노드 | 라이더 · 안드로이드 앱 |
 | 🔴 빨간 화살표 | 두 액터가 서버를 통해 서로를 움직이는 지점 |
 | 🟠 주황 화살표 | 고객이 흐름에서 빠져나가는 분기(취소) |
-| 굵은 테두리 | **클릭하면 그 지점의 의사결정 기록(ADR)으로 이동** |
+| 굵은 테두리 | **클릭하면 그 주제의 CORE 위키로 이동** |
 
 ```mermaid
 flowchart TB
@@ -44,33 +43,31 @@ flowchart TB
     C5 --> C6["🧑 ⑥ 포인트 내역"]
     C5 --> C7["🧑 ⑦ 배송 내역"]
 
-    R1["🛵 ① 회원가입"] --> R2["🛵 ② 로그인"] --> R3["🛵 ③ 콜 받기"] --> R4["🛵 ④ 콜 목록"] --> R5["🛵 ⑤ 수락 · 배차"] --> R6["🛵 ⑥ 진행 배송"] --> R7["🛵 ⑦ 완료 인증"]
-    R7 --> R8["🛵 ⑧ 포인트 · 정산"]
-    R7 --> R9["🛵 ⑨ 운행 기록"]
+    R1["🛵 ① 회원가입"] --> R2["🛵 ② 로그인"] --> R3["🛵 ③ 콜 목록"] --> R4["🛵 ④ 콜 받기"] --> R5["🛵 ⑤ 진행 배송"] --> R6["🛵 ⑥ 완료 인증"]
+    R6 --> R7["🛵 ⑦ 포인트 · 정산"]
+    R6 --> R8["🛵 ⑧ 운행 기록"]
 
-    C4 -->|"WAITING 주문 노출"| R4
-    R5 -->|"배차 확정"| C5
-    R6 -->|"위치 → SSE"| C5
-    R7 -->|"COMPLETED · 정산"| C7
+    C4 -->|"WAITING 주문 노출"| R3
+    R4 -->|"배차 확정"| C5
+    R5 -->|"위치 → SSE"| C5
+    R6 -->|"COMPLETED · 정산"| C7
 
-    click C2 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐002-Redis-사용" "ADR-002 · 세션을 Redis에 저장"
-    click C3 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/TBD-포인트-충전-결제" "TBD · 포인트 충전 / PG 파사드"
-    click C4 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/TBD-주문-생성과-포인트-차감" "TBD · 요금 대조 + 포인트 차감 단일 트랜잭션"
-    click C5 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐010:-위치-전달-방식(SSE)-부하테스트-검증" "ADR-010 · SSE vs Polling"
-    click R3 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐003-라이더-상태와-배송-상태-분리" "ADR-003 · 라이더 상태와 배송 상태 분리"
-    click R4 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/TBD-배차-위치-검색-방향" "TBD · 주문 GEO 인덱싱 vs MySQL 쿼리"
-    click R5 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐006-배차-동시성-처리" "ADR-006 · 조건부 UPDATE(CAS)"
-    click R6 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐010:-위치-전달-방식(SSE)-부하테스트-검증" "ADR-010 · 위치 전송 · SSE 팬아웃"
-    click R7 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/TBD-배송-완료와-정산" "TBD · 완료 인증 + 정산 생성 트랜잭션"
-    click C8 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/TBD-고객-취소와-환급" "TBD · 취소=환급, 배차 전에만 허용"
+    click C2 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/%5BCORE%5D-쿠키-세션-인증방식" "[CORE] 쿠키-세션 인증방식"
+    click R2 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/%5BCORE%5D-쿠키-세션-인증방식" "[CORE] 쿠키-세션 인증방식"
+    click C3 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/%5BCORE%5D-결제-정합성" "[CORE] 결제 정합성"
+    click C8 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/%5BCORE%5D-결제-정합성" "[CORE] 결제 정합성 · 취소=환급"
+    click C5 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/%5BCORE%5D-실시간-위치-추적" "[CORE] 실시간 위치 추적"
+    click R3 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/%5BCORE%5D-배차-위치-검색" "[CORE] 배차 위치 검색"
+    click R4 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/%5BCORE%5D-콜받기" "[CORE] 콜받기"
+    click R5 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/%5BCORE%5D-배송-상태-전이" "[CORE] 배송 상태 전이"
 
     classDef cus fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
     classDef rid fill:#fef3c7,stroke:#f59e0b,color:#5c4813
-    classDef adr stroke-width:3px
+    classDef core stroke-width:3px
     class C1,C2,C3,C4,C5,C6,C7,C8 cus
-    class R1,R2,R3,R4,R5,R6,R7,R8,R9 rid
-    class C2,C3,C4,C5,C8,R3,R4,R5,R6,R7 adr
-    linkStyle 15,16,17,18 stroke:#dc2626,stroke-width:3px
+    class R1,R2,R3,R4,R5,R6,R7,R8 rid
+    class C2,C3,C5,C8,R2,R3,R4,R5 core
+    linkStyle 14,15,16,17 stroke:#dc2626,stroke-width:3px
     linkStyle 4 stroke:#ea580c,stroke-width:3px
 ```
 <br>
