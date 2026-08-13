@@ -45,7 +45,7 @@ export function RequestCard({ request, onSelect }: RequestCardProps) {
           <div>
             <div className="mb-0.5 flex items-center gap-2 text-label-sm text-secondary">
               <span>픽업</span>
-              <span className="font-bold text-tertiary">{formatDistance(request.distanceToPickupMeters)}</span>
+              <span className="font-bold text-tertiary">{formatDistance(request.distanceToPickupMeters, '내 위치 정보 없음')}</span>
             </div>
             <p className="truncate text-body-lg font-bold text-on-surface">
               {request.pickupRoadAddress ?? '출발지 정보가 없습니다.'}
