@@ -66,7 +66,38 @@ Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실�
 - 📋 [GitHub Project](https://github.com/orgs/softeerbootcamp-8th/projects/7)
 - 💬 [GitHub Discussions](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions)
 
-> 회의록·데일리 스크럼·KPT 회고 등 상세 기록 정리 예정
+### 주요 회의록
+
+**초기 설계**
+- [세션 기반 인증 vs 토큰 기반 인증](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/11)
+- [클라이언트 구현 방식 비교: 반응형 웹 vs 하이브리드 앱 vs 네이티브 앱](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/13)
+- [데이터베이스 개념적 설계](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/107)
+- [배차 동시성 처리](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/84)
+- [루트 디렉터리 구조](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/108)
+- [프론트엔드 구조 결정](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/112)
+- [프로젝트 구조](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/115)
+- [OSIV 설정 ON/OFF 결정](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/125)
+- [\[성능\] 제한된 인프라 환경에서의 부하 테스트 및 튜닝 방향](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/16)
+
+**인프라·운영**
+- [AWS 인프라 환경 세팅](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/124)
+- [\[CI/CD\] 프론트엔드 자동배포 — AWS 인증 방식 결정](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/229)
+
+**아키텍처 재검토**
+- [location 패키지 코드 단순화](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/286)
+- [배차 위치 검색 방향 — GEO를 라이더가 아니라 주문에](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/338)
+- [주문 위치 검색을 MySQL 쿼리로? Redis GEO search로? 실험 보고서](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/380)
+
+**성능·장애 대응**
+- [라이더 위치 정보 전달 방식 부하 테스트 계획](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/270)
+- [배차 수락 시 데드락 발생: 원인과 해결 과정](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/468)
+- [배차 수락 데드락 해소 테스트 해설](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/467)
+- [부하테스트 자동화 skill 결과물](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/481)
+- [배차 동시성 테스트 결과](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/491)
+
+**도메인·상태 정합성**
+- [주문 취소 관련](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/402)
+- [completed, canceled 상태 정합성 문제에 ack 프로토콜 도입 검토](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/432)
 
 <br>
 
