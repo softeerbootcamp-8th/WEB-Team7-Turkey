@@ -27,20 +27,20 @@ source_of_truth: false
 | 굵은 테두리 | **클릭하면 그 지점의 의사결정 기록(ADR)으로 이동** |
 
 ```mermaid
-flowchart LR
-    C1["🧑 ① 회원가입<br>/customer/signup"] --> C2["🧑 ② 로그인<br>/customer/login"] --> C3["🧑 ③ 포인트 충전<br>/points/charge"] --> C4["🧑 ④ 배송요청 생성<br>/deliveries/new"] --> C5["🧑 ⑤ 실시간 위치 추적<br>/deliveries/$id/tracking"]
-    C5 --> C6["🧑 ⑥ 포인트 내역<br>/points"]
-    C5 --> C7["🧑 ⑦ 배송 내역<br>/deliveries"]
-    C5 -->|"WAITING 중에만 '주문취소'"| C8["🧑 ⑧ 취소 · 포인트 환급<br>WAITING → CANCELED"]
+flowchart TB
+    C1["🧑 ① 회원가입"] --> C2["🧑 ② 로그인"] --> C3["🧑 ③ 포인트 충전"] --> C4["🧑 ④ 배송요청 생성"] --> C5["🧑 ⑤ 실시간 위치 추적"]
+    C5 --> C6["🧑 ⑥ 포인트 내역"]
+    C5 --> C7["🧑 ⑦ 배송 내역"]
+    C5 -->|"WAITING 중 취소"| C8["🧑 ⑧ 취소 · 포인트 환급"]
 
-    R1["🛵 ① 회원가입<br>/rider/signup"] --> R2["🛵 ② 로그인<br>/rider/login"] --> R3["🛵 ③ 콜 받기<br>UNAVAILABLE → AVAILABLE"] --> R4["🛵 ④ 콜 목록<br>/requests"] --> R5["🛵 ⑤ 수락 · 배차<br>AVAILABLE → BUSY"] --> R6["🛵 ⑥ 진행 배송<br>픽업 → 인수 → 배송"] --> R7["🛵 ⑦ 완료 인증<br>BUSY → AVAILABLE"]
-    R7 --> R8["🛵 ⑧ 포인트 · 정산<br>/points"]
-    R7 --> R9["🛵 ⑨ 운행 기록<br>/history"]
+    R1["🛵 ① 회원가입"] --> R2["🛵 ② 로그인"] --> R3["🛵 ③ 콜 받기"] --> R4["🛵 ④ 콜 목록"] --> R5["🛵 ⑤ 수락 · 배차"] --> R6["🛵 ⑥ 진행 배송"] --> R7["🛵 ⑦ 완료 인증"]
+    R7 --> R8["🛵 ⑧ 포인트 · 정산"]
+    R7 --> R9["🛵 ⑨ 운행 기록"]
 
-    C4 -->|"WAITING 주문이 콜 목록에 뜬다"| R4
-    R5 -->|"배차 확정 · '라이더가 배정됐어요'"| C5
-    R6 -->|"위치 POST → Redis Pub/Sub → SSE"| C5
-    R7 -->|"COMPLETED · 운임 확정 · 정산 생성"| C7
+    C4 -->|"WAITING 주문 노출"| R4
+    R5 -->|"배차 확정"| C5
+    R6 -->|"위치 → SSE"| C5
+    R7 -->|"COMPLETED · 정산"| C7
 
     click C2 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐002-Redis-사용" "ADR-002 · 세션을 Redis에 저장"
     click C3 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/TBD-포인트-충전-결제" "TBD · 포인트 충전 / PG 파사드"
@@ -62,6 +62,9 @@ flowchart LR
     linkStyle 15,16,17,18 stroke:#dc2626,stroke-width:3px
     linkStyle 6 stroke:#ea580c,stroke-width:3px
 ```
+
+노드는 화면 이름만 담았습니다. **각 화면의 라우트 경로와 걸린 ADR은 3번 표**,
+**상태 전이(`UNAVAILABLE→AVAILABLE`, `WAITING→ASSIGNED` 등)는 2번 상태 전이도**를 보세요.
 
 <br>
 
@@ -94,18 +97,22 @@ stateDiagram-v2
 
 링크는 **정책적 트레이드오프가 있었던 지점에만** 겁니다. 단순 화면 전환에는 걸지 않습니다.
 
-| 흐름 노드 | ADR | 상태 |
-| --- | --- | --- |
-| ② 로그인 (고객·라이더 공통) | [ADR-002 Redis 사용](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐002-Redis-사용) | ✅ 있음 |
-| ③ 포인트 충전 | `TBD` 포인트 충전·PG 파사드 | ⛔ 위키 페이지 필요 |
-| ④ 배송요청 생성 | `TBD` 주문 생성과 포인트 차감 | ⛔ 위키 페이지 필요 |
-| ⑤ 실시간 위치 추적 | [ADR-010 위치 전달 방식(SSE)](<https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐010:-위치-전달-방식(SSE)-부하테스트-검증>) | ✅ 있음 |
-| ③ 라이더 콜 받기 (상태 전이) | [ADR-003 라이더 상태와 배송 상태 분리](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐003-라이더-상태와-배송-상태-분리) | ✅ 있음 |
-| ④ 콜 목록 조회 | `TBD` 배차 위치 검색 방향 | ⛔ 위키 페이지 필요 |
-| ⑤ 콜 수락 · 배차 | [ADR-006 배차 동시성 처리](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐006-배차-동시성-처리) | ✅ 있음 |
-| ⑦ 배송 완료 인증 | `TBD` 배송 완료와 정산 | ⛔ 위키 페이지 필요 |
-| ⑧ 고객 취소 · 환급 | `TBD` 고객 취소와 환급 | ⛔ 위키 페이지 필요 |
-| (전역) JVM 튜닝 | [ADR-011 GC 방식 비교](<https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐011:-GC-방식-비교-부하테스트-검증(SerialGC-vs-G1GC,-N=500)>) | ✅ 있음 · 흐름도에 안 걸림 |
+| 흐름 노드 | 라우트 | ADR | 상태 |
+| --- | --- | --- | --- |
+| 🧑 ① 회원가입 | `/customer/signup` | — | 판단 지점 아님 |
+| 🧑 ② 로그인 · 🛵 ② 로그인 | `/customer/login` · `/rider/login` | [ADR-002 Redis 사용](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐002-Redis-사용) | ✅ 있음 |
+| 🧑 ③ 포인트 충전 | `/customer/points/charge` | `TBD` 포인트 충전·PG 파사드 | ⛔ 위키 페이지 필요 |
+| 🧑 ④ 배송요청 생성 | `/customer/deliveries/new` | `TBD` 주문 생성과 포인트 차감 | ⛔ 위키 페이지 필요 |
+| 🧑 ⑤ 실시간 위치 추적 | `/customer/deliveries/$id/tracking` | [ADR-010 위치 전달 방식(SSE)](<https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐010:-위치-전달-방식(SSE)-부하테스트-검증>) | ✅ 있음 |
+| 🧑 ⑥ 포인트 내역 · ⑦ 배송 내역 | `/customer/points` · `/customer/deliveries` | — | 판단 지점 아님 |
+| 🧑 ⑧ 취소 · 포인트 환급 | `/customer/deliveries/$id/tracking` (WAITING일 때만) | `TBD` 고객 취소와 환급 | ⛔ 위키 페이지 필요 |
+| 🛵 ③ 콜 받기 | `/rider` (UNAVAILABLE→AVAILABLE) | [ADR-003 라이더 상태와 배송 상태 분리](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐003-라이더-상태와-배송-상태-분리) | ✅ 있음 |
+| 🛵 ④ 콜 목록 | `/rider/requests` | `TBD` 배차 위치 검색 방향 | ⛔ 위키 페이지 필요 |
+| 🛵 ⑤ 수락 · 배차 | `/rider/requests/$id` (AVAILABLE→BUSY) | [ADR-006 배차 동시성 처리](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐006-배차-동시성-처리) | ✅ 있음 |
+| 🛵 ⑥ 진행 배송 | `/rider/delivery` | [ADR-010 위치 전송·SSE 팬아웃](<https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐010:-위치-전달-방식(SSE)-부하테스트-검증>) | ✅ 있음 |
+| 🛵 ⑦ 완료 인증 | `/rider/delivery/$id/complete` (BUSY→AVAILABLE) | `TBD` 배송 완료와 정산 | ⛔ 위키 페이지 필요 |
+| 🛵 ⑧ 포인트·정산 · ⑨ 운행 기록 | `/rider/points` · `/rider/history` | — | 판단 지점 아님 |
+| (전역) JVM 튜닝 | — | [ADR-011 GC 방식 비교](<https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/ADR‐011:-GC-방식-비교-부하테스트-검증(SerialGC-vs-G1GC,-N=500)>) | ✅ 있음 · 흐름도에 안 걸림 |
 
 <br>
 
@@ -151,8 +158,8 @@ README에는 **1번 전체 흐름도와 범례만** 옮기고, 상태 전이도(
 ```markdown
 ## 🗺️ 사용자 흐름도
 
-> 파란 테두리 노드를 클릭하면 그 지점의 의사결정 기록(ADR)으로 이동합니다.
-> 상태 전이 상세와 전체 ADR 매핑은 [docs/06-user-flow.md](./docs/06-user-flow.md) 참고.
+> 굵은 테두리 노드를 클릭하면 그 지점의 의사결정 기록(ADR)으로 이동합니다.
+> 라우트 경로·상태 전이 상세와 전체 ADR 매핑은 [docs/06-user-flow.md](./docs/06-user-flow.md) 참고.
 
 （범례 표 + 1번 mermaid 블록）
 
