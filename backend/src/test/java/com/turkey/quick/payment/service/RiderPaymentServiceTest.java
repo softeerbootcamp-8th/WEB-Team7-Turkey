@@ -34,12 +34,22 @@ class RiderPaymentServiceTest {
     @BeforeEach
     void setUp() {
         pointWalletRepository = mock(PointWalletRepository.class);
+        var riderProfileRepository =
+                mock(com.turkey.quick.rider.repository.RiderProfileRepository.class);
+        var riderWithdrawalRepository =
+                mock(com.turkey.quick.rider.repository.RiderWithdrawalRepository.class);
+        var pointTransactionRepository =
+                mock(com.turkey.quick.payment.repository.PointTransactionRepository.class);
         riderPaymentService = new RiderPaymentService(pointWalletRepository,
-                mock(com.turkey.quick.rider.repository.RiderProfileRepository.class),
-                mock(com.turkey.quick.rider.repository.RiderWithdrawalRepository.class),
-                mock(com.turkey.quick.payment.repository.PointTransactionRepository.class),
+                riderProfileRepository,
+                riderWithdrawalRepository,
+                pointTransactionRepository,
                 mock(PayoutGateway.class),
-                mock(WithdrawalProcessor.class));
+                mock(WithdrawalProcessor.class),
+                // 목이 아니라 실물이다 — 목이면 신청 로직이 통째로 안 돈다. 트랜잭션 경계는
+                // 프록시가 만드는 것이라 단위 테스트에서는 어차피 없다(그건 통합 테스트 몫).
+                new WithdrawalRequester(pointWalletRepository, riderProfileRepository,
+                        riderWithdrawalRepository, pointTransactionRepository));
     }
 
     private PointWallet walletWith(long balance) {
