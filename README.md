@@ -10,10 +10,11 @@
 
 Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실시간으로 연결하는 웹 기반 퀵서비스 플랫폼입니다.
 
-정해진 기간과 인원이라는 한정된 자원 안에서, 기능을 넓히기보다 **고객 배송요청 → 배차 → 실시간 위치 추적 → 배송 완료**로 이어지는 핵심 흐름을 제대로 구현하고, 그 과정에서 마주치는 배차 동시성·실시간 위치 전달·상태 정합성 같은 기술적 도전에 집중하는 것을 목표로 삼았습니다.
+ **고객 배송요청 → 배차 → 실시간 위치 추적 → 배송 완료**로 이어지는 핵심 흐름을 제대로 구현하고, 그 과정에서 마주치는 기술적 도전에 집중하는 것을 목표로 삼았습니다.
 
-- 🔗 **배포 링크**: [dw1nqa61d1no6.cloudfront.net](https://dw1nqa61d1no6.cloudfront.net/)
-- 📑 **API 문서 (Swagger)**: [dw1nqa61d1no6.cloudfront.net/swagger-ui](https://dw1nqa61d1no6.cloudfront.net/swagger-ui/index.html#/)
+- 🔗 [배포 링크](https://dw1nqa61d1no6.cloudfront.net/)
+
+- 📑 [API 문서 (Swagger)](https://dw1nqa61d1no6.cloudfront.net/swagger-ui/index.html#/)
 
 <br>
 
