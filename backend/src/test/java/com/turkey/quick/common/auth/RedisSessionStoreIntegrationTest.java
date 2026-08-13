@@ -8,6 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.connection.DataType;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
@@ -49,6 +50,28 @@ class RedisSessionStoreIntegrationTest extends IntegrationTestSupport {
         sessionStore.extend(SESSION_ID, Duration.ofHours(2));
 
         assertThat(redisTemplate.hasKey(KEY)).isFalse();
+        assertThat(sessionStore.findMemberId(SESSION_ID)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("세션 생성은 String 타입 키에 JSON 값과 TTL을 SET ... EX 한 번으로 함께 건다(#511)")
+    void shouldCreateSessionAsSingleStringSetWithTtl() {
+        sessionStore.create(SESSION_ID, 42L, Duration.ofHours(2));
+
+        assertThat(redisTemplate.type(KEY)).isEqualTo(DataType.STRING);
+        assertThat(redisTemplate.opsForValue().get(KEY)).contains("\"memberId\":42");
+        assertThat(redisTemplate.getExpire(KEY)).isGreaterThan(0);
+        assertThat(sessionStore.findMemberId(SESSION_ID)).contains(42L);
+    }
+
+    @Test
+    @DisplayName("배포 직후 구버전 Hash 타입 세션 키는 WRONGTYPE 대신 조회 결과 없음으로 처리한다(#511)")
+    void shouldTreatLegacyHashTypeSessionAsAbsent() {
+        // #511 이전 RedisSessionStore가 HSET으로 남겨둔 세션 키를 흉내낸다.
+        redisTemplate.opsForHash().put(KEY, "memberId", "42");
+        redisTemplate.expire(KEY, Duration.ofHours(2));
+
+        assertThat(redisTemplate.type(KEY)).isEqualTo(DataType.HASH);
         assertThat(sessionStore.findMemberId(SESSION_ID)).isEmpty();
     }
 }

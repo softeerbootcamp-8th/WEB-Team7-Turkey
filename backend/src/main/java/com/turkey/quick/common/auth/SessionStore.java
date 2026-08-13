@@ -17,9 +17,11 @@ public interface SessionStore {
     Duration DEFAULT_TTL = Duration.ofHours(2);
 
     /**
-     * 세션을 생성한다. 값 형식은 docs/03-erd.md 5절에 정의된 {memberId}. role은 저장하지 않는다
-     * — 역할·활성 상태 확인은 항상 회원 조회 이후 최신 DB 상태로 하지 이 저장소를 안 쓴다(아래
-     * {@link #findMemberId} 참고). 저장했던 적이 있었으나 읽는 코드가 0곳이라 없앴다.
+     * 세션을 생성한다. 값 형식은 docs/03-erd.md 5절에 정의된 JSON {@code {"memberId": ...}}
+     * (#511, Redis 자료구조는 Hash가 아니라 String — 값과 TTL을 {@code SET ... EX} 한 번으로
+     * 함께 건다). role은 저장하지 않는다 — 역할·활성 상태 확인은 항상 회원 조회 이후 최신 DB
+     * 상태로 하지 이 저장소를 안 쓴다(아래 {@link #findMemberId} 참고). 저장했던 적이 있었으나
+     * 읽는 코드가 0곳이라 없앴다.
      */
     void create(String sessionId, Long memberId, Duration ttl);
 
