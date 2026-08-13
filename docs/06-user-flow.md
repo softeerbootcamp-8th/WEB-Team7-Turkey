@@ -42,14 +42,14 @@ flowchart TB
     R5 -->|"위치 → SSE"| C5
     R6 -->|"COMPLETED · 정산"| C7
 
-    click C2 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/%5BCORE%5D-쿠키-세션-인증방식" "[CORE] 쿠키-세션 인증방식"
-    click R2 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/%5BCORE%5D-쿠키-세션-인증방식" "[CORE] 쿠키-세션 인증방식"
-    click C3 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/%5BCORE%5D-결제-정합성" "[CORE] 결제 정합성"
-    click C8 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/%5BCORE%5D-결제-정합성" "[CORE] 결제 정합성 · 취소=환급"
-    click C5 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/%5BCORE%5D-실시간-위치-추적" "[CORE] 실시간 위치 추적"
-    click R3 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/%5BCORE%5D-배차-위치-검색" "[CORE] 배차 위치 검색"
-    click R4 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/%5BCORE%5D-콜받기" "[CORE] 콜받기"
-    click R5 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/%5BCORE%5D-배송-상태-전이" "[CORE] 배송 상태 전이"
+    click C2 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-쿠키-세션-인증방식" "CORE 쿠키-세션 인증방식"
+    click R2 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-쿠키-세션-인증방식" "CORE 쿠키-세션 인증방식"
+    click C3 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-결제-정합성" "CORE 결제 정합성"
+    click C8 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-결제-정합성" "CORE 결제 정합성 · 취소=환급"
+    click C5 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-실시간-위치-추적" "CORE 실시간 위치 추적"
+    click R3 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-배차-위치-검색" "CORE 배차 위치 검색"
+    click R4 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-콜받기" "CORE 콜받기"
+    click R5 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-배송-상태-전이" "CORE 배송 상태 전이"
 
     classDef cus fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
     classDef rid fill:#fef3c7,stroke:#f59e0b,color:#5c4813
@@ -99,15 +99,15 @@ CORE 위키는 그 주제의 디스커션·이슈·부하테스트·스터디로
 | 흐름 노드 | 라우트 | CORE 위키 |
 | --- | --- | --- |
 | 🧑 ① 회원가입 · 🛵 ① 회원가입 | `/customer/signup` · `/rider/signup` | — |
-| 🧑 ② 로그인 · 🛵 ② 로그인 | `/customer/login` · `/rider/login` | [\[CORE\] 쿠키-세션 인증방식](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/%5BCORE%5D-쿠키-세션-인증방식) |
-| 🧑 ③ 포인트 충전 | `/customer/points/charge` | [\[CORE\] 결제 정합성](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/%5BCORE%5D-결제-정합성) |
+| 🧑 ② 로그인 · 🛵 ② 로그인 | `/customer/login` · `/rider/login` | [CORE 쿠키-세션 인증방식](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-쿠키-세션-인증방식) |
+| 🧑 ③ 포인트 충전 | `/customer/points/charge` | [CORE 결제 정합성](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-결제-정합성) |
 | 🧑 ④ 배송요청 생성 | `/customer/deliveries/new` | — |
-| 🧑 ⑤ 실시간 위치 추적 | `/customer/deliveries/$id/tracking` | [\[CORE\] 실시간 위치 추적](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/%5BCORE%5D-실시간-위치-추적) |
+| 🧑 ⑤ 실시간 위치 추적 | `/customer/deliveries/$id/tracking` | [CORE 실시간 위치 추적](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-실시간-위치-추적) |
 | 🧑 ⑥ 포인트 내역 · ⑦ 배송 내역 | `/customer/points` · `/customer/deliveries` | — |
-| 🧑 ⑧ 취소 · 포인트 환급 | `/customer/deliveries/$id/tracking` (WAITING일 때만) | [\[CORE\] 결제 정합성](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/%5BCORE%5D-결제-정합성) |
-| 🛵 ③ 콜 목록 | `/rider/requests` | [\[CORE\] 배차 위치 검색](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/%5BCORE%5D-배차-위치-검색) |
-| 🛵 ④ 콜 받기 | `/rider/requests/$id` (AVAILABLE→BUSY) | [\[CORE\] 콜받기](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/%5BCORE%5D-콜받기) |
-| 🛵 ⑤ 진행 배송 | `/rider/delivery` | [\[CORE\] 배송 상태 전이](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/%5BCORE%5D-배송-상태-전이) |
+| 🧑 ⑧ 취소 · 포인트 환급 | `/customer/deliveries/$id/tracking` (WAITING일 때만) | [CORE 결제 정합성](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-결제-정합성) |
+| 🛵 ③ 콜 목록 | `/rider/requests` | [CORE 배차 위치 검색](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-배차-위치-검색) |
+| 🛵 ④ 콜 받기 | `/rider/requests/$id` (AVAILABLE→BUSY) | [CORE 콜받기](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-콜받기) |
+| 🛵 ⑤ 진행 배송 | `/rider/delivery` | [CORE 배송 상태 전이](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-배송-상태-전이) |
 | 🛵 ⑥ 완료 인증 | `/rider/delivery/$id/complete` (BUSY→AVAILABLE) | — |
 | 🛵 ⑦ 포인트·정산 · ⑧ 운행 기록 | `/rider/points` · `/rider/history` | — |
 
