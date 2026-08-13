@@ -28,7 +28,6 @@ import com.turkey.quick.payment.service.CustomerPaymentService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -151,9 +150,13 @@ public class DeliveryService {
      *   <li>{@code uk_point_transaction_order_type} — 같은 주문에 ORDER_USE 두 번(이중 차감)
      * </ul>
      *
-     * <p>앞의 둘은 같은 INSERT 에서 터지므로 <b>둘을 구분할 수 없다.</b> 그래서 409 하나로 묶고
-     * 메시지로만 갈랐다 — 구분하려면 위반한 제약명을 예외 메시지에서 파싱해야 하는데, DB 벤더
-     * 문자열에 의존하게 되어 하지 않았다(미결로 남김).
+     * <p><b>앞의 둘은 같은 INSERT 에서 터져 여기서는 구분되지 않는다.</b> 제약 위반을 잡지 않고 그대로
+     * 올려 보내면 {@link DeliveryOrderCreator} 가 재조회 결과로 가른다 — 요청키의 주문이 있으면
+     * 멱등키 충돌, 없으면 진행 중 주문 제약이다. DB 벤더 문자열을 파싱하지 않는 방법이다.
+     *
+     * <p><b>이 메서드를 직접 부르지 말 것.</b> 멱등 보장은 {@code DeliveryOrderCreator} 가 하고,
+     * 여기는 그 안쪽 트랜잭션 구간이다({@code PointChargeApprover} 와 같은 역할 분담). 컨트롤러가
+     * 이 메서드를 바로 부르면 동시 재전송이 500 으로 새어 나간다.
      *
      * <p><b>잠금 순서</b>: 주문 INSERT → 지갑 잠금. 포인트 트랜잭션의 잠금 순서 규칙
      * (CLAUDE.md 의 {@code point_charge} → {@code point_wallet})과 같은 결이다 — 소스 행을 먼저
@@ -199,15 +202,13 @@ public class DeliveryService {
                 Contact.of(request.sender().name(), request.sender().phoneNumber()),
                 Contact.of(request.recipient().name(), request.recipient().phoneNumber()));
 
-        DeliveryOrder saved;
-        try {
-            // save 가 아니라 saveAndFlush 다: 지연 flush 로는 유니크 위반이 커밋 시점에 터져
-            // 아래 catch 가 잡지 못하고 500 으로 새어 나간다(#32 에서 확인한 것과 같은 이유).
-            saved = deliveryOrderRepository.saveAndFlush(order);
-        } catch (DataIntegrityViolationException e) {
-            throw new BusinessException(HttpStatus.CONFLICT,
-                    "이미 진행 중인 배송요청이 있거나 동일한 요청이 처리 중입니다.");
-        }
+        // save 가 아니라 saveAndFlush 다: 지연 flush 로는 유니크 위반이 커밋 시점에 터져
+        // DeliveryOrderCreator 의 catch 를 지나쳐 500 으로 새어 나간다(#32 에서 확인한 것과 같은 이유).
+        //
+        // 여기서 DataIntegrityViolationException 을 잡지 않는다 — 잡아서 BusinessException 으로
+        // 바꾸면 DeliveryOrderCreator 의 catch(DataIntegrityViolationException) 를 지나쳐 버려
+        // 재조회 경로를 못 타고 "동시 요청은 무조건 409" 이던 예전 동작으로 되돌아간다.
+        DeliveryOrder saved = deliveryOrderRepository.saveAndFlush(order);
 
         // ④ 주문 시점의 요금을 ESTIMATE 스냅샷으로 고정한다. 이후 정책이 바뀌어도 이 주문의
         //    청구 근거는 여기에 남는다(라이더 정산도 이 스냅샷을 참조한다).
@@ -225,6 +226,16 @@ public class DeliveryService {
                 saved.getId(), customerId, fare.totalFare(), balanceAfter);
 
         return toResponse(saved, fare);
+    }
+
+    /**
+     * 동시 재전송에서 진 요청의 복구 조회({@link DeliveryOrderCreator} 전용).
+     * {@link #createDelivery} 가 롤백된 <b>뒤에</b> 불러야 한다.
+     */
+    @Transactional(readOnly = true)
+    public Optional<DeliveryCreateResponse> findCreatedByRequestKey(Long customerId, String requestKey) {
+        return deliveryOrderRepository.findByCustomer_IdAndRequestKey(customerId, requestKey)
+                .map(this::toResponse);
     }
 
     /**
