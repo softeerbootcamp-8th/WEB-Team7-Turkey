@@ -20,9 +20,9 @@ Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실�
 
 ## 🎬 시연 영상
 
-> 시연 영상 추가 예정
-
-<!-- 예: [![데모 영상](썸네일_URL)](유튜브_URL) -->
+<div align="center">
+  <video src="https://github.com/user-attachments/assets/f5b42518-73b6-4d11-9ab6-8b4ec31e0d78" controls width="600"></video>
+</div>
 
 <br>
 
