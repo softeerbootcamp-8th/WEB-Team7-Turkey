@@ -5,16 +5,22 @@ import com.turkey.quick.rider.dto.RiderSignupRequest;
 import com.turkey.quick.rider.dto.RiderSignupResponse;
 import com.turkey.quick.rider.service.RiderSignupService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequiredArgsConstructor
+@RequestMapping("/api/rider/signup")
 public class RiderSignupController implements RiderSignupApi {
 
     private final RiderSignupService riderSignupService;
 
     @Override
-    public ApiResponse<RiderSignupResponse> signup(RiderSignupRequest request) {
+    @PostMapping
+    public ApiResponse<RiderSignupResponse> signup(
+            @RequestBody RiderSignupRequest request) {
         return ApiResponse.ok(RiderSignupResponse.from(riderSignupService.signup(request)));
     }
 }

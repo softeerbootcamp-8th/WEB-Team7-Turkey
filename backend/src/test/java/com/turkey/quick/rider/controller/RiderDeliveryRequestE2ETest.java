@@ -28,6 +28,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -210,7 +211,8 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void AVAILABLE_라이더가_조회하면_200과_WAITING_목록을_반환한다() {
+    @DisplayName("AVAILABLE 라이더가 조회하면 200과 WAITING 목록을 반환한다")
+    void shouldReturnWaitingRequestsForAvailableRider() {
         saveRider("e2e_rider_requests01", "p@ssw0rd", "01022223333", true);
         saveWaitingOrderWithFareSnapshot();
         String cookie = loginAndGetSessionCookie("e2e_rider_requests01", "p@ssw0rd");
@@ -225,7 +227,8 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 라이더_좌표를_보내면_반경_내_주문만_반환한다() {
+    @DisplayName("라이더 좌표를 보내면 반경 내 주문만 반환한다")
+    void shouldReturnOnlyRequestsWithinRadiusWhenCoordinatesAreProvided() {
         saveRider("e2e_rider_requests11", "p@ssw0rd", "01099998887", true);
         DeliveryOrder near = saveWaitingOrderWithFareSnapshot();
         DeliveryOrder far = saveWaitingOrderAt(new BigDecimal("37.9000000"), new BigDecimal("127.9000000"));
@@ -244,7 +247,8 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 라이더_좌표가_범위를_벗어나면_400을_반환한다() {
+    @DisplayName("라이더 좌표가 범위를 벗어나면 400을 반환한다")
+    void shouldReturnBadRequestForOutOfRangeCoordinates() {
         saveRider("e2e_rider_requests12", "p@ssw0rd", "01099998886", true);
         String cookie = loginAndGetSessionCookie("e2e_rider_requests12", "p@ssw0rd");
 
@@ -257,7 +261,8 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 운임_범위_필터를_보내면_범위_내_주문만_반환한다() {
+    @DisplayName("운임 범위 필터를 보내면 범위 내 주문만 반환한다")
+    void shouldReturnOnlyRequestsWithinFareRange() {
         saveRider("e2e_rider_requests13", "p@ssw0rd", "01099998885", true);
         DeliveryOrder cheap = saveWaitingOrderWithFare(3000L);
         DeliveryOrder expensive = saveWaitingOrderWithFare(9000L);
@@ -274,7 +279,8 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void size로_페이지가_잘리고_hasNext가_표시된다() {
+    @DisplayName("size로 페이지가 잘리고 hasNext가 표시된다")
+    void shouldLimitPageBySizeAndExposeHasNext() {
         saveRider("e2e_rider_requests14", "p@ssw0rd", "01099998884", true);
         saveWaitingOrderWithFare(3000L);
         saveWaitingOrderWithFare(5000L);
@@ -290,7 +296,8 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void fareMin이_fareMax보다_크면_400을_반환한다() {
+    @DisplayName("fareMin이 fareMax보다 크면 400을 반환한다")
+    void shouldReturnBadRequestWhenFareMinExceedsFareMax() {
         saveRider("e2e_rider_requests15", "p@ssw0rd", "01099998883", true);
         String cookie = loginAndGetSessionCookie("e2e_rider_requests15", "p@ssw0rd");
 
@@ -302,7 +309,8 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 페이지_크기가_0이면_400을_반환한다() {
+    @DisplayName("페이지 크기가 0이면 400을 반환한다")
+    void shouldReturnBadRequestWhenPageSizeIsZero() {
         saveRider("e2e_rider_requests16", "p@ssw0rd", "01099998882", true);
         String cookie = loginAndGetSessionCookie("e2e_rider_requests16", "p@ssw0rd");
 
@@ -313,14 +321,16 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 세션_쿠키가_없으면_401을_반환한다() {
+    @DisplayName("세션 쿠키가 없으면 401을 반환한다")
+    void shouldReturnUnauthorizedWithoutSessionCookie() {
         var response = rest.exchange(ENDPOINT, HttpMethod.GET, withCookie(null), ApiResponse.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
     @Test
-    void 라이더_운행_상태가_AVAILABLE이_아니면_403을_반환한다() {
+    @DisplayName("라이더 운행 상태가 AVAILABLE이 아니면 403을 반환한다")
+    void shouldReturnForbiddenWhenRiderIsNotAvailable() {
         saveRider("e2e_rider_requests02", "p@ssw0rd", "01055556666", false);
         String cookie = loginAndGetSessionCookie("e2e_rider_requests02", "p@ssw0rd");
 
@@ -331,7 +341,8 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void AVAILABLE_라이더가_상세를_조회하면_200과_상세주소_없는_정보를_반환한다() {
+    @DisplayName("AVAILABLE 라이더가 상세를 조회하면 200과 상세주소 없는 정보를 반환한다")
+    void shouldReturnDetailsWithoutPrivateAddressForAvailableRider() {
         saveRider("e2e_rider_requests03", "p@ssw0rd", "01011119999", true);
         DeliveryOrder order = saveWaitingOrderWithFareSnapshot();
         String cookie = loginAndGetSessionCookie("e2e_rider_requests03", "p@ssw0rd");
@@ -347,14 +358,16 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 상세_조회_시_세션_쿠키가_없으면_401을_반환한다() {
+    @DisplayName("상세 조회 시 세션 쿠키가 없으면 401을 반환한다")
+    void shouldReturnUnauthorizedWithoutSessionCookieForDetail() {
         var response = rest.exchange(ENDPOINT + "/1", HttpMethod.GET, withCookie(null), ApiResponse.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
     @Test
-    void 상세_조회_시_라이더_운행_상태가_AVAILABLE이_아니면_403을_반환한다() {
+    @DisplayName("상세 조회 시 라이더 운행 상태가 AVAILABLE이 아니면 403을 반환한다")
+    void shouldReturnForbiddenWhenUnavailableRiderRequestsDetail() {
         saveRider("e2e_rider_requests04", "p@ssw0rd", "01022224444", false);
         DeliveryOrder order = saveWaitingOrderWithFareSnapshot();
         String cookie = loginAndGetSessionCookie("e2e_rider_requests04", "p@ssw0rd");
@@ -365,7 +378,8 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 존재하지_않는_배송요청_상세를_조회하면_404를_반환한다() {
+    @DisplayName("존재하지 않는 배송요청 상세를 조회하면 404를 반환한다")
+    void shouldReturnNotFoundForUnknownDeliveryDetail() {
         saveRider("e2e_rider_requests05", "p@ssw0rd", "01033335555", true);
         String cookie = loginAndGetSessionCookie("e2e_rider_requests05", "p@ssw0rd");
 
@@ -376,7 +390,8 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void AVAILABLE_라이더가_배차를_확정하면_200과_ASSIGNED_BUSY_결과를_반환한다() {
+    @DisplayName("AVAILABLE 라이더가 배차를 확정하면 200과 ASSIGNED BUSY 결과를 반환한다")
+    void shouldAssignDeliveryAndSetRiderBusyOnAcceptance() {
         saveRider("e2e_rider_requests06", "p@ssw0rd", "01044445556", true);
         DeliveryOrder order = saveWaitingOrderWithFareSnapshot();
         String cookie = loginAndGetSessionCookie("e2e_rider_requests06", "p@ssw0rd");
@@ -394,14 +409,16 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 배차_확정_시_세션_쿠키가_없으면_401을_반환한다() {
+    @DisplayName("배차 확정 시 세션 쿠키가 없으면 401을 반환한다")
+    void shouldReturnUnauthorizedWithoutSessionCookieForAcceptance() {
         var response = rest.exchange(ENDPOINT + "/1/accept", HttpMethod.POST, withCookie(null), ApiResponse.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
     @Test
-    void 배차_확정_시_라이더_운행_상태가_AVAILABLE이_아니면_403을_반환한다() {
+    @DisplayName("배차 확정 시 라이더 운행 상태가 AVAILABLE이 아니면 403을 반환한다")
+    void shouldReturnForbiddenWhenUnavailableRiderAcceptsDelivery() {
         saveRider("e2e_rider_requests07", "p@ssw0rd", "01044445557", false);
         DeliveryOrder order = saveWaitingOrderWithFareSnapshot();
         String cookie = loginAndGetSessionCookie("e2e_rider_requests07", "p@ssw0rd");
@@ -413,7 +430,8 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 존재하지_않는_배송요청을_수락하면_404를_반환한다() {
+    @DisplayName("존재하지 않는 배송요청을 수락하면 404를 반환한다")
+    void shouldReturnNotFoundWhenAcceptingUnknownDelivery() {
         saveRider("e2e_rider_requests08", "p@ssw0rd", "01044445558", true);
         String cookie = loginAndGetSessionCookie("e2e_rider_requests08", "p@ssw0rd");
 
@@ -424,7 +442,8 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 이미_배차된_배송요청을_다시_수락하면_409를_반환한다() {
+    @DisplayName("이미 배차된 배송요청을 다시 수락하면 409를 반환한다")
+    void shouldReturnConflictWhenAcceptingAssignedDeliveryAgain() {
         saveRider("e2e_rider_requests09", "p@ssw0rd", "01044445559", true);
         saveRider("e2e_rider_requests10", "p@ssw0rd", "01044445560", true);
         DeliveryOrder order = saveWaitingOrderWithFareSnapshot();
@@ -442,7 +461,8 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 배차_대기_타임아웃을_넘긴_주문을_수락하면_409와_취소_환급이_일어난다() {
+    @DisplayName("배차 대기 타임아웃을 넘긴 주문을 수락하면 409와 취소 환급이 일어난다")
+    void shouldCancelAndRefundTimedOutDeliveryInsteadOfAccepting() {
         // 만료 정리(#42)는 컨트롤러가 수락 트랜잭션 밖에서 먼저 수행한다(#446 커넥션 풀 교착 회피).
         // 실제 HTTP 로 그 배선을 검증한다 — 만료 주문 수락 → 그 자리에서 취소·전액 환급 → 수락은 409.
         saveRider("e2e_rider_requests17", "p@ssw0rd", "01044445561", true);

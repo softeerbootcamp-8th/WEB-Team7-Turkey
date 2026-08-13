@@ -7,17 +7,15 @@ import com.turkey.quick.rider.dto.RiderOperatingStatusUpdateRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 
 /**
- * 라이더 운행 상태 API 계약(문서 전용).
+ * 라이더 운행 상태 API 계약.
  *
  * <p><b>역할 분담</b>은 payment 의 {@code CustomerPointApi}·{@code RiderPointApi} 와 같다(Discussion
- * #245): 이 인터페이스에는 순수 문서화 어노테이션({@code @Tag}, {@code @Operation},
- * {@code @ApiResponses})만 두고, 경로·HTTP 메서드 매핑({@code @RequestMapping}, {@code @GetMapping},
- * {@code @PatchMapping})과 바인딩·검증({@code @RequestAttribute}, {@code @Valid}, {@code @RequestBody})은
- * 전부 구현체에 둔다. Bean Validation 제약을 인터페이스에 두지 않아 오버라이드 충돌(HV000151)이 원천
- * 차단되고, 동작에 영향을 주는 어노테이션은 로직과 같은 파일에 모인다. 빈으로 등록된 구현체가 있어야
- * springdoc 이 스캔한다.
+ * #245): 이 인터페이스에는 문서화 어노테이션과 호출자 계약인 Bean Validation을 두고, 경로·HTTP 메서드
+ * 매핑과 바인딩은 구현체에 둔다. 오버라이드 구현은 파라미터 제약을 추가하거나 중복 선언하지 않는다.
+ * 빈으로 등록된 구현체가 있어야 springdoc 이 스캔한다.
  *
  * <p>운행 상태는 라이더 화면 분기(홈/콜 목록/진행 배송)와 위치 전송 주기를 결정하는 값이라, 앱
  * 진입·새로고침 직후 가장 먼저 조회한다.
@@ -49,5 +47,5 @@ public interface RiderOperatingStatusApi {
                     responseCode = "409", description = "배송 수행 중(BUSY)이라 직접 변경할 수 없음")
     })
     ApiResponse<RiderOperatingStatusResponse> changeOperatingStatus(
-            AuthenticatedRider rider, RiderOperatingStatusUpdateRequest request);
+            AuthenticatedRider rider, @Valid RiderOperatingStatusUpdateRequest request);
 }

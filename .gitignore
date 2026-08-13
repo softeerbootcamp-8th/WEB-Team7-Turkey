@@ -50,3 +50,20 @@ frontend/.claude/hooks/
 !.env.example
 .my.cnf
 !.my.cnf.example
+
+# ec2-seed.sh 실행마다 새로 생기는 매니페스트(부하테스트 계정↔deliveryId 매핑). 결과물이라 커밋 안 함.
+backend/loadtest/remote/ec2-seed-*.json
+# grafana.com 에서 내려받는 대시보드 JSON(생성물). fetch-dashboards.sh 로 받는다.
+infra/monitoring-ec2/provisioning/dashboards/*.json
+
+# sample-stats.sh 가 찍는 컨테이너 자원 표본(런마다 새로 생기는 결과물).
+backend/loadtest/.stats-latest.csv
+# 훅이 이미 보고한 런 목록(중복 방지용 상태).
+backend/loadtest/.reported-runs
+backend/loadtest/ec2-seed-*.json
+
+# 로컬 부하테스트 힙 덤프·GC 로그(#374). 수백MB 바이너리라 커밋 안 함.
+backend/heapdumps/
+
+# 데모 스크립트(scripts/demo) 전용 Playwright 의존성. package.json으로 재설치 가능.
+scripts/demo/node_modules/

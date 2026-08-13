@@ -58,7 +58,7 @@ public class RiderLocationService {
      * 최신 위치 저장(#317, 고객 추적 스냅샷용).
      *
      * <p>Redis 갱신이 실패해도 이 요청 자체는 계속 성공해야 하므로 예외를 삼키고 로깅만 한다 —
-     * 최신 위치는 다음 전송(BUSY 5초 주기)이 복구한다.
+     * 최신 위치는 다음 전송(BUSY, 20m 이동 또는 120초 경과 트리거, #391)이 복구한다.
      */
     private void saveLatestLocation(AuthenticatedRider rider, LocationPayload location) {
         try {
@@ -72,18 +72,18 @@ public class RiderLocationService {
     /**
      * 라이더가 수행 중인 배송을 찾아 그 채널로 발행한다.
      *
-     * <p><b>5초 주기로 불리는 조회다</b>(BUSY 전송 주기, #81). 그래서 이력 전체를 훑는
-     * {@code findInProgressByRiderId} 가 아니라 생성 컬럼의 유니크 인덱스를 그대로 타는
-     * {@link DeliveryOrderRepository#findInProgressByActiveRiderId} 를 쓴다 — 주문 이력이 쌓여도
-     * 비용이 늘지 않는다.
+     * <p><b>BUSY 위치 전송(20m 이동 또는 120초 경과 트리거, #391)이 올 때마다 매번 불리는 조회다</b>
+     * (#81). 그래서 이력 전체를 훑는 {@code findInProgressByRiderId} 가 아니라 생성 컬럼의 유니크
+     * 인덱스를 그대로 타는 {@link DeliveryOrderRepository#findInProgressByActiveRiderId} 를 쓴다 —
+     * 주문 이력이 쌓여도 비용이 늘지 않는다.
      *
-     * <p><b>조회(5초마다 다시 조회하잖아)를 없애고 라이더→배송 매핑을 캐시하지 않는 이유</b>:
-     * 5초마다 조회하는 비용을 내고 개인정보 유출(세션 안끝난 고객이 다른 실시간 정보 조회) 버그의
-     * 가능성을 원천 차단한다.
+     * <p><b>이 조회를 없애고 라이더→배송 매핑을 캐시하지 않는 이유</b>: 위치 전송마다 다시 조회하는
+     * 비용을 내고 개인정보 유출(세션 안끝난 고객이 다른 실시간 정보 조회) 버그의 가능성을 원천
+     * 차단한다.
      *
      * <p><b>조회 실패가 위치 갱신을 실패시키지 않는다.</b> 이 경로에 MySQL 의존이 있으므로,
      * DB 장애가 최신 위치 저장까지 같이 죽이지 않도록 예외를 삼킨다. 전달은
-     * at-most-once 이고 다음 전송(5초)이 복구한다.
+     * at-most-once 이고 다음 전송이 복구한다.
      *
      * <p>수행 중 배송이 없는 BUSY 라이더는 <b>정합성이 깨진 상태</b>다.
      * 이때 WARN 을 남긴다 — 배송 완료 처리와 라이더 상태 전이가 어긋났을 때 여기로 드러난다.
@@ -103,8 +103,9 @@ public class RiderLocationService {
             // 로컬 레지스트리(SseRelay)를 직접 부르지 않는 것이 핵심이다 — 고객은 다른 인스턴스에
             // 연결돼 있을 수 있다(#317). TrackingPublisher 는 스스로 예외를 삼킨다.
             //
-            // 상태를 실은 사본만 발행한다(#449) — 저장소로 간 원본에는 상태가 없다. 주기적으로
-            // 흐르는 이 프레임이 일회성 상태 전이 이벤트의 유실을 최대 5초 안에 덮는다.
+            // 상태를 실은 사본만 발행한다(#449) — 저장소로 간 원본에는 상태가 없다. 이 프레임이
+            // 일회성 상태 전이 이벤트의 유실을 다음 위치 전송(최대 120초 경과 트리거, #391)까지
+            // 걸려서라도 덮는다.
             trackingPublisher.publish(delivery.get().getOrderId(), location.withStatus(status));
         } catch (RuntimeException e) {
             log.warn("event=RIDER_LOCATION_RELAY_FAILED riderId={} reason={}",

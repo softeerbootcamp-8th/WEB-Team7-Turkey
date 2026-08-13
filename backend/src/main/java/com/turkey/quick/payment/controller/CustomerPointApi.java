@@ -17,19 +17,17 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 
 /**
- * 고객 포인트 API 계약(문서 전용)
+ * 고객 포인트 API 계약
  *
- * <p><b>역할 분담</b>: 이 인터페이스에는 순수 문서화 어노테이션({@code @Tag}, {@code @Operation},
- * {@code @ApiResponses}, {@code @Parameter}, swagger {@code @RequestBody})만 둔다. 경로·HTTP 메서드
- * 매핑({@code @RequestMapping}, {@code @GetMapping} 등)과 바인딩·검증
- * ({@code @RequestAttribute}, {@code @RequestParam}, {@code @PathVariable}, {@code @Valid})은
- * 전부 구현체에 둔다.
+ * <p><b>역할 분담</b>: 이 인터페이스에는 문서화 어노테이션과 호출자 계약인 Bean Validation을 둔다.
+ * 경로·HTTP 메서드 매핑과 바인딩은 구현체에 둔다.
  *
- * <p>이렇게 나누는 이유는 두 가지다. 첫째, 인터페이스에 Bean Validation 제약이 없으므로
- * 오버라이드에서 제약을 재선언해 HV000151 로 실패할 여지가 애초에 없다. 둘째, 실제 동작에 영향을
- * 주는 어노테이션은 로직과 같은 파일에서 보이고, 수십 줄짜리 명세는 여기로 분리된다.
+ * <p>Bean Validation은 호출자가 지켜야 할 사전조건이므로 인터페이스에 한 번만 선언한다. 구현체에서
+ * 파라미터 제약을 추가하거나 중복 선언하면 상속 규칙을 위반해 HV000151이 발생한다. 매핑·바인딩은
+ * 로직과 같은 파일에서 보이고, 수십 줄짜리 명세는 여기로 분리된다.
  * springdoc 은 상위 타입의 어노테이션을 함께 읽으므로 문서는 정상 생성된다.
  *
  * <p><b>주의</b>: 매핑 어노테이션이 구현체에만 있으므로 컨트롤러가 JDK 동적 프록시로 감싸이면
@@ -114,7 +112,7 @@ public interface CustomerPointApi {
                     }""")))
     ApiResponse<PointChargeResponse> requestPointCharge(
             AuthenticatedCustomer customer,
-            PointChargeRequest request);
+            @Valid PointChargeRequest request);
 
     @Operation(
             operationId = "confirmCustomerPointCharge",
@@ -163,7 +161,7 @@ public interface CustomerPointApi {
             @Parameter(description = "충전 식별자", example = "331")
             Long pointChargeId,
 
-            PointChargeConfirmRequest request);
+            @Valid PointChargeConfirmRequest request);
 
     @Operation(
             operationId = "cancelCustomerPointCharge",

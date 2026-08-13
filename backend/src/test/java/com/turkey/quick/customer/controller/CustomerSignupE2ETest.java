@@ -21,6 +21,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -74,7 +75,7 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
     }
 
     @AfterEach
-    void 만든_약관을_정리한다() {
+    void cleanupCreatedTerms() {
         // resolveAgreedTerms는 role별 "현재 활성인 모든 필수 약관"을 검사하므로, 테스트가 남긴
         // Term이 다른 테스트의 필수 약관 체크에 새어 들어가지 않도록 매번 정리한다.
         // member_term_agreement가 term을 FK로 참조하므로 자식부터 지운다.
@@ -94,7 +95,8 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 인증번호_요청부터_확인까지_거쳐_발급된_토큰으로_가입하면_200과_생성된_계정을_반환한다() {
+    @DisplayName("인증번호 요청부터 확인까지 거쳐 발급된 토큰으로 가입하면 200과 생성된 계정을 반환한다")
+    void shouldCreateAccountAfterCompletingPhoneVerification() {
         String phoneNumber = "010-1111-2222";
         rest.postForEntity(PHONE_VERIFICATION_ENDPOINT,
                 Map.of("phoneNumber", phoneNumber, "purpose", VerificationPurpose.SIGNUP), ApiResponse.class);
@@ -124,7 +126,8 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 필수_약관에_동의하지_않으면_400을_반환한다() {
+    @DisplayName("필수 약관에 동의하지 않으면 400을 반환한다")
+    void shouldReturnBadRequestWithoutRequiredTermAgreement() {
         Term required = saveRequiredTerm("SIGNUP_TERM_MISSING");
         String phoneNumber = "01033334444";
         String token = issueVerifiedToken(phoneNumber);
@@ -145,7 +148,8 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 필수_약관에_동의하면_동의_이력과_함께_가입된다() {
+    @DisplayName("필수 약관에 동의하면 동의 이력과 함께 가입된다")
+    void shouldSaveAgreementHistoryWhenRequiredTermsAreAccepted() {
         Term required = saveRequiredTerm("SIGNUP_TERM_OK");
         String phoneNumber = "01044445555";
         String token = issueVerifiedToken(phoneNumber);
@@ -166,7 +170,8 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 이미_사용중인_아이디로_가입하면_409를_반환한다() {
+    @DisplayName("이미 사용중인 아이디로 가입하면 409를 반환한다")
+    void shouldReturnConflictForAlreadyUsedLoginId() {
         memberRepository.save(Member.create("taken_login", "hash", "기존회원", "01055556666", MemberRole.CUSTOMER));
         String phoneNumber = "01077778888";
         String token = issueVerifiedToken(phoneNumber);
@@ -186,7 +191,8 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 휴대전화_인증_없이_가입하면_400을_반환한다() {
+    @DisplayName("휴대전화 인증 없이 가입하면 400을 반환한다")
+    void shouldReturnBadRequestWithoutPhoneVerification() {
         var signupRequest = Map.of(
                 "loginId", "e2e_user05",
                 "password", "aaa",
@@ -202,7 +208,8 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 비밀번호와_비밀번호확인이_다르면_400을_반환한다() {
+    @DisplayName("비밀번호와 비밀번호확인이 다르면 400을 반환한다")
+    void shouldReturnBadRequestWhenPasswordConfirmationDoesNotMatch() {
         String phoneNumber = "01066667777";
         String token = issueVerifiedToken(phoneNumber);
 
@@ -221,7 +228,8 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 로그인_ID가_50자를_초과하면_409가_아니라_400을_반환한다() {
+    @DisplayName("로그인 ID가 50자를 초과하면 409가 아니라 400을 반환한다")
+    void shouldReturnBadRequestForLoginIdLongerThanFiftyCharacters() {
         String phoneNumber = "01088889999";
         String token = issueVerifiedToken(phoneNumber);
 
@@ -241,7 +249,8 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 약관_ID_목록에_null이_섞이면_500이_아니라_400을_반환한다() {
+    @DisplayName("약관 ID 목록에 null이 섞이면 500이 아니라 400을 반환한다")
+    void shouldReturnBadRequestWhenTermIdListContainsNull() {
         String phoneNumber = "01022223333";
         String token = issueVerifiedToken(phoneNumber);
 

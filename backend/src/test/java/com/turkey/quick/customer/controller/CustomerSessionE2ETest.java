@@ -9,6 +9,7 @@ import com.turkey.quick.member.domain.MemberRole;
 import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
 import java.util.Map;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -63,7 +64,8 @@ class CustomerSessionE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 유효한_세션_쿠키면_200과_고객_정보를_반환한다() {
+    @DisplayName("유효한 세션 쿠키면 200과 고객 정보를 반환한다")
+    void shouldReturnCustomerForValidSessionCookie() {
         saveCustomer("e2e_session01", "p@ssw0rd", "01011112222");
         String cookie = loginAndGetSessionCookie("e2e_session01", "p@ssw0rd");
 
@@ -76,7 +78,8 @@ class CustomerSessionE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 세션_쿠키가_없으면_401을_반환한다() {
+    @DisplayName("세션 쿠키가 없으면 401을 반환한다")
+    void shouldReturnUnauthorizedWithoutSessionCookie() {
         var response = rest.exchange(SESSION_ENDPOINT, org.springframework.http.HttpMethod.GET,
                 withCookie(null), ApiResponse.class);
 
@@ -84,7 +87,8 @@ class CustomerSessionE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 존재하지_않는_세션이면_401을_반환한다() {
+    @DisplayName("존재하지 않는 세션이면 401을 반환한다")
+    void shouldReturnUnauthorizedForUnknownSession() {
         var response = rest.exchange(SESSION_ENDPOINT, org.springframework.http.HttpMethod.GET,
                 withCookie("SESSION_ID=no-such-session"), ApiResponse.class);
 
@@ -92,7 +96,8 @@ class CustomerSessionE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 만료된_세션이면_401과_함께_쿠키를_만료시키는_응답을_반환한다() {
+    @DisplayName("만료된 세션이면 401과 함께 쿠키를 만료시키는 응답을 반환한다")
+    void shouldExpireCookieForExpiredSession() {
         var response = rest.exchange(SESSION_ENDPOINT, org.springframework.http.HttpMethod.GET,
                 withCookie("SESSION_ID=expired-or-unknown-session"), ApiResponse.class);
 
@@ -103,7 +108,8 @@ class CustomerSessionE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 로그인_이후_탈퇴한_계정이면_401을_반환한다() {
+    @DisplayName("로그인 이후 탈퇴한 계정이면 401을 반환한다")
+    void shouldReturnUnauthorizedForAccountWithdrawnAfterLogin() {
         Member member = saveCustomer("e2e_session02", "p@ssw0rd", "01022223333");
         String cookie = loginAndGetSessionCookie("e2e_session02", "p@ssw0rd");
 
@@ -117,7 +123,8 @@ class CustomerSessionE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 라이더_세션으로_고객_세션_확인을_시도하면_401을_반환한다() {
+    @DisplayName("라이더 세션으로 고객 세션 확인을 시도하면 401을 반환한다")
+    void shouldReturnUnauthorizedForRiderSession() {
         Member rider = memberRepository.save(
                 Member.create("e2e_rider_session", PASSWORD_ENCODER.encode("p@ssw0rd"), "라이더", "01033334444", MemberRole.RIDER));
         String sessionId = "rider-session-id";

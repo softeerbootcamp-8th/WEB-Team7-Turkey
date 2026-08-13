@@ -33,7 +33,8 @@ class RedisSessionStoreIntegrationTest extends IntegrationTestSupport {
     private StringRedisTemplate redisTemplate;
 
     @Test
-    void 남은_TTL이_짧아진_세션을_다시_전체_TTL로_늘린다() {
+    @DisplayName("남은 TTL이 짧아진 세션을 다시 전체 TTL로 늘린다")
+    void shouldExtendShortenedTtlBackToFullTtl() {
         sessionStore.create(SESSION_ID, 42L, Duration.ofMinutes(1));
 
         sessionStore.extend(SESSION_ID, Duration.ofHours(2));
@@ -43,7 +44,8 @@ class RedisSessionStoreIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    void 이미_만료돼_없는_세션은_되살리지_않는다() {
+    @DisplayName("이미 만료돼 없는 세션은 되살리지 않는다")
+    void shouldNotResurrectExpiredSession() {
         sessionStore.extend(SESSION_ID, Duration.ofHours(2));
 
         assertThat(redisTemplate.hasKey(KEY)).isFalse();

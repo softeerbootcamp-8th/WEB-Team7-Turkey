@@ -27,6 +27,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -90,7 +91,8 @@ class CustomerSignupServiceTest {
     }
 
     @Test
-    void 정상_가입하면_비밀번호를_해시해_저장하고_결과를_반환한다() {
+    @DisplayName("정상 가입하면 비밀번호를 해시해 저장하고 결과를 반환한다")
+    void shouldHashPasswordSaveMemberAndReturnResult() {
         issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
         when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of(term(1L, true)));
 
@@ -107,7 +109,8 @@ class CustomerSignupServiceTest {
     }
 
     @Test
-    void 정상_가입하면_포인트_지갑을_생성한다() {
+    @DisplayName("정상 가입하면 포인트 지갑을 생성한다")
+    void shouldCreatePointWalletOnSignup() {
         issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
         when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of());
 
@@ -119,7 +122,8 @@ class CustomerSignupServiceTest {
     }
 
     @Test
-    void 아이디_또는_휴대전화_중복으로_가입에_실패하면_포인트_지갑을_만들지_않는다() {
+    @DisplayName("아이디 또는 휴대전화 중복으로 가입에 실패하면 포인트 지갑을 만들지 않는다")
+    void shouldNotCreatePointWalletWhenDuplicateMemberDataRejectsSignup() {
         when(memberRepository.existsByLoginId(LOGIN_ID)).thenReturn(true);
 
         assertThatThrownBy(() -> customerSignupService.signup(request(List.of())))
@@ -129,7 +133,8 @@ class CustomerSignupServiceTest {
     }
 
     @Test
-    void DB_유니크_제약_위반으로_가입에_실패하면_포인트_지갑을_만들지_않는다() {
+    @DisplayName("DB 유니크 제약 위반으로 가입에 실패하면 포인트 지갑을 만들지 않는다")
+    void shouldNotCreatePointWalletWhenDatabaseUniqueConstraintRejectsSignup() {
         issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
         when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of());
         when(memberRepository.save(any())).thenThrow(new DataIntegrityViolationException("uk_member_login_id"));
@@ -141,7 +146,8 @@ class CustomerSignupServiceTest {
     }
 
     @Test
-    void 정상_가입하면_동의한_약관마다_동의_이력을_저장한다() {
+    @DisplayName("정상 가입하면 동의한 약관마다 동의 이력을 저장한다")
+    void shouldSaveAgreementHistoryForEveryAgreedTerm() {
         issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
         when(termRepository.findByActiveTrueAndTargetRoleIn(any()))
                 .thenReturn(List.of(term(1L, true), term(2L, false)));
@@ -155,7 +161,8 @@ class CustomerSignupServiceTest {
     }
 
     @Test
-    void 비밀번호와_비밀번호확인이_다르면_거부한다() {
+    @DisplayName("비밀번호와 비밀번호확인이 다르면 거부한다")
+    void shouldRejectWhenPasswordConfirmationDoesNotMatch() {
         var mismatched = new CustomerSignupRequest(
                 LOGIN_ID, "p@ssw0rd", "different", "홍길동", PHONE_NUMBER, TOKEN, List.of());
 
@@ -168,7 +175,8 @@ class CustomerSignupServiceTest {
     }
 
     @Test
-    void 이미_사용중인_아이디면_거부한다() {
+    @DisplayName("이미 사용중인 아이디면 거부한다")
+    void shouldRejectAlreadyUsedLoginId() {
         when(memberRepository.existsByLoginId(LOGIN_ID)).thenReturn(true);
 
         assertThatThrownBy(() -> customerSignupService.signup(request(List.of())))
@@ -178,7 +186,8 @@ class CustomerSignupServiceTest {
     }
 
     @Test
-    void 이미_가입된_휴대전화_번호면_거부한다() {
+    @DisplayName("이미 가입된 휴대전화 번호면 거부한다")
+    void shouldRejectAlreadyRegisteredPhoneNumber() {
         when(memberRepository.existsByPhoneNumber(PHONE_NUMBER)).thenReturn(true);
 
         assertThatThrownBy(() -> customerSignupService.signup(request(List.of())))
@@ -188,7 +197,8 @@ class CustomerSignupServiceTest {
     }
 
     @Test
-    void 인증_토큰이_없거나_만료됐으면_거부한다() {
+    @DisplayName("인증 토큰이 없거나 만료됐으면 거부한다")
+    void shouldRejectMissingOrExpiredVerificationToken() {
         assertThatThrownBy(() -> customerSignupService.signup(request(List.of())))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getStatus())
@@ -196,7 +206,8 @@ class CustomerSignupServiceTest {
     }
 
     @Test
-    void 인증_토큰은_한_번만_쓸_수_있다() {
+    @DisplayName("인증 토큰은 한 번만 쓸 수 있다")
+    void shouldConsumeVerificationTokenOnlyOnce() {
         issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
         when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of());
         customerSignupService.signup(request(List.of()));
@@ -209,7 +220,8 @@ class CustomerSignupServiceTest {
     }
 
     @Test
-    void 계정찾기_목적으로_발급된_토큰으로는_가입할_수_없다() {
+    @DisplayName("계정찾기 목적으로 발급된 토큰으로는 가입할 수 없다")
+    void shouldRejectTokenIssuedForAccountRecovery() {
         issueVerifiedToken(VerificationPurpose.FIND_ID, PHONE_NUMBER);
 
         assertThatThrownBy(() -> customerSignupService.signup(request(List.of())))
@@ -219,7 +231,8 @@ class CustomerSignupServiceTest {
     }
 
     @Test
-    void 인증된_휴대전화_번호와_다르면_거부한다() {
+    @DisplayName("인증된 휴대전화 번호와 다르면 거부한다")
+    void shouldRejectDifferentVerifiedPhoneNumber() {
         issueVerifiedToken(VerificationPurpose.SIGNUP, "01099998888");
 
         assertThatThrownBy(() -> customerSignupService.signup(request(List.of())))
@@ -229,7 +242,8 @@ class CustomerSignupServiceTest {
     }
 
     @Test
-    void 필수_약관에_동의하지_않으면_거부한다() {
+    @DisplayName("필수 약관에 동의하지 않으면 거부한다")
+    void shouldRejectMissingRequiredTermAgreement() {
         issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
         when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of(term(1L, true)));
 
@@ -242,7 +256,8 @@ class CustomerSignupServiceTest {
     }
 
     @Test
-    void 아직_발효되지_않은_필수_약관은_동의하지_않아도_가입할_수_있다() {
+    @DisplayName("아직 발효되지 않은 필수 약관은 동의하지 않아도 가입할 수 있다")
+    void shouldAllowSignupWithoutAgreementToNotYetEffectiveRequiredTerm() {
         issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
         Term notYetEffective = term(1L, true, LocalDateTime.now(ZoneOffset.UTC).plusDays(1), null);
         when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of(notYetEffective));
@@ -253,7 +268,8 @@ class CustomerSignupServiceTest {
     }
 
     @Test
-    void 이미_종료된_필수_약관은_동의하지_않아도_가입할_수_있다() {
+    @DisplayName("이미 종료된 필수 약관은 동의하지 않아도 가입할 수 있다")
+    void shouldAllowSignupWithoutAgreementToExpiredRequiredTerm() {
         issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
         LocalDateTime yesterday = LocalDateTime.now(ZoneOffset.UTC).minusDays(1);
         Term expired = term(1L, true, yesterday.minusDays(1), yesterday);
@@ -265,7 +281,8 @@ class CustomerSignupServiceTest {
     }
 
     @Test
-    void 약관_검증에_실패하면_인증_토큰을_소비하지_않는다() {
+    @DisplayName("약관 검증에 실패하면 인증 토큰을 소비하지 않는다")
+    void shouldNotConsumeVerificationTokenWhenTermValidationFails() {
         issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
         when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of(term(1L, true)));
 
@@ -277,7 +294,8 @@ class CustomerSignupServiceTest {
     }
 
     @Test
-    void 존재하지_않는_약관_ID로_요청하면_거부한다() {
+    @DisplayName("존재하지 않는 약관 ID로 요청하면 거부한다")
+    void shouldRejectUnknownTermId() {
         issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
         when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of(term(1L, true)));
 
@@ -288,7 +306,8 @@ class CustomerSignupServiceTest {
     }
 
     @Test
-    void 사전_중복_확인을_통과해도_DB_유니크_제약을_어기면_409로_변환한다() {
+    @DisplayName("사전 중복 확인을 통과해도 DB 유니크 제약을 어기면 409로 변환한다")
+    void shouldTranslateDatabaseUniqueConstraintViolationToConflict() {
         // 존재 확인과 저장 사이의 경쟁: existsByLoginId는 통과했지만 그 사이 다른 요청이 먼저 가입을 끝낸 경우.
         issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
         when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of());

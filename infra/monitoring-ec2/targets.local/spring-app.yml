@@ -1,0 +1,4 @@
+# 로컬 검증용. 컨테이너에서 호스트로 나가 bootRun 중인 앱의 Actuator 를 긁는다.
+# 앱을 안 띄웠으면 이 대상만 down 이고 나머지 검증은 그대로 진행된다.
+- targets:
+    - "host.docker.internal:8081"

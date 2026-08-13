@@ -29,6 +29,31 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 프롬프트에 이슈 번호가 나오면 `UserPromptSubmit` 훅(`.claude/hooks/issue-mvp-trigger.py`)이 스킬 로드를 안내한다.
 작업 기록은 `docs/worklog/`에 이슈당 한 파일로 남기고, 사람이 고른 선택과 근거를 적는다.
 
+## 부하테스트 절차
+
+k6 부하테스트는 `loadtest` 스킬(`.claude/skills/loadtest/`)이 정본 절차다. 목적만 정하면
+대상 선정 → 시나리오 → 계측 스택 기동 → 시드 → 실행 → 지표 수집 → 리포트까지 진행한다.
+엔드포인트별 사전조건(그 요청이 실제로 일을 하게 만드는 상태 조건)은
+`.claude/skills/loadtest/references/preconditions.md` 가 정본이다 — OpenAPI 스펙에 없는 정보이고,
+빠뜨리면 **200 만 받고 아무 일도 안 한 결과를 성능 수치로 오해**한다(AVAILABLE 라이더로 위치
+갱신을 때리는 경우가 실례다).
+
+- **대상에 따라 디렉터리가 갈린다**(2026-08-11 결정): `backend/loadtest/local/`(로컬 docker 앱) 과
+  `backend/loadtest/remote/`(배포 서버). 같은 명령처럼 보이면 실수로 팀 공용 환경을 때리기 때문이다.
+  `collect.py` 와 arm 스크립트는 최상위 공용이고, 대상은 `BASE_URL` 로만 갈린다 — arm 을 대상별로
+  복사하면 한쪽만 고쳐져 로컬·배포 수치를 직접 비교할 수 없게 된다.
+  - `remote/` 는 가드가 따로 있다(`backend/loadtest/remote/README.md`): 사전 공지, 끝난 뒤 정리 의무, 부하 생성기
+    위치를 리포트에 기록. **로컬 절차를 그대로 옮겨 쓰지 않는다.**
+  - k6 결과는 어느 대상이든 **로컬 Prometheus** 로 보낸다. 배포 Prometheus 로 밀면 보존 상한(8GB)에
+    닿을 때 오래된 블록부터 지워져 **운영 지표가 밀려 사라진다** — k6 와 운영 지표를 구분하지 않는다.
+- 측정 경로(k6 → app → mysql/redis)는 한 docker 네트워크 안에서 끝낸다. 관측(스크레이프·결과
+  전송)은 호스트를 경유해도 무해하다.
+- 런당 원본 수치는 `docs/loadtest/`에 한 파일, 여러 런을 비교한 결론은
+  `backend/loadtest/README.md`에 누적한다.
+- k6 종료 시 `PostToolUse` 훅(`.claude/hooks/k6-report.py`)이 `backend/loadtest/collect.py` 를
+  돌려 지표 표를 올려 준다. **사용자가 자기 터미널에서 돌린 k6 에는 붙지 않는다**(훅은 세션의
+  tool 호출에만 발동) — 그때는 `collect.py` 를 직접 부른다.
+
 ## 작업 원칙
 
 - 기존 디렉터리 구조와 팀 합의를 우선한다. 요청 없이 대규모 구조 변경·기술 교체를 하지 않는다.
@@ -53,7 +78,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 
 ## 기술 스택
 
-- Backend: Java 21, Spring Boot 3.4.x, Gradle, Lombok, JPA, JUnit + AssertJ, SSE, Flyway
+- Backend: Java 21, Spring Boot 4.1.0, Gradle, Lombok, JPA, JUnit + AssertJ, SSE, Flyway
 - Data: MySQL 8.4, Redis
 - Infra: AWS EC2(백엔드), S3(프론트 빌드 산출물), CloudFront(CDN), GitHub Actions
 - Frontend: React, TanStack Router(파일 기반 라우팅, `routeTree.gen.ts` 자동 생성), TanStack Query, Orval(OpenAPI 기반 API 클라이언트 자동 생성), axios, shadcn/ui
@@ -121,6 +146,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - Redis 용도: **세션 저장 / 휴대전화 인증번호(TTL) / 라이더 최신 위치(`RiderLocationRepository`, BUSY 라이더만, TTL 10분) / SSE 이벤트 팬아웃(Pub/Sub)**. 영속 원본 저장소로는 쓰지 않는다. Pub/Sub은 **SSE 팬아웃 용도로만** 쓰고 작업 큐·이벤트 버스·인스턴스 간 RPC로 확장하지 않는다.
 - **GEO 저장소(`OrderGeoRepository`, 키 `order:geo`)는 호출자가 0**이다(#342/#339). 배차 위치 검색을 라이더가 아니라 주문 픽업지 인덱싱으로 뒤집기로 확정(#101 미구현)했기 때문 — **데드 코드처럼 보이지만 의도된 상태**(주문 GEO 이슈에서 재사용).
 - Redis 배포는 **EC2에 직접 설치**(2026-07-29, 디스커션 #176). ElastiCache는 비용 문제로 제외.
+- MySQL도 **EC2에 직접 설치**(RDS 아님, 사람 확인). 인스턴스 사이징: WAS `t4g.micro`, DB `t3.micro`(사람 확인, 2026-08-11).
 - 영속성·트랜잭션 정합성이 필요한 데이터는 MySQL이 정본(사용자·배송요청·배차·상태·포인트 원장·정산·위치 이력).
 - 수평 확장 가능한 모놀리식 Spring Boot WAS(코드 수준 책임 분리, MSA 아님). **실제 배포는 단일 인스턴스.**
 - 프론트 산출물은 S3 배포 + CloudFront 제공. **CloudFront 배포 하나에 `/api/*`·SSE behavior를 붙여 EC2를 origin으로 묶었다**(#26, SSE 경로 CachingDisabled). 이 단일 오리진 전제 위에서 세션 쿠키는 `SameSite=Lax` + 프로파일별 `Secure`(`common/auth/SessionCookie`) — API를 별도 오리진으로 분리하면 `SameSite=None`으로 재검토해야 한다.
@@ -137,7 +163,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - SSE 외에 **위치 폴링 API**도 있다(`GET /api/customer/deliveries/{deliveryId}/location`, `CustomerLocationQueryService`, #311) — Redis 최신 위치를 읽는 프론트 백업 경로. SSE `subscribeTracking`은 `"connected"` 코멘트만 보내고 **위치 스냅샷 init 이벤트가 없다.**
 - 추적 스냅샷(`GET .../tracking`)과 스트림은 **같은 게이트**(`OrderStatus.isTerminal()`)를 쓴다 — **WAITING도 통과, COMPLETED·CANCELED만 409**(#401).
 - **`DeliveryOrderRepository.findWithAssignedRiderById`는 반드시 `left join fetch`**(#401/#421). WAITING은 `assigned_rider_id`가 NULL이라 inner join이면 결과가 비어 500이 난다. 같은 이유로 `DeliveryTrackingQueryService`는 라이더가 null이면 `DeliveryRouteEstimator`를 호출하지 않는다(`CustomerDeliveryTrackingE2ETest`의 WAITING 케이스가 고정).
-- **위치 전송 주기·임계값**(#81): AVAILABLE 30초 / BUSY 5초 / UNAVAILABLE 미전송, 최소 이동 20m, 최대 속도 50 m/s, 정확도 상한 100m, 허용 과거 60초·미래 5초, 정지 시 강제 전송 120초, Redis 최신 위치 TTL 10분. **이 값들은 지금 클라이언트(안드로이드)만 쓴다** — 서버측 필터(`LocationAcceptancePolicy`)는 #297에서 제거 후 안 되살렸다. 다시 만들면 두 값이 같아야 한다.
+- **위치 전송 주기·임계값**(#81, BUSY 간격은 #391로 갱신): BUSY는 고정 주기가 아니라 최소 0.5초 간격으로 "최소 이동 20m 또는 정지 120초"일 때만 전송(#391) / AVAILABLE·UNAVAILABLE은 전송 자체가 없다(#338 — 위 상태 매핑 표의 "없음(#342)"과 동일 사실). 최대 속도 50 m/s, 정확도 상한 100m, 허용 과거 60초·미래 5초, Redis 최신 위치 TTL 10분. **이 값들은 지금 클라이언트(안드로이드)만 쓴다** — 서버측 필터(`LocationAcceptancePolicy`)는 #297에서 제거 후 안 되살렸다. 다시 만들면 두 값이 같아야 한다.
 - **위치 갱신 실패 응답 경계**(#81): 좌표 범위 밖·필수 값 누락·정확도 음수·미래 시각은 400. **정확도 상한 초과·60초 초과 과거 fix는 200 + `reason`** 으로 수용·폐기(실내 측위·탭 복귀에서 정상 발생). 그래서 정확도 상한을 `@DecimalMax`로 달 수 없다(Bean Validation 위반은 400).
 - **SSE 연결 수 제한은 두지 않는다**(#317, 예전 배송당 3개 ZSET 제한 제거).
 - **끊긴 연결 탐지에는 쓰기가 최소 두 번 필요**하다(#317 실측, 첫 쓰기는 소켓 버퍼에 들어가 성공). **"한 번 보내면 정리된다"고 가정하는 테스트를 쓰지 말 것.**
@@ -162,7 +188,8 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - **`point_transaction` 요청키 유니크는 `(request_key, transaction_type)`**(V18, #40). ORDER_USE와 ORDER_REFUND가 같은 주문 요청키를 공유하고, 그 공유가 추적 근거가 된다.
 - **`point_charge.failure_reason`은 FAILED·CANCELED 두 의미를 겸한다**(#34). 해석 시 반드시 `status`를 함께 본다.
 - 결제는 MVP에서 포인트 기반/모킹 흐름 우선(실 PG 연동 아님).
-- 라이더 출금 최소 금액은 5,000P(`RiderPaymentService.MIN_WITHDRAWAL_AMOUNT`, #68, 잠정). 계좌 미등록·잔액 부족은 둘 다 409.
+- 라이더 출금 최소 금액은 5,000P(`RiderPaymentService.MIN_WITHDRAWAL_AMOUNT`, #68, 잠정). 잔액 부족은 409.
+- **출금 계좌는 사전 등록 없이 신청 시점에 요청 바디로 받는다**(#68 계약 재변경, 2026-08-11). `rider_payout_account`(암호화 저장, #87) 방식 대신 `WithdrawalRequest`에 `bankCode`·`accountNumber`·`accountHolderName`을 함께 받고, `RiderPaymentService.maskAccountNumber`가 즉시 마스킹한 뒤 원본을 버린다. `RiderPayoutAccount`·`RiderPayoutAccountRepository`는 코드는 남아 있으나 어떤 서비스도 참조하지 않는 의도된 데드 코드다(`order:geo`와 같은 패턴, `rider_payout_account` 테이블은 V7 적용 후라 유지). 워크로그 `2026-08-11-68-withdrawal-inline-account.md` 참고.
 
 ### 경로 탐색·ETA
 
@@ -209,6 +236,8 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - **`#22`(아이디 찾기)가 `VerificationCodeStore.consumeVerifiedToken`을 아직 안 쓴다** — 구현 시 연결 필요.
 - **라이더 콜 상세(#57)가 물품 무게·수량을 못 준다** — `delivery_order`에 컬럼 없음(`itemType`만). 필요해지면 Flyway 마이그레이션 + 주문 생성 저장까지 함께 논의.
 - **배송요청 생성 화면의 기사님 전달사항(#205)을 저장할 컬럼·계약이 없다.** 필요하면 최대 길이·라이더 노출 시점과 함께 별도 이슈로.
+- **출금 모의 처리(#90, `POST /api/rider/points/withdrawals/{id}/process`)를 실제로 누가/언제 호출할지 미정.** 라이더 앱 화면인지 운영 도구인지 정해지지 않아 프론트 연동은 이번 이슈 범위에서 뺐다.
+- **#219 이슈 본문이 "출금 계좌 등록·변경(#87)" 의존을 명시하지만, 출금 계약이 신청 시 계좌 입력 방식으로 바뀌면서(위 「결제·포인트」) #87이 더 이상 필요하지 않다.** #219 프론트 연동 시 이슈 본문·구현 범위 재확인 필요 — 계좌 등록 화면 대신 출금 신청 폼에 계좌 입력 필드를 넣는 방향.
 
 ### 결정이 필요한 계약·정책
 
@@ -218,6 +247,7 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 - 정산 생성 시점과 실패 처리 방식.
 - 동일 요청 재전송 멱등성 정책(요청 식별값 기준).
 - 로그인·회원가입 화면에 비인증 가드를 걸지(#195). 현재는 로그인 상태로도 열린다.
+- **고객 포인트 거래 내역 조회에 기간(조회 기간) 필터가 없다**(#35). 이슈 명세엔 있으나 라이더 구현(#69)에 선례가 없어 라이더와 동일하게(유형+페이지만) 구현했다. 필요해지면 라이더 쪽도 함께 확장할지 논의 필요.
 
 ### 알려진 결함 (고칠지 감내할지 미정)
 
@@ -241,9 +271,11 @@ Claude Code가 Turkey(퀵배송 매칭 서비스) 저장소를 수정할 때 지
 
 ### 인프라 (배포 구성 확정 시)
 
-- EC2 사이징, MySQL 배치 방식(EC2 직접 설치 vs RDS), Redis 단일 인스턴스 SPOF 여부.
+- Redis 단일 인스턴스 SPOF 여부.
 - 배포된 OSRM 서버(#416) 사이징이 지금 트래픽에 맞는지.
 - GitHub Actions AWS 인증 방식(OIDC + 최소 권한 IAM Role 권장)과 배포 권한 범위.
 - 라이더 콜 목록 `radiusMeters` 상한 없음(#55). 좌표 미전송 요청은 WAITING 전체를 훑어, WAITING이 크게 늘면 계약을 다시 열어야 한다.
 - 러시아워 배수(×1.3)·시간대(07-09, 18-20시)가 실측 없는 잠정값. 실제 배송 데이터로 재조정.
 - 외부 SMS 발송 연동(현재 로그만 남기는 모킹) — 벤더 선정 시 `SmsSender` 구현체 교체(#20).
+- **Flyway 자동 적용 안 되던 버그가 아직 운영에 반영 안 됨**(#373, 수정은 PR #460, 아직 dev·main 머지 전). 운영 `flyway_schema_history`는 V18(정상 — V19가 어느 브랜치에도 아직 안 들어갔으니 당연한 상태). PR #460 머지·배포 후 실제로 새 마이그레이션이 자동 적용되는지 재확인 필요.
+- **BUSY 위치 전송 서버 요청량 영향 미확인**(#391). 완료 조건에 있던 항목이 체크 안 된 채 닫혔다 — #259 부하테스트가 답해야 할 항목.

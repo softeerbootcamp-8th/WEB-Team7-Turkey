@@ -11,6 +11,7 @@ import com.turkey.quick.member.service.FakeSmsSender;
 import com.turkey.quick.member.service.VerificationCodeStore;
 import com.turkey.quick.support.IntegrationTestSupport;
 import java.util.Map;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -57,7 +58,8 @@ class PhoneVerificationE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 미가입_번호로_회원가입_인증번호를_요청하면_200과_만료시각을_반환한다() {
+    @DisplayName("미가입 번호로 회원가입 인증번호를 요청하면 200과 만료시각을 반환한다")
+    void shouldReturnExpirationForSignupCodeRequestFromUnregisteredNumber() {
         var request = Map.of("phoneNumber", "010-2222-3333", "purpose", VerificationPurpose.SIGNUP);
 
         var response = rest.postForEntity(ENDPOINT, request, ApiResponse.class);
@@ -69,7 +71,8 @@ class PhoneVerificationE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 이미_가입된_번호로_회원가입_목적을_요청하면_409를_반환한다() {
+    @DisplayName("이미 가입된 번호로 회원가입 목적을 요청하면 409를 반환한다")
+    void shouldReturnConflictForSignupCodeRequestFromRegisteredNumber() {
         memberRepository.save(Member.create("existing1", "hash", "기존회원", "01044445555", MemberRole.CUSTOMER));
         var request = Map.of("phoneNumber", "010-4444-5555", "purpose", VerificationPurpose.SIGNUP);
 
@@ -80,7 +83,8 @@ class PhoneVerificationE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 휴대전화_번호_형식이_틀리면_400을_반환한다() {
+    @DisplayName("휴대전화 번호 형식이 틀리면 400을 반환한다")
+    void shouldReturnBadRequestForInvalidPhoneNumberFormat() {
         var request = Map.of("phoneNumber", "not-a-phone", "purpose", VerificationPurpose.SIGNUP);
 
         var response = rest.postForEntity(ENDPOINT, request, ApiResponse.class);
@@ -89,7 +93,8 @@ class PhoneVerificationE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 휴대전화_번호가_없으면_400을_반환한다() {
+    @DisplayName("휴대전화 번호가 없으면 400을 반환한다")
+    void shouldReturnBadRequestWithoutPhoneNumber() {
         var request = Map.of("purpose", VerificationPurpose.SIGNUP);
 
         var response = rest.postForEntity(ENDPOINT, request, ApiResponse.class);
@@ -98,7 +103,8 @@ class PhoneVerificationE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 쿨다운_중_재요청하면_429를_반환한다() {
+    @DisplayName("쿨다운 중 재요청하면 429를 반환한다")
+    void shouldReturnTooManyRequestsDuringCooldown() {
         var request = Map.of("phoneNumber", "010-6666-7777", "purpose", VerificationPurpose.FIND_ID);
 
         rest.postForEntity(ENDPOINT, request, ApiResponse.class);
@@ -108,7 +114,8 @@ class PhoneVerificationE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 문자_발송에_실패해도_재시도는_쿨다운에_막히지_않는다() {
+    @DisplayName("문자 발송에 실패해도 재시도는 쿨다운에 막히지 않는다")
+    void shouldAllowImmediateRetryAfterSmsFailure() {
         smsSender.failNext();
         var request = Map.of("phoneNumber", "010-1111-9999", "purpose", VerificationPurpose.FIND_ID);
 
@@ -120,7 +127,8 @@ class PhoneVerificationE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 발급된_인증번호로_확인하면_200과_토큰을_반환한다() {
+    @DisplayName("발급된 인증번호로 확인하면 200과 토큰을 반환한다")
+    void shouldReturnTokenForValidVerificationCode() {
         var phoneNumber = "010-3333-4444";
         rest.postForEntity(ENDPOINT, Map.of("phoneNumber", phoneNumber, "purpose", VerificationPurpose.SIGNUP), ApiResponse.class);
         String code = verificationCodeStore.getCode(VerificationPurpose.SIGNUP, "01033334444");
@@ -134,7 +142,8 @@ class PhoneVerificationE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 인증_요청_이력_없이_확인하면_404를_반환한다() {
+    @DisplayName("인증 요청 이력 없이 확인하면 404를 반환한다")
+    void shouldReturnNotFoundWithoutVerificationRequestHistory() {
         var confirmRequest = Map.of("phoneNumber", "010-5555-6666", "purpose", VerificationPurpose.SIGNUP, "code", "123456");
 
         var response = rest.postForEntity(CONFIRM_ENDPOINT, confirmRequest, ApiResponse.class);
@@ -143,7 +152,8 @@ class PhoneVerificationE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 틀린_인증번호로_확인하면_400을_반환한다() {
+    @DisplayName("틀린 인증번호로 확인하면 400을 반환한다")
+    void shouldReturnBadRequestForWrongVerificationCode() {
         var phoneNumber = "010-7777-8888";
         rest.postForEntity(ENDPOINT, Map.of("phoneNumber", phoneNumber, "purpose", VerificationPurpose.FIND_ID), ApiResponse.class);
 

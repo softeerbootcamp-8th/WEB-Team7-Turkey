@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class FarePolicyTest {
@@ -18,7 +19,8 @@ class FarePolicyTest {
     }
 
     @Test
-    void 생성하면_INACTIVE_상태이고_적용종료시각과_할증은_비어있다() {
+    @DisplayName("생성하면 INACTIVE 상태이고 적용종료시각과 할증은 비어있다")
+    void shouldCreateInactivePolicyWithoutEffectiveToOrSurcharges() {
         FarePolicy policy = policy();
 
         assertThat(policy.getStatus()).isEqualTo(FarePolicyStatus.INACTIVE);
@@ -27,7 +29,8 @@ class FarePolicyTest {
     }
 
     @Test
-    void 기본요금은_양수여야_한다() {
+    @DisplayName("기본요금은 양수여야 한다")
+    void shouldRequirePositiveBaseFare() {
         assertThatThrownBy(() ->
                 FarePolicy.create("v1", 0L, 1_000, 500L, 10_000,
                         LocalDateTime.now(ZoneOffset.UTC)))
@@ -35,7 +38,8 @@ class FarePolicyTest {
     }
 
     @Test
-    void 거리단위는_양수여야_한다() {
+    @DisplayName("거리단위는 양수여야 한다")
+    void shouldRequirePositiveDistanceUnit() {
         assertThatThrownBy(() ->
                 FarePolicy.create("v1", 3_000L, 0, 500L, 10_000,
                         LocalDateTime.now(ZoneOffset.UTC)))
@@ -43,7 +47,8 @@ class FarePolicyTest {
     }
 
     @Test
-    void 거리단가는_양수여야_한다() {
+    @DisplayName("거리단가는 양수여야 한다")
+    void shouldRequirePositiveFarePerDistanceUnit() {
         assertThatThrownBy(() ->
                 FarePolicy.create("v1", 3_000L, 1_000, 0L, 10_000,
                         LocalDateTime.now(ZoneOffset.UTC)))
@@ -51,7 +56,8 @@ class FarePolicyTest {
     }
 
     @Test
-    void 최대배송거리는_양수여야_한다() {
+    @DisplayName("최대배송거리는 양수여야 한다")
+    void shouldRequirePositiveMaximumDeliveryDistance() {
         assertThatThrownBy(() ->
                 FarePolicy.create("v1", 3_000L, 1_000, 500L, 0,
                         LocalDateTime.now(ZoneOffset.UTC)))
@@ -59,7 +65,8 @@ class FarePolicyTest {
     }
 
     @Test
-    void 정책버전은_null일수_없다() {
+    @DisplayName("정책버전은 null일수 없다")
+    void shouldRejectNullPolicyVersion() {
         assertThatThrownBy(() ->
                 FarePolicy.create(null, 3_000L, 1_000, 500L, 10_000,
                         LocalDateTime.now(ZoneOffset.UTC)))
@@ -67,7 +74,8 @@ class FarePolicyTest {
     }
 
     @Test
-    void 정책버전은_공백일수_없다() {
+    @DisplayName("정책버전은 공백일수 없다")
+    void shouldRejectBlankPolicyVersion() {
         assertThatThrownBy(() ->
                 FarePolicy.create("   ", 3_000L, 1_000, 500L, 10_000,
                         LocalDateTime.now(ZoneOffset.UTC)))
@@ -75,7 +83,8 @@ class FarePolicyTest {
     }
 
     @Test
-    void 정책버전은_30자를_초과할수_없다() {
+    @DisplayName("정책버전은 30자를 초과할수 없다")
+    void shouldRejectPolicyVersionLongerThanThirtyCharacters() {
         String tooLong = "v".repeat(31);
 
         assertThatThrownBy(() ->
@@ -85,14 +94,16 @@ class FarePolicyTest {
     }
 
     @Test
-    void 적용시작시각은_null일수_없다() {
+    @DisplayName("적용시작시각은 null일수 없다")
+    void shouldRejectNullEffectiveFrom() {
         assertThatThrownBy(() ->
                 FarePolicy.create("v1", 3_000L, 1_000, 500L, 10_000, null))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void activate하면_ACTIVE로_전이한다() {
+    @DisplayName("activate하면 ACTIVE로 전이한다")
+    void shouldTransitionToActiveOnActivation() {
         FarePolicy policy = policy();
 
         policy.activate();
@@ -101,7 +112,8 @@ class FarePolicyTest {
     }
 
     @Test
-    void 이미_ACTIVE인_정책은_다시_activate할수_없다() {
+    @DisplayName("이미 ACTIVE인 정책은 다시 activate할수 없다")
+    void shouldNotActivateAlreadyActivePolicy() {
         FarePolicy policy = policy();
         policy.activate();
 
@@ -109,7 +121,8 @@ class FarePolicyTest {
     }
 
     @Test
-    void deactivate하면_INACTIVE로_전이하고_적용종료시각이_기록된다() {
+    @DisplayName("deactivate하면 INACTIVE로 전이하고 적용종료시각이 기록된다")
+    void shouldTransitionToInactiveAndRecordEffectiveToOnDeactivation() {
         FarePolicy policy = policy();
         policy.activate();
 
@@ -120,14 +133,16 @@ class FarePolicyTest {
     }
 
     @Test
-    void INACTIVE_상태는_deactivate할수_없다() {
+    @DisplayName("INACTIVE 상태는 deactivate할수 없다")
+    void shouldNotDeactivateInactivePolicy() {
         FarePolicy policy = policy();
 
         assertThatThrownBy(policy::deactivate).isInstanceOf(IllegalStateException.class);
     }
 
     @Test
-    void 한번_비활성화된_정책은_재활성화할수_없다() {
+    @DisplayName("한번 비활성화된 정책은 재활성화할수 없다")
+    void shouldNotReactivatePreviouslyDeactivatedPolicy() {
         FarePolicy policy = policy();
         policy.activate();
         policy.deactivate();
@@ -136,7 +151,8 @@ class FarePolicyTest {
     }
 
     @Test
-    void 적용시작시각이_미래이면_deactivate는_명확한_예외로_실패한다() {
+    @DisplayName("적용시작시각이 미래이면 deactivate는 명확한 예외로 실패한다")
+    void shouldFailClearlyWhenDeactivatingPolicyThatStartsInFuture() {
         LocalDateTime farFuture = LocalDateTime.now(ZoneOffset.UTC).plusDays(1);
         FarePolicy policy = FarePolicy.create("v1", 3_000L, 1_000, 500L, 10_000, farFuture);
         policy.activate();
@@ -145,7 +161,8 @@ class FarePolicyTest {
     }
 
     @Test
-    void 물품종류_할증을_추가할수_있다() {
+    @DisplayName("물품종류 할증을 추가할수 있다")
+    void shouldAddItemTypeSurcharge() {
         FarePolicy policy = policy();
 
         policy.addSurcharge(ItemType.FOOD, 1_000L);
@@ -157,7 +174,8 @@ class FarePolicyTest {
     }
 
     @Test
-    void 같은_물품종류를_중복_추가할수_없다() {
+    @DisplayName("같은 물품종류를 중복 추가할수 없다")
+    void shouldNotAddDuplicateItemTypeSurcharge() {
         FarePolicy policy = policy();
         policy.addSurcharge(ItemType.FOOD, 1_000L);
 
@@ -166,7 +184,8 @@ class FarePolicyTest {
     }
 
     @Test
-    void 할증금액은_음수일수_없다() {
+    @DisplayName("할증금액은 음수일수 없다")
+    void shouldRejectNegativeSurchargeAmount() {
         FarePolicy policy = policy();
 
         assertThatThrownBy(() -> policy.addSurcharge(ItemType.FOOD, -1L))
@@ -174,7 +193,8 @@ class FarePolicyTest {
     }
 
     @Test
-    void getSurcharges는_수정불가능한_리스트를_반환한다() {
+    @DisplayName("getSurcharges는 수정불가능한 리스트를 반환한다")
+    void shouldReturnUnmodifiableSurchargeList() {
         FarePolicy policy = policy();
         policy.addSurcharge(ItemType.FOOD, 1_000L);
 

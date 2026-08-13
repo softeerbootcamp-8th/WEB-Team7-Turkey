@@ -11,6 +11,7 @@ import com.turkey.quick.rider.domain.RiderProfile;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
 import java.util.Map;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -70,7 +71,8 @@ class RiderLoginE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 올바른_로그인_정보면_200과_세션_쿠키_및_운행_상태를_반환한다() {
+    @DisplayName("올바른 로그인 정보면 200과 세션 쿠키 및 운행 상태를 반환한다")
+    void shouldReturnSessionCookieAndOperatingStatusForValidCredentials() {
         Member member = saveRider("e2e_rider_login01", "p@ssw0rd", "01011112222");
 
         var response = rest.postForEntity(LOGIN_ENDPOINT,
@@ -93,7 +95,8 @@ class RiderLoginE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 고객_계정으로_로그인하면_401을_반환한다() {
+    @DisplayName("고객 계정으로 로그인하면 401을 반환한다")
+    void shouldReturnUnauthorizedForCustomerAccount() {
         memberRepository.save(Member.create("e2e_customer_via_rider", PASSWORD_ENCODER.encode("p@ssw0rd"), "고객", "01033334444", MemberRole.CUSTOMER));
 
         var response = rest.postForEntity(LOGIN_ENDPOINT,
@@ -103,7 +106,8 @@ class RiderLoginE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    void 존재하지_않는_아이디로_로그인하면_401을_반환한다() {
+    @DisplayName("존재하지 않는 아이디로 로그인하면 401을 반환한다")
+    void shouldReturnUnauthorizedForUnknownLoginId() {
         var response = rest.postForEntity(LOGIN_ENDPOINT,
                 Map.of("loginId", "no_such_rider", "password", "aaa"), ApiResponse.class);
 

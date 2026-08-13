@@ -10,10 +10,14 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequiredArgsConstructor
+@RequestMapping("/api/rider/login")
 public class RiderLoginController implements RiderLoginApi {
 
     private final RiderLoginService riderLoginService;
@@ -22,7 +26,10 @@ public class RiderLoginController implements RiderLoginApi {
     private boolean cookieSecure;
 
     @Override
-    public ApiResponse<RiderLoginResponse> login(RiderLoginRequest request, HttpServletResponse response) {
+    @PostMapping
+    public ApiResponse<RiderLoginResponse> login(
+            @RequestBody RiderLoginRequest request,
+            HttpServletResponse response) {
         RiderLoginResult result = riderLoginService.login(request.loginId(), request.password());
 
         var cookie = SessionCookie.of(result.sessionId(), cookieSecure);

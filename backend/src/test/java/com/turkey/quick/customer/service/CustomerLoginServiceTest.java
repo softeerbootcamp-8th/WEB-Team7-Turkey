@@ -12,6 +12,7 @@ import com.turkey.quick.member.domain.MemberRole;
 import com.turkey.quick.member.repository.MemberRepository;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -38,7 +39,8 @@ class CustomerLoginServiceTest {
     }
 
     @Test
-    void 올바른_아이디와_비밀번호로_로그인하면_세션을_생성하고_회원정보를_반환한다() {
+    @DisplayName("올바른 아이디와 비밀번호로 로그인하면 세션을 생성하고 회원정보를 반환한다")
+    void shouldCreateSessionAndReturnMemberForValidCredentials() {
         Member member = customer();
         when(memberRepository.findByLoginId(LOGIN_ID)).thenReturn(Optional.of(member));
 
@@ -50,7 +52,9 @@ class CustomerLoginServiceTest {
     }
 
     @Test
-    void 로그인_성공_시_세션에_회원ID가_저장된다() {
+    // 세션 해시에서 role 을 없앴으므로(#439) 역할 저장은 더 이상 검증 대상이 아니다.
+    @DisplayName("로그인 성공 시 세션에 회원ID가 저장된다")
+    void shouldStoreMemberIdInSessionAfterLogin() {
         Member member = customer();
         when(memberRepository.findByLoginId(LOGIN_ID)).thenReturn(Optional.of(member));
 
@@ -60,7 +64,8 @@ class CustomerLoginServiceTest {
     }
 
     @Test
-    void 존재하지_않는_아이디로_로그인하면_401을_반환한다() {
+    @DisplayName("존재하지 않는 아이디로 로그인하면 401을 반환한다")
+    void shouldReturnUnauthorizedForUnknownLoginId() {
         when(memberRepository.findByLoginId(LOGIN_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> customerLoginService.login(LOGIN_ID, RAW_PASSWORD))
@@ -70,7 +75,8 @@ class CustomerLoginServiceTest {
     }
 
     @Test
-    void 라이더_계정으로_고객_로그인을_시도하면_401을_반환한다() {
+    @DisplayName("라이더 계정으로 고객 로그인을 시도하면 401을 반환한다")
+    void shouldReturnUnauthorizedForRiderAccount() {
         Member rider = Member.create(LOGIN_ID, passwordEncoder.encode(RAW_PASSWORD), "라이더", "01099998888", MemberRole.RIDER);
         when(memberRepository.findByLoginId(LOGIN_ID)).thenReturn(Optional.of(rider));
 
@@ -81,7 +87,8 @@ class CustomerLoginServiceTest {
     }
 
     @Test
-    void 비밀번호가_틀리면_401을_반환한다() {
+    @DisplayName("비밀번호가 틀리면 401을 반환한다")
+    void shouldReturnUnauthorizedForWrongPassword() {
         Member member = customer();
         when(memberRepository.findByLoginId(LOGIN_ID)).thenReturn(Optional.of(member));
 
@@ -92,7 +99,8 @@ class CustomerLoginServiceTest {
     }
 
     @Test
-    void 탈퇴한_계정으로_로그인하면_401을_반환한다() {
+    @DisplayName("탈퇴한 계정으로 로그인하면 401을 반환한다")
+    void shouldReturnUnauthorizedForWithdrawnAccount() {
         Member member = customer();
         member.withdraw();
         when(memberRepository.findByLoginId(LOGIN_ID)).thenReturn(Optional.of(member));
@@ -104,7 +112,8 @@ class CustomerLoginServiceTest {
     }
 
     @Test
-    void 실패_사유와_무관하게_동일한_메시지를_반환한다() {
+    @DisplayName("실패 사유와 무관하게 동일한 메시지를 반환한다")
+    void shouldReturnSameMessageRegardlessOfFailureReason() {
         when(memberRepository.findByLoginId("no_such_id")).thenReturn(Optional.empty());
         Member member = customer();
         when(memberRepository.findByLoginId(LOGIN_ID)).thenReturn(Optional.of(member));

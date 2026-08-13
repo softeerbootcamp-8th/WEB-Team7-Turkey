@@ -1,7 +1,27 @@
 # 도메인이 없어서 자체서명 인증서로 HTTPS 를 준다(tls internal). 팀원은 브라우저에서
-# 최초 1회 "고급 > 계속 진행"을 눌러야 한다. 나중에 도메인이 생기면 아래 :443 을
-# 도메인명으로 바꾸기만 하면 Caddy 가 Let's Encrypt 인증서를 자동으로 받아온다.
-:443 {
+# 최초 1회 "고급 > 계속 진행"을 눌러야 한다. 나중에 도메인이 생기면 .env 의 SITE_ADDRESS 를
+# 그 도메인으로 바꾸고 `tls internal` 줄만 지우면 Caddy 가 Let's Encrypt 인증서를 자동으로 받아온다.
+#
+# 사이트 주소를 반드시 이름(또는 IP)으로 적어야 한다. `:443` 처럼 이름 없이 두면 tls internal 이
+# 어떤 주체로 인증서를 발급할지 몰라 **핸드셰이크 자체가 실패**한다(SSL alert 80 internal error).
+# 실제로 그 상태였고 verify-local.sh 로 재현했다.
+{$SITE_ADDRESS:https://localhost} {
 	tls internal
 	reverse_proxy grafana:3000
 }
+
+# --- 도메인 없이 IP로 접속하는 경우(운영에서 실제로 이 경로를 씀) ---
+# 위 블록만으로는 부족하다. IP는 SNI에 담을 수 없어서(RFC 6066) 브라우저가 TLS ClientHello에
+# SNI를 아예 안 보내고, 그러면 Caddy가 자기 소켓의 로컬 주소(도커 내부 IP, 예: 172.18.0.4)로
+# 인증서를 찾으려 해서 실패한다 — 위와 같은 "internal error"로 다시 끊긴다.
+# SITE_ADDRESS를 도메인이 아니라 Elastic IP 등으로 채워 쓸 때는, default_sni로 SNI가 빈 경우
+# 가정할 이름을 명시적으로 지정해야 한다. 위 블록 앞에 아래처럼 추가하고 SITE_ADDRESS를 IP만
+# (스킴 없이) 넣는다:
+#
+#   {
+#           default_sni {$SITE_ADDRESS}
+#   }
+#   https://{$SITE_ADDRESS} {
+#           tls internal
+#           reverse_proxy grafana:3000
+#   }

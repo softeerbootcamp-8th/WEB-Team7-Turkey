@@ -19,6 +19,7 @@ import jakarta.servlet.http.Cookie;
 import java.time.Duration;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -58,7 +59,8 @@ class RiderSessionInterceptorTest {
     }
 
     @Test
-    void 유효한_세션이면_통과하고_운행_상태를_포함한_인증된_라이더를_request_attribute에_담는다() {
+    @DisplayName("유효한 세션이면 통과하고 운행 상태를 포함한 인증된 라이더를 request attribute에 담는다")
+    void shouldAuthenticateRiderWithOperatingStatusAndContinue() {
         String sessionId = "valid-session";
         sessionStore.create(sessionId, MEMBER_ID, Duration.ofHours(2));
         Member member = rider();
@@ -76,7 +78,8 @@ class RiderSessionInterceptorTest {
     }
 
     @Test
-    void 고객_세션으로_라이더_API에_접근하면_401을_던진다() {
+    @DisplayName("고객 세션으로 라이더 API에 접근하면 401을 던진다")
+    void shouldThrowUnauthorizedWhenCustomerSessionAccessesRiderApi() {
         String sessionId = "customer-session";
         sessionStore.create(sessionId, MEMBER_ID, Duration.ofHours(2));
         Member customer = Member.create("session_customer01", "encoded", "고객", "01099998888", MemberRole.CUSTOMER);
@@ -90,7 +93,8 @@ class RiderSessionInterceptorTest {
     }
 
     @Test
-    void 라이더_프로필이_없으면_401을_던진다() {
+    @DisplayName("라이더 프로필이 없으면 401을 던진다")
+    void shouldThrowUnauthorizedWithoutRiderProfile() {
         String sessionId = "no-profile-session";
         sessionStore.create(sessionId, MEMBER_ID, Duration.ofHours(2));
         when(memberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(rider()));
@@ -104,7 +108,8 @@ class RiderSessionInterceptorTest {
     }
 
     @Test
-    void 배송_수행중_라이더의_요청은_세션_TTL만_연장하고_쿠키는_다시_내리지_않는다() {
+    @DisplayName("배송 수행중 라이더의 요청은 세션 TTL만 연장하고 쿠키는 다시 내리지 않는다")
+    void shouldExtendSessionTtlForBusyRiderWithoutReissuingCookie() {
         // BUSY 라이더는 5초 주기로 위치를 POST한다. 그 요청이 세션을 연장하지 못하면 배송 도중
         // 세션이 만료돼 위치 전송과 배송 완료가 함께 401로 막힌다(#439).
         String sessionId = "busy-rider-session";
@@ -125,7 +130,8 @@ class RiderSessionInterceptorTest {
     }
 
     @Test
-    void 인증에_실패하면_세션을_연장하지_않는다() {
+    @DisplayName("인증에 실패하면 세션을 연장하지 않는다")
+    void shouldNotExtendSessionWhenAuthenticationFails() {
         String sessionId = "customer-session";
         sessionStore.create(sessionId, MEMBER_ID, SessionStore.DEFAULT_TTL);
         Member customer = Member.create("session_customer01", "encoded", "고객", "01099998888", MemberRole.CUSTOMER);
@@ -139,7 +145,8 @@ class RiderSessionInterceptorTest {
     }
 
     @Test
-    void 인증에_실패하면_응답에_만료_쿠키를_함께_보낸다() {
+    @DisplayName("인증에 실패하면 응답에 만료 쿠키를 함께 보낸다")
+    void shouldSendExpiredCookieWhenAuthenticationFails() {
         MockHttpServletRequest request = requestWithCookie("no-such-session");
         MockHttpServletResponse response = new MockHttpServletResponse();
 

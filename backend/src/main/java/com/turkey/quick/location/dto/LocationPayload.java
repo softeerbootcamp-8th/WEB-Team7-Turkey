@@ -15,8 +15,9 @@ import java.time.Instant;
  * <p><b>{@code status} 가 nullable 인 이유</b>(#449): 이 레코드는 두 경로에서 쓰인다.
  * <ul>
  *   <li><b>SSE 팬아웃</b> — {@code RiderLocationService} 가 {@link #withStatus} 로 상태를 채워
- *       발행한다. 주기적으로 흐르는 이 프레임에 상태를 실어, 일회성인 상태 전이 이벤트가
- *       유실돼도 <b>다음 위치(최대 5초)로 화면이 복구</b>되게 하는 것이 목적이다.</li>
+ *       발행한다. 흐르는 이 프레임에 상태를 실어, 일회성인 상태 전이 이벤트가 유실돼도
+ *       <b>다음 위치 전송(BUSY, 20m 이동 또는 최대 120초 경과 트리거, #391)으로 화면이
+ *       복구</b>되게 하는 것이 목적이다.</li>
  *   <li><b>Redis 최신 위치 저장·조회</b> — {@code RiderLocationRepository} 의 쉼표 구분 형식에는
  *       상태를 넣지 않는다(위치 저장소이지 주문 상태 저장소가 아니다). 그래서 {@code decode} 가
  *       만든 값은 상태가 {@code null} 이고, 그 값을 쓰는 폴링 응답

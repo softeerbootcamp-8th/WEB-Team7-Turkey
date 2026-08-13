@@ -3,36 +3,26 @@ name: Deploy to WAS
 on:
   push:
     branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+      - '.github/workflows/deploy.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-production
+  # 배포 도중 취소되면 jar 교체와 서비스 재시작 사이에서 멈출 수 있으므로 직렬화한다.
+  cancel-in-progress: false
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v5
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-
-      - name: Grant execute permission for gradlew
-        working-directory: ./backend
-        run: chmod +x gradlew
-
-      - name: Build
-        working-directory: ./backend
-        run: ./gradlew clean build -x test
-
-      - name: Upload jar artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: app-jar
-          path: backend/build/libs/*.jar
-          retention-days: 7
+  ci:
+    name: Backend CI
+    uses: ./.github/workflows/backend-ci.yml
 
   deploy:
-    needs: build
+    needs: ci
     runs-on: self-hosted
     steps:
       - name: Download jar artifact
@@ -40,6 +30,28 @@ jobs:
         with:
           name: app-jar
           path: ./deploy
+
+      - name: Configure JVM diagnostics (heap dump + GC logging)
+        # myapp.service 원본 파일은 저장소 밖(EC2)에만 있어 내용을 알 수 없으므로,
+        # 원본을 건드리지 않는 systemd override로 얹는다(#374). -Xmx228m은 지금 ergonomic
+        # 기본값(총 메모리 906MiB의 25%, #259 실측)과 동일한 값으로 고정하는 것— 힙 자체를
+        # 늘리는 게 아니라서 "단독 증설은 스와핑 위험" 판단과 충돌하지 않는다.
+        # HeapDumpPath에 %p(PID)를 넣는다 — 고정 파일명이면 JVM이 기존 파일을 안 덮어써서
+        # 두 번째 OOM부터는 덤프가 안 남는다. systemd가 재기동마다 새 PID를 배정하므로 매번
+        # 새 파일이 생긴다. %%p로 이스케이프해야 한다 — systemd의 Environment= 자체가
+        # %p를 "유닛 이름 프리픽스"로 먼저 치환해버려서(#487, 실측: heapdump-myapp.hprof로
+        # 고정 생성됨), %%p라야 JVM이 받는 값에 리터럴 %p가 남아 런타임에 PID로 치환된다.
+        # ADR-011(#487) 실측 근거로 GC를 G1로 되돌리고, gc+heap=debug로 세대별(Young/Old)
+        # 점유율을 남긴다 — SerialGC의 stop-the-world가 조기 승격을 유발한다는 가설을
+        # 다음 부하테스트에서 세대 단위로 직접 검증하기 위함.
+        run: |
+          mkdir -p /home/ubuntu/app/dumps
+          sudo mkdir -p /etc/systemd/system/myapp.service.d
+          sudo tee /etc/systemd/system/myapp.service.d/jvm-diagnostics.conf > /dev/null <<'EOF'
+          [Service]
+          Environment="JAVA_TOOL_OPTIONS=-Xmx228m -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/home/ubuntu/app/dumps/heapdump-%%p.hprof -Xlog:gc*,gc+heap=debug:file=/home/ubuntu/app/dumps/gc.log:time,uptime,level,tags:filecount=5,filesize=20m"
+          EOF
+          sudo systemctl daemon-reload
 
       - name: Deploy jar and restart service
         run: |
@@ -55,15 +67,15 @@ jobs:
           systemctl is-active myapp.service
 
   notify:
-    needs: [build, deploy]
+    needs: [ci, deploy]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Notify Slack
         run: |
-          if [ "${{ needs.build.result }}" == "failure" ]; then
-            STATUS="배포 실패 (빌드 단계)"; COLOR="#e01e5a"
-          elif [ "${{ needs.deploy.result }}" == "failure" ]; then
+          if [ "${{ needs.ci.result }}" != "success" ]; then
+            STATUS="배포 중단 (테스트·빌드: ${{ needs.ci.result }})"; COLOR="#e01e5a"
+          elif [ "${{ needs.deploy.result }}" != "success" ]; then
             STATUS="배포 실패 (배포 단계)"; COLOR="#e01e5a"
           else
             STATUS="배포 성공"; COLOR="#2eb886"

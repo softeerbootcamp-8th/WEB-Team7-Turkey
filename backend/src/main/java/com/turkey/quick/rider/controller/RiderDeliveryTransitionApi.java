@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 
 /** 라이더 배송 단계 전이 계약(#58, #59, #65). */
 @Tag(name = "rider-delivery", description = "라이더 진행 중 배송 — 조회·단계 전이·완료")
@@ -33,5 +34,5 @@ public interface RiderDeliveryTransitionApi {
     ApiResponse<RiderDeliveryResponse> transitionDelivery(
             AuthenticatedRider rider,
             @Parameter(description = "배송요청 식별자", example = "1024") Long deliveryId,
-            RiderDeliveryTransitionRequest request);
+            @Valid RiderDeliveryTransitionRequest request);
 }
