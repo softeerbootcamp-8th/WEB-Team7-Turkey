@@ -56,3 +56,6 @@ backend/loadtest/ec2-seed-*.json
 
 # 로컬 부하테스트 힙 덤프·GC 로그(#374). 수백MB 바이너리라 커밋 안 함.
 backend/heapdumps/
+
+# 데모 스크립트(scripts/demo) 전용 Playwright 의존성. package.json으로 재설치 가능.
+scripts/demo/node_modules/
