@@ -35,6 +35,8 @@
 //   PROOF_PHOTO  완료 인증 사진 경로 (미지정 시 스크립트 폴더의 proof.jpg/png, 그것도 없으면 더미 PNG)
 //   POINTS_PAUSE_MS    완료 후 포인트 내역 화면 유지 시간(ms) (기본 2500)
 //   SHOWCASE_PAUSE_MS  완료 후 배송 내역 상세 화면 유지 시간(ms) (기본 5000)
+//   RECORD       true 면 고객 화면(뷰포트만)을 영상으로 저장. 라이더는 scrcpy로 따로 녹화 후 합성.
+//   RECORD_DIR   녹화 저장 폴더 (기본 scripts/demo/recordings). 결과: customer.webm
 //   MAX_LEG_METERS  픽업지→배송지 구간 최대 재생 거리(m) (기본 0 = 전체 재생; 먼 좌표로 바꿀 때만 압축용)
 //   SKIP_UI      true 면 UI 자동화를 건너뛰고, 이미 BUSY 인 라이더에 GPS 재생만 한다(피더 단독 반복 테스트용).
 
@@ -70,6 +72,10 @@ const PROOF_PHOTO = process.env.PROOF_PHOTO || ''
 const POINTS_PAUSE_MS = Number(process.env.POINTS_PAUSE_MS ?? 2500)
 const SHOWCASE_PAUSE_MS = Number(process.env.SHOWCASE_PAUSE_MS ?? 5000)
 const SKIP_UI = process.env.SKIP_UI === 'true'
+// RECORD=true 면 고객 화면(뷰포트만, 브라우저 크롬 없이)을 영상으로 저장한다. 라이더는 scrcpy로 따로 녹화 후 합성.
+// 영상은 컨텍스트가 닫힐 때 저장되므로 녹화 모드에선 KEEP_OPEN(무한 대기)을 끄고 끝에 창을 닫는다.
+const RECORD = process.env.RECORD === 'true'
+const RECORD_DIR = process.env.RECORD_DIR || path.join(__dirname, 'recordings')
 // 한 구간의 최대 이동 거리(m). 픽업지↔배송지가 가까워(약 730m) 전 구간을 재생해 실제로 도착한다.
 // 0 이면 압축 없이 전체 재생. 멀리 떨어진 좌표로 바꿔 데모가 길어지면 이 값으로 잘라 압축할 수 있다.
 const MAX_LEG_METERS = Number(process.env.MAX_LEG_METERS ?? 0)
@@ -447,26 +453,53 @@ async function runRiderOnDevice(page, credentials) {
     await startButton.click()
     await page.waitForURL(/\/rider\/requests$/, { timeout: 10_000 })
   } else {
-    // 이미 AVAILABLE — 수락은 acceptByDeliveryId 가 상세 URL 로 직접 진입하므로 여기서 목록 이동은 불필요.
-    log('라이더', '이미 운행 중(AVAILABLE) — "퀵 시작하기" 생략')
+    // 이미 AVAILABLE — 홈의 "콜 목록 보기"로 콜 목록 화면에 진입한다(실제 사용처럼 목록에서 콜을 누르기 위해).
+    log('라이더', '이미 운행 중(AVAILABLE) — "콜 목록 보기"로 이동')
+    await callListButton.click()
+    await page.waitForURL(/\/rider\/requests$/, { timeout: 10_000 })
   }
 }
 
-// 고객이 방금 만든 "정확한 deliveryId" 상세로 직접 진입해 수락한다. 콜 목록에서 픽업주소로
-// 매칭하면 반복 실행으로 쌓인 같은 주소의 이전/취소 주문 카드를 잘못 집어 "이미 배차/취소된 콜"
-// 이 나므로(실측), 주소 매칭 + .first() 대신 id 로 못박는다. 생성 직후 조회 지연을 감안해 재시도한다.
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+// 실제 사용처럼 콜 목록에서 "방금 그 콜" 카드를 눌러 상세로 들어간 뒤 수락한다.
+// 카드 접근성 이름은 "{출발지}에서 {도착지}으로 가는 콜 상세 보기"라, 데모의 출발+도착 조합으로 유일하게 집는다.
+// 진입 후 URL 의 deliveryId 가 우리 것과 다르면(같은 경로의 다른 콜) 되돌아가 다시 찾는다.
 async function acceptByDeliveryId(riderPage, deliveryId) {
-  log('라이더', `콜 상세로 직접 이동 (deliveryId=${deliveryId})`)
-  const detailUrl = `https://localhost/rider/requests/${deliveryId}`
-  for (let attempt = 0; attempt < 10; attempt++) {
-    await riderPage.goto(detailUrl)
-    const acceptButton = riderPage.getByRole('button', { name: '수락하기' })
-    try {
-      await acceptButton.waitFor({ state: 'visible', timeout: 3000 })
-    } catch {
+  const cardName = new RegExp(
+    `${escapeRegExp(PICKUP_ADDRESS.roadAddress)}[\\s\\S]*${escapeRegExp(DESTINATION_ADDRESS.roadAddress)}`,
+  )
+  log('라이더', `콜 목록에서 콜 대기 중 (deliveryId=${deliveryId})`)
+
+  for (let attempt = 0; attempt < 20; attempt++) {
+    // 콜 목록 화면 보장(수락 실패로 되돌아온 경우 포함).
+    if (!/\/rider\/requests$/.test(riderPage.url())) {
+      await riderPage.goto('https://localhost/rider/requests').catch(() => {})
+    }
+    const card = riderPage.getByRole('button', { name: cardName }).first()
+    if ((await card.count()) === 0) {
+      // 아직 목록에 없으면 새로 고침 후 재시도.
+      await riderPage.getByRole('button', { name: '새로 고침' }).click().catch(() => {})
       await riderPage.waitForTimeout(1000)
       continue
     }
+
+    log('라이더', '콜 목록에서 콜 선택')
+    await card.click()
+    await riderPage.waitForURL(/\/rider\/requests\/\d+$/, { timeout: 10_000 }).catch(() => {})
+    const openedId = riderPage.url().match(/requests\/(\d+)/)?.[1]
+    if (openedId !== String(deliveryId)) {
+      // 같은 경로의 다른 콜을 눌렀다 — 목록으로 돌아가 다시 찾는다.
+      log('라이더', `다른 콜(id=${openedId}) 진입 → 목록으로 복귀`)
+      await riderPage.goto('https://localhost/rider/requests').catch(() => {})
+      continue
+    }
+
+    const acceptButton = riderPage.getByRole('button', { name: '수락하기' })
+    await acceptButton.waitFor({ state: 'visible', timeout: 5000 })
+    await riderPage.waitForTimeout(2000) // 콜 상세를 잠깐 보여준 뒤 수락(조금 천천히)
     log('라이더', '콜 수락')
     await acceptButton.click()
     try {
@@ -475,11 +508,12 @@ async function acceptByDeliveryId(riderPage, deliveryId) {
       log('라이더', '배차 확정 — 진행 중 배송(BUSY) 화면 진입, 네이티브 위치 서비스 시작됨')
       return
     } catch {
-      // 이미 배차/취소 등으로 전이 실패 — 잠깐 쉬고 상태를 다시 본다.
+      // 수락 실패(이미 배차/취소 등) — 목록으로 돌아가 재시도.
+      await riderPage.goto('https://localhost/rider/requests').catch(() => {})
       await riderPage.waitForTimeout(1000)
     }
   }
-  throw new Error(`콜 수락 실패 (deliveryId=${deliveryId}) — 이미 배차/취소됐거나 상세가 뜨지 않았습니다.`)
+  throw new Error(`콜 수락 실패 (deliveryId=${deliveryId}) — 목록에 안 뜨거나 이미 배차/취소됐습니다.`)
 }
 
 // 진행 배송 화면(/rider/delivery)의 메인 액션 버튼을 누르고, 다음 단계 버튼이 뜰 때까지 기다린다.
@@ -657,7 +691,16 @@ async function main() {
     slowMo: SLOWMO,
     args: ['--window-position=0,0', '--window-size=640,900'],
   })
-  const customerContext = await customerBrowser.newContext({ viewport: { width: 420, height: 820 } })
+  const contextOptions = { viewport: { width: 420, height: 820 } }
+  if (RECORD) {
+    fs.mkdirSync(RECORD_DIR, { recursive: true })
+    // deviceScaleFactor 2 로 2배(840x1640) 고해상도 녹화. 모바일 레이아웃(뷰포트 420폭)은 그대로 유지되고
+    // 래스터만 2배라 선명하다. 합성 시 라이더(scrcpy 원해상도)와 높이를 맞추면 된다.
+    contextOptions.deviceScaleFactor = 2
+    contextOptions.recordVideo = { dir: RECORD_DIR, size: { width: 840, height: 1640 } }
+    log('녹화', `고객 화면 녹화 ON(2x=840x1640) → ${RECORD_DIR} (라이더는 scrcpy로 따로 녹화하세요)`)
+  }
+  const customerContext = await customerBrowser.newContext(contextOptions)
 
   // 배포 계정으로 로그인만 한다(회원가입 주석 처리). name/phoneNumber 는 로그인 경로에선 쓰이지 않는다.
   const customerCredentials = {
@@ -674,6 +717,7 @@ async function main() {
   }
 
   let riderBrowser
+  let customerPage // finally 에서 녹화 영상을 저장하려면 스코프 밖에서 접근해야 한다.
   // 회원가입/로그인 입력 중 에뮬레이터에 소프트 키보드/음성입력이 뜨지 않게 활성 IME를 전부 끈다(finally 복구).
   const imeState = captureImeState()
   disableAllImes(imeState)
@@ -685,7 +729,9 @@ async function main() {
     riderBrowser = browser
     await runRiderOnDevice(riderPage, riderCredentials)
 
-    const { page: customerPage, deliveryId } = await runCustomer(customerContext, customerCredentials)
+    const created = await runCustomer(customerContext, customerCredentials)
+    customerPage = created.page
+    const deliveryId = created.deliveryId
 
     await acceptByDeliveryId(riderPage, deliveryId)
 
@@ -722,7 +768,21 @@ async function main() {
     restoreImes(imeState)
     // CDP 로 붙은 라이더 브라우저는 disconnect 만 한다(앱은 그대로 유지).
     if (riderBrowser) await riderBrowser.close()
-    if (KEEP_OPEN && !process.exitCode) {
+    if (RECORD) {
+      // 영상은 컨텍스트가 닫혀야 저장된다 → 닫고 정해진 이름으로 옮긴다.
+      const video = customerPage && customerPage.video ? customerPage.video() : null
+      await customerContext.close()
+      if (video) {
+        const target = path.join(RECORD_DIR, 'customer.webm')
+        try {
+          await video.saveAs(target)
+          log('녹화', `고객 영상 저장 완료: ${target}`)
+        } catch (e) {
+          log('녹화', `영상 저장 실패: ${e.message}`)
+        }
+      }
+      await customerBrowser.close()
+    } else if (KEEP_OPEN && !process.exitCode) {
       log('시스템', '고객 창을 열어 둡니다. 종료하려면 Ctrl+C를 누르세요.')
       await new Promise(() => {})
     } else {
