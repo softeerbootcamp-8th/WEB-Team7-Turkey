@@ -1,0 +1,37 @@
+# 부하테스트 계측용 오버레이. **docker-compose.local.yml 과 함께만** 쓴다.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.loadtest.yml up -d
+#
+# 왜 필요한가: docker-compose.local.yml 의 mysqld-exporter·redis-exporter 는 그 파일이 함께
+# 띄우는 **가짜 mysql·redis 컨테이너**를 본다(스택 자체를 검증하는 게 목적이라 그게 맞다).
+# 그런데 부하를 받는 것은 backend/docker-compose.yml 의 mysql·redis 다. 그대로 두고 재면
+# MySQL·Redis 패널이 **아무 부하도 안 받은 빈 컨테이너 수치**로 채워진다 — 초록색 거짓말이다.
+# 이 오버레이는 그 두 exporter 만 부하 대상으로 돌려놓는다.
+#
+# backend 스택은 mysql 3306 · redis 6379 를 호스트에 공개하므로 host.docker.internal 로 닿는다.
+# 스크레이프는 측정 경로가 아니라서(15초 주기, 요청 처리와 무관) 호스트를 경유해도 수치에
+# 영향이 없다. 반대로 부하 발생기(k6)는 반드시 앱과 같은 네트워크에 있어야 한다 —
+# backend/docker-compose.yml 의 k6 주석 참고.
+#
+# **파일명을 docker-compose.override.yml 로 바꾸지 말 것.** 그 이름이면 모니터링 EC2에서
+# `docker compose up -d` 만 해도 자동으로 끼어들어, 운영 exporter 가 host.docker.internal
+# (= 모니터링 호스트 자신, 거기엔 MySQL 이 없다)을 보게 되고 mysql 지표가 죽는다(TargetDown).
+# docker-compose.local.yml 이 그 이름을 피한 것과 같은 이유다.
+#
+# 앱 컨테이너의 CPU·메모리는 여기서 안 나온다. node-exporter 는 호스트 루트를 보므로 개발 PC
+# 전체 수치다 — 컨테이너별 값은 `docker stats` 로 읽고 리포트에 출처를 적는다.
+services:
+  mysqld-exporter:
+    volumes: !override
+      - ./.my.cnf.loadtest:/etc/mysqld-exporter/.my.cnf:ro
+    # 가짜 mysql 이 healthy 해질 때까지 기다릴 이유가 없다(더는 그걸 보지 않는다).
+    depends_on: !override []
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  redis-exporter:
+    environment:
+      REDIS_ADDR: redis://host.docker.internal:6379
+    depends_on: !override []
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

@@ -10,6 +10,15 @@ services:
   mysql:
     image: mysql:8.4
     container_name: turkey-mysql-local
+    # 배포 DB EC2(t3.micro = 2 vCPU / 1 GiB)와 같은 자원으로 묶는다(CLAUDE.md 「인프라·배포」).
+    # 앱만 묶고 DB·Redis 를 풀어 두면 부하테스트가 **DB 쪽 병목을 구조적으로 과소평가한다** —
+    # 개발 PC 의 11코어/8.8GiB 를 DB 가 다 쓰기 때문이다(2026-08-11 실측으로 확인해 추가).
+    # 로컬 개발(bootRun)만 할 때도 이 제한이 걸리지만, 배포와 같은 조건이라 문제가 아니다.
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1g
     ports:
       - "3306:3306"
     environment:
@@ -37,6 +46,14 @@ services:
   redis:
     image: redis:7.4
     container_name: turkey-redis-local
+    # 위 mysql 과 같은 이유. Redis EC2 의 인스턴스 타입은 CLAUDE.md 에 적혀 있지 않은데,
+    # micro 계열(t3/t4g)은 어느 쪽이든 2 vCPU / 1 GiB 라 값 자체는 같다 — 타입이 확정되면
+    # 이 주석만 고치면 된다.
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1g
     ports:
       - "6379:6379"
     # 주의: 개발 PC 에 Redis 를 직접 설치하지 않는다(Homebrew 등). 호스트 Redis 는
@@ -71,8 +88,22 @@ services:
   app:
     build: .
     profiles: ["app"]
+    # 배포 EC2(1GiB / 2 vCPU)와 같은 자원으로 묶는다. 호스트에서 bootRun 으로 재면 개발 PC의
+    # CPU·메모리를 다 쓰므로 배포 환경의 한계를 볼 수 없다(실제로 처리량이 자릿수로 달라진다 —
+    # loadtest/README.md 의 두 측정 비교).
+    # JVM 힙은 일부러 지정하지 않는다: 컨테이너 인식 기본값(메모리의 25% ≈ 256MiB)이고,
+    # 배포도 1GiB EC2 에서 옵션 없이 `java -jar` 라 같은 값이 나온다.
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1g
     ports:
       - "8080-8089:8080"
+      # Actuator(지표) 포트. Prometheus 가 이걸 긁는다(infra/monitoring-ec2 의
+      # targets.local/spring-app.yml). 고정 매핑이라 --scale app=2 이상은 이 줄을 지우거나
+      # 범위로 바꿔야 한다 — 대신 bootRun 과 포트가 같아 둘을 동시에 띄우는 실수가 막힌다.
+      - "8081:8081"
     environment:
       SPRING_PROFILES_ACTIVE: local
       DB_URL: jdbc:mysql://mysql:3306/turkey?tinyInt1isBit=false
@@ -83,6 +114,16 @@ services:
       RIDER_DELIVERY_PROOF_STORAGE: s3mock
       AWS_S3_ENDPOINT: http://s3mock:9090
       AWS_S3_BUCKET: turkey-delivery-proof-local
+    # mysql·redis 에는 healthcheck 가 있는데 app 에만 없었다. 없으면 `up -d` 가 기동 완료를
+    # 기다려 주지 않아서 부하테스트 절차가 `sleep` 으로 감을 잡아야 한다(실제로 그랬다).
+    # 이제 `--wait` 를 주면 실제 준비 완료까지 블록한다. curl 은 eclipse-temurin JRE 이미지에
+    # 들어 있고, actuator 는 management.server.port(8081)로 분리돼 있다.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8081/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 40s
     # 힙 덤프(OOM 시)·GC 로그(#374)를 호스트에서 바로 확인하려고 바인드 마운트.
     # --scale app=N 이어도 파일명에 컨테이너 hostname이 들어가 서로 안 덮어쓴다(Dockerfile 참고).
     volumes:
@@ -95,41 +136,51 @@ services:
       s3mock:
         condition: service_started
 
-  # k6 부하 테스트 결과 시각화용. `--profile loadtest` 로 별도로 켠다(app profile 과 독립적).
-  influxdb:
-    image: influxdb:1.8
-    profiles: ["loadtest"]
-    environment:
-      INFLUXDB_DB: k6
-
-  grafana:
-    image: grafana/grafana:11.2.0
-    profiles: ["loadtest"]
-    ports:
-      - "3000:3000"
-    environment:
-      # 로컬 1회성 부하테스트 시각화 용도라 익명 admin 허용 — 팀 공유용 모니터링은
-      # infra/monitoring-ec2 쪽(개별 로그인 계정)을 쓴다.
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
-    volumes:
-      - grafana-data:/var/lib/grafana
-    depends_on:
-      - influxdb
-
-  # 실행: docker compose --profile loadtest run --rm k6 run /scripts/<파일명>.js
-  # ./loadtest/ 에 시나리오 스크립트를 직접 작성해서 넣는다(리포지토리에는 없음).
+  # 부하 발생기. 시나리오는 ./loadtest/local/(로컬 대상) · ./loadtest/remote/(배포 대상)에 있고,
+  # 결과는 로컬 모니터링 스택의 Prometheus 로 밀어 넣는다(아래 K6_OUT 기본값). 관측·시각화는
+  # 전부 그쪽이 한다 — 이 파일에 influxdb·grafana 를 따로 두지 않는 이유다(로컬에 Grafana 가
+  # 둘이면 어느 쪽을 보는지 헷갈린다).
+  #
+  # k6 가 이 프로젝트에 있는 이유: 측정 경로(k6 → app → mysql/redis)가 한 docker 네트워크
+  # 안에서 끝나야 한다. 호스트를 경유하면 macOS·Windows 에서 Docker VM 경계를 넘어 지연이
+  # 붙고, 그게 요청이 커넥션을 잡는 시간에 그대로 더해진다(loadtest/README.md 「측정 이력」의
+  # 철회된 첫 결론이 정확히 이 함정이었다). 반대로 결과 전송·스크레이프는 측정 경로가
+  # 아니므로 호스트를 경유해도 수치에 영향이 없다.
+  #
+  # 실행(부하 대상은 app 컨테이너다 — 호스트 bootRun 으로 재지 말 것):
+  #   cd ../infra/monitoring-ec2 && docker compose \
+  #     -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.loadtest.yml up -d
+  #   # 스크레이프 대상 6개가 전부 up 인지 본다(`/-/ready` 는 200 이면서 대상이 0개일 수 있다)
+  #   curl -s 'localhost:9099/api/v1/targets?state=any' | python3 -c "import sys,json; \
+  #   t=json.load(sys.stdin)['data']['activeTargets']; print(len(t), [x['labels']['job'] for x in t if x['health']!='up'])"
+  #   cd ../../backend && docker compose --profile app up -d --build --wait   # healthcheck 로 기동 완료까지 블록
+  #   ./loadtest/sample-stats.sh &                                           # 컨테이너 CPU 병행 샘플링
+  #   docker compose run --rm -e BASE_URL=http://app:8080 k6 \
+  #     run --tag testid=location-$(date +%Y%m%d-%H%M%S) /scripts/local/rider-location-update.js
+  #   ./loadtest/collect.py --latest --steps    # 측정 구간은 인자로 넘기지 않는다(setup 이 섞인다)
+  #
+  # `--tag testid=` 를 빼먹지 말 것: Grafana k6 대시보드가 그 라벨로 런을 구분한다.
+  #
+  # 배포 EC2 의 Prometheus 로는 절대 밀지 않는다. 그쪽 보존 정책이 `15d 또는 8GB 중 먼저
+  # 걸리는 쪽`인데, k6 시리즈는 카디널리티가 높고(URL·check·status × testid, 런마다 새 testid)
+  # 8GB 에 닿으면 Prometheus 는 오래된 블록부터 지운다 — k6 와 운영 지표를 구분하지 않는다.
   k6:
     image: grafana/k6:latest
+    # `up -d` 가 이걸 띄우지 않게 막는 용도다. `docker compose run k6` 는 대상 서비스의
+    # 프로파일을 자동으로 켜므로(Compose v2 이상) 실행할 때 --profile 을 줄 필요가 없다.
     profiles: ["loadtest"]
     volumes:
       - ./loadtest:/scripts
     environment:
-      K6_OUT: influxdb=http://influxdb:8086/k6
-    depends_on:
-      - influxdb
+      # 출력 이름은 k6 v2.1.0 에서 실측 확인했다(`prometheus-rw` 는 아직 없다).
+      K6_OUT: ${K6_OUT:-experimental-prometheus-rw}
+      # 로컬 모니터링 스택의 Prometheus. 9099 인 이유는 이 파일의 s3mock 이 9090 을 쓰기 때문.
+      K6_PROMETHEUS_RW_SERVER_URL: ${K6_PROMETHEUS_RW_SERVER_URL:-http://host.docker.internal:9099/api/v1/write}
+      # 기본값은 avg/min/med/max 뿐이라 p99 가 안 올라간다. 부하테스트에서 볼 값은 p99 다.
+      K6_PROMETHEUS_RW_TREND_STATS: p(95),p(99),max
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     entrypoint: ["k6"]
 
 volumes:
   turkey-mysql-data:
-  grafana-data:

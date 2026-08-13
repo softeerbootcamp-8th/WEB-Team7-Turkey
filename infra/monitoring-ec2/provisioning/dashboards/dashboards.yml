@@ -1,0 +1,11 @@
+# 이 디렉터리의 *.json 을 대시보드로 읽는다(이 yml 은 무시된다). JSON 은 커밋하지 않고
+# fetch-dashboards.sh 로 grafana.com 에서 받는다 — 파일이 없어도 Grafana 는 그냥 뜬다.
+# 프로바이더가 주기적으로 다시 읽으므로 스크립트 재실행만으로 반영된다(재시작 불필요).
+apiVersion: 1
+providers:
+  - name: files
+    type: file
+    # UI 에서 저장한 변경이 파일로 안 돌아가므로, 손댈 거면 JSON 을 직접 고치거나 복제해서 쓴다.
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/provisioning/dashboards

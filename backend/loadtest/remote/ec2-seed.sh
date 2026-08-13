@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # EC2 부하테스트용 시딩 — SQL 직접 INSERT (#459).
 #
-# 로컬용 seed.js는 회원가입 API를 거치는데, 그 API가 반환하는 인증번호(debugCode)는
+# 로컬용 local/seed.js는 회원가입 API를 거치는데, 그 API가 반환하는 인증번호(debugCode)는
 # local 프로파일에서만 채워진다(PhoneVerificationController: includeDebugCode =
-# environment.matchesProfiles("local")). 운영은 당연히 그 프로파일이 아니라서 seed.js를
+# environment.matchesProfiles("local")). 운영은 당연히 그 프로파일이 아니라서 local/seed.js를
 # 그대로 못 쓴다. 대신 계정·배송만 SQL로 직접 만들고, 세션은 실제 로그인 API로 받는다
 # (로그인은 debugCode가 필요 없어서 이 우회가 가능하다).
 #
@@ -11,7 +11,7 @@
 # turkey-was/turkey-db 호스트가 설정돼 있어야 한다.
 #
 # 사용법:
-#   ./ec2-seed.sh <N> <RUN_ID>
+#   ./remote/ec2-seed.sh <N> <RUN_ID>   (backend/loadtest 에서)
 #
 # 출력: ec2-seed-<RUN_ID>.json (같은 폴더에 생성, git 추적 안 함 — 실행마다 새로 생기는
 #   결과물이다). k6 쪽에서 이 파일을 읽어 로그인·부하를 시작한다.
@@ -39,7 +39,9 @@ PASSWORD_HASH='$2a$10$4d5LgvscIbN0TaAuQ9Afk.0HA9JxCDlL6f02CC9k/3Vtiq4EBXMA6'
 
 {
   echo "SET @hash = '${PASSWORD_HASH}';"
-  cat "${SCRIPT_DIR}/seed-fare-policy.sql"
+  # seed-fare-policy.sql 은 로컬(local/seed.js)과 공용이라 최상위에 둔다 — 이 스크립트가
+  # remote/ 로 내려왔으므로 한 단계 위를 가리킨다.
+  cat "${SCRIPT_DIR}/../seed-fare-policy.sql"
   echo "SELECT fare_policy_id, base_fare, distance_unit_meters, distance_unit_fare"
   echo "  INTO @fp_id, @base, @unit_m, @unit_fare FROM fare_policy WHERE status='ACTIVE' LIMIT 1;"
 

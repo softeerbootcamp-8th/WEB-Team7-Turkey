@@ -1,0 +1,3 @@
+# Redis EC2 의 redis_exporter(9121).
+- targets:
+    - "10.0.130.0:9121"

@@ -1,0 +1,6 @@
+# 로컬 검증용(docker-compose.local.yml 의 mysql 컨테이너 전용). 배포는 .my.cnf 를 쓴다.
+[client]
+user = root
+password = local
+host = mysql
+port = 3306

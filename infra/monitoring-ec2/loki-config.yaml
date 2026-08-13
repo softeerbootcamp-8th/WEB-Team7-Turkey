@@ -1,0 +1,40 @@
+# 이미지 기본 설정(local-config.yaml)에 retention 만 얹은 것이다. 기본 설정에는 retention 이
+# 없어서 로그가 무제한 축적되고 EC2 디스크가 조용히 찬다 — compactor 를 켜야 실제로 삭제된다.
+# 스키마·경로는 기본값과 동일하게 두어 기존 loki-data 볼륨을 그대로 읽는다(값을 바꾸면 이전
+# 데이터를 못 읽는다).
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  # 부하테스트 기간 로그를 되짚어 볼 수 있는 최소한. 디스크가 부족하면 여기를 줄인다.
+  retention_period: 168h
+
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  # Loki 3.x 는 retention_enabled 와 함께 이 값을 요구한다(없으면 기동 실패).
+  delete_request_store: filesystem

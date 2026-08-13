@@ -1,0 +1,5 @@
+# DB EC2 호스트 지표(CPU, 메모리, 디스크, 네트워크). node_exporter 만 설치한다 —
+# DB 자체 지표(mysqld-exporter)는 이 호스트가 아니라 모니터링 EC2에서 MySQL 프로토콜로 원격
+# 접속해 뽑는다(위 mysql job, .my.cnf 참고).
+- targets:
+    - "10.0.138.148:9100"
