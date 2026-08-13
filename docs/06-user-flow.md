@@ -29,9 +29,9 @@ source_of_truth: false
 ```mermaid
 flowchart TB
     C1["🧑 ① 회원가입"] --> C2["🧑 ② 로그인"] --> C3["🧑 ③ 포인트 충전"] --> C4["🧑 ④ 배송요청 생성"] --> C5["🧑 ⑤ 실시간 위치 추적"]
+    C4 -->|"배차 전(WAITING)에만 취소"| C8["🧑 ⑧ 취소 · 포인트 환급"]
     C5 --> C6["🧑 ⑥ 포인트 내역"]
     C5 --> C7["🧑 ⑦ 배송 내역"]
-    C5 -->|"WAITING 중 취소"| C8["🧑 ⑧ 취소 · 포인트 환급"]
 
     R1["🛵 ① 회원가입"] --> R2["🛵 ② 로그인"] --> R3["🛵 ③ 콜 받기"] --> R4["🛵 ④ 콜 목록"] --> R5["🛵 ⑤ 수락 · 배차"] --> R6["🛵 ⑥ 진행 배송"] --> R7["🛵 ⑦ 완료 인증"]
     R7 --> R8["🛵 ⑧ 포인트 · 정산"]
@@ -60,7 +60,7 @@ flowchart TB
     class R1,R2,R3,R4,R5,R6,R7,R8,R9 rid
     class C2,C3,C4,C5,C8,R3,R4,R5,R6,R7 adr
     linkStyle 15,16,17,18 stroke:#dc2626,stroke-width:3px
-    linkStyle 6 stroke:#ea580c,stroke-width:3px
+    linkStyle 4 stroke:#ea580c,stroke-width:3px
 ```
 
 노드는 화면 이름만 담았습니다. **각 화면의 라우트 경로와 걸린 ADR은 3번 표**,
