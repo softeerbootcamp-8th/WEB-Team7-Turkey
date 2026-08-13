@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { Capacitor } from '@capacitor/core'
 import { useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { isAxiosError } from 'axios'
@@ -8,15 +9,20 @@ import {
   useChangeRiderOperatingStatus,
 } from '@/api/generated/rider-operating-status/rider-operating-status'
 import { getGetRiderSessionQueryKey } from '@/api/generated/rider-session/rider-session'
-import type { ItemFilter } from './-requestList'
+import type { ItemFilter, RiderPosition } from './-requestList'
 import {
   DEFAULT_RADIUS_METERS,
   filterRequestsByItem,
+  getPositionUnavailableGuidance,
+  getPositionUnavailableSummary,
   getRequestListErrorMessage,
   ITEM_FILTER_OPTIONS,
   RADIUS_OPTIONS,
+  requestRiderPosition,
 } from './-requestList'
 import { RequestCard } from './-components/RequestCard'
+
+type PositionState = { status: 'loading' } | ({ status: 'resolved' } & RiderPosition)
 
 export const Route = createFileRoute('/rider/_authed/requests/')({
   component: RiderRequests,
@@ -28,11 +34,46 @@ function RiderRequests() {
   const [radiusMeters, setRadiusMeters] = useState(DEFAULT_RADIUS_METERS)
   const [itemFilter, setItemFilter] = useState<ItemFilter>('ALL')
   const [statusError, setStatusError] = useState<string | null>(null)
+  const [position, setPosition] = useState<PositionState>({ status: 'loading' })
+  const [showPositionDetail, setShowPositionDetail] = useState(false)
+
+  // 화면 진입 시 1회만 조회한다(#496). "새로 고침" 버튼은 이 좌표를 재사용 — 매번 GPS를 다시
+  // 잡지 않는다. 권한 거부·타임아웃이어도 requestRiderPosition이 빈 값으로 resolve하므로
+  // 아래 쿼리는 좌표 없이 진행되고, 백엔드가 반경 필터 없이 전체 목록으로 처리한다.
+  useEffect(() => {
+    let cancelled = false
+    requestRiderPosition(navigator.geolocation).then((result) => {
+      if (!cancelled) {
+        setPosition({ status: 'resolved', ...result })
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // 좌표 없이 폴백 중임을 라이더가 알 수 있어야 한다 — 권한 거부·시스템 위치 설정 문제는
+  // 화면만 봐서는 구분이 안 되고, 라이더 입장에서 "왜 안 가까운 순인지" 알 방법이 없었다.
+  const positionUnavailable = position.status === 'resolved' && position.latitude == null
+
+  function retryPosition() {
+    setPosition({ status: 'loading' })
+    setShowPositionDetail(false)
+    requestRiderPosition(navigator.geolocation).then((result) => {
+      setPosition({ status: 'resolved', ...result })
+    })
+  }
 
   const requestsQuery = useGetRiderDeliveryRequests(
-    { radiusMeters, sort: 'DISTANCE' },
-    { query: { retry: false } },
+    {
+      latitude: position.status === 'resolved' ? position.latitude : undefined,
+      longitude: position.status === 'resolved' ? position.longitude : undefined,
+      radiusMeters,
+      sort: 'DISTANCE',
+    },
+    { query: { retry: false, enabled: position.status === 'resolved' } },
   )
+  const isInitialLoading = position.status === 'loading' || requestsQuery.isLoading
   const operatingStatusMutation = useChangeRiderOperatingStatus()
 
   // #60 에서 응답이 배열에서 {items, hasNext} 로 바뀌었다. 커서 페이지네이션 자체는 아직
@@ -149,6 +190,39 @@ function RiderRequests() {
           </p>
         )}
 
+        {positionUnavailable && (
+          <div aria-live="polite" className="mx-5 mt-4 rounded-xl bg-tertiary-container px-4 py-3 text-on-tertiary-container">
+            <div className="flex items-start gap-3">
+              <button
+                type="button"
+                title={getPositionUnavailableGuidance(Capacitor.getPlatform())}
+                aria-expanded={showPositionDetail}
+                aria-controls="position-unavailable-detail"
+                aria-label="정확한 원인이 아닐 수 있어요 — 자세히 보기"
+                onClick={() => setShowPositionDetail((prev) => !prev)}
+                className="shrink-0"
+              >
+                <span className="material-symbols-outlined text-xl">info</span>
+              </button>
+              <p className="flex-1 text-body-md font-semibold">
+                {getPositionUnavailableSummary(position.status === 'resolved' ? position.unavailableReason : undefined)}
+              </p>
+              <button
+                type="button"
+                onClick={retryPosition}
+                className="shrink-0 rounded-lg bg-on-tertiary-container px-3 py-1.5 text-label-sm font-bold text-tertiary-container"
+              >
+                다시 시도
+              </button>
+            </div>
+            {showPositionDetail && (
+              <p id="position-unavailable-detail" className="mt-2 pl-8 text-body-md">
+                {getPositionUnavailableGuidance(Capacitor.getPlatform())}
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center justify-between px-5 py-3 text-body-md">
           <p className="font-bold">
             배차 가능 <span className="text-tertiary">{visibleRequests.length}건</span>
@@ -158,7 +232,7 @@ function RiderRequests() {
           )}
         </div>
 
-        {requestsQuery.isLoading && (
+        {isInitialLoading && (
           <div aria-live="polite" className="flex flex-1 flex-col items-center justify-center gap-3 px-5 py-20 text-center">
             <span className="material-symbols-outlined animate-spin text-3xl text-tertiary">progress_activity</span>
             <p className="text-body-md text-secondary">주변 콜을 불러오고 있어요.</p>
