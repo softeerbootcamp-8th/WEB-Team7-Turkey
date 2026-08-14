@@ -3,7 +3,7 @@
 // 이 파일은 그 자체로 실행하는 스크립트가 아니라, arm 스크립트(SSE/Polling)가
 // setup() 안에서 import 해 쓰는 모듈이다:
 //
-//   import { seedPairs } from './seed.js';
+//   import { seedPairs } from './local/seed.js';
 //   export function setup() {
 //     return seedPairs(Number(__ENV.N || 10));
 //   }
@@ -18,9 +18,13 @@
 // ── 세 가지 관문이 전부 열려 있어서 가능하다 (#373 조사, 2026-08-11) ─────────
 // 1. POST /api/phone-verifications 응답의 debugCode 가 local 프로파일에서만 채워진다
 //    (PhoneVerificationResponse.from). 그 값을 그대로 confirm 에 실어 인증 완료 토큰을 받는다.
-// 2. term 테이블이 로컬 DB에 0행이라 agreedTermIds: [] 로 가입이 통과한다(활성 약관이
-//    없으면 필수 약관 검증이 빈 통과). 나중에 로컬 DB에 약관 시드가 생기면 이 스크립트도
-//    /api/terms 같은 조회 API가 생기는 대로 갱신해야 한다(#373 관련 미결).
+// 2. 필수 약관 동의는 환경변수로 받는다(아래 CUSTOMER_TERM_IDS / RIDER_TERM_IDS).
+//    원래는 "term 테이블이 0행이라 agreedTermIds: [] 로 통과한다"를 전제했는데, 그건
+//    **Flyway 만 적용된 새 볼륨에서만** 맞다. reset-and-seed-local.sql(로컬 셋업 문서가
+//    실행하라고 안내하는 그 스크립트)이 필수 약관 4개를 넣으므로, 그 DB에서는 빈 배열이
+//    400 "필수 약관에 모두 동의해야 합니다"로 막힌다(실측 확인).
+//    term_id 는 auto_increment 라 환경마다 달라 하드코딩하지 않는다. 조회 API(/api/terms)는
+//    #72 로 아직 없어서, 그것이 생기면 이 환경변수를 지우고 조회로 대체한다.
 // 3. MockPaymentGateway.confirm 은 authToken 이 "mock_decline" 이 아니면 무조건 승인한다.
 //
 // fare_policy 활성 정책은 이 스크립트가 만들지 않는다 — 실행 전에 별도로 보장해야 한다
@@ -39,9 +43,37 @@ const RUN_ID = __ENV.RUN_ID || `r${Date.now()}`;
 const CHARGE_AMOUNT = 100000; // MIN_CHARGE_AMOUNT~MAX_CHARGE_AMOUNT, CHARGE_AMOUNT_UNIT(1000) 배수.
 const ITEM_TYPE = 'DOCUMENT';
 
-// 서울 내 좌표 두 쌍(강남 → 송파, backend/loadtest/smoke.js 와 동일 좌표) — 최대 배송거리(30km,
-// seed-fare-policy.sql)를 넘지 않는 임의의 고정 경로. 여러 쌍을 만들 때 좌표를 다양화하지 않는 이유는 #259 의
-// 종속변인(지연·용량)이 좌표가 아니라 동시 연결 수 N 에 달려 있어서다.
+// 필수 약관 동의 목록(위 「관문 2」). 안 주면 빈 배열이라 term 0행 DB에서는 그대로 통과하고,
+// 약관이 있는 DB에서는 checkSignup 이 무엇을 어떻게 넘겨야 하는지 알려주며 멈춘다.
+//   -e CUSTOMER_TERM_IDS=1,2,4 -e RIDER_TERM_IDS=1,2,5
+const CUSTOMER_TERM_IDS = parseIds(__ENV.CUSTOMER_TERM_IDS);
+const RIDER_TERM_IDS = parseIds(__ENV.RIDER_TERM_IDS);
+
+function parseIds(raw) {
+  return (raw || '').split(',').map((s) => s.trim()).filter(Boolean).map(Number);
+}
+
+/** 회원가입 전용 응답 검사. 약관 때문에 막힌 경우를 알아보고 조치 방법을 알려준다. */
+function checkSignup(res, label, role, termIds) {
+  if (res.status >= 200 && res.status < 300) {
+    return res.json('data');
+  }
+  if (res.body && res.body.indexOf('필수 약관') >= 0) {
+    const envName = role === 'CUSTOMER' ? 'CUSTOMER_TERM_IDS' : 'RIDER_TERM_IDS';
+    throw new Error(
+      `[seed] ${label}: 이 DB에는 필수 약관이 있어 동의 목록이 필요하다` +
+      ` (지금 넘긴 값: [${termIds.join(',')}]).\n` +
+      `  아래로 ID를 확인해 -e ${envName}=<쉼표구분> 으로 넘길 것:\n` +
+      `    SELECT term_id FROM term WHERE is_active = 1 AND is_required = 1\n` +
+      `      AND target_role IN ('COMMON', '${role}');`
+    );
+  }
+  throw new Error(`[seed] ${label} 실패: status=${res.status} body=${res.body}`);
+}
+
+// 서울 내 좌표 두 쌍(강남 → 송파) — 최대 배송거리(30km, seed-fare-policy.sql)를 넘지 않는
+// 임의의 고정 경로. 여러 쌍을 만들 때 좌표를 다양화하지 않는 이유는 #259 의 종속변인
+// (지연·용량)이 좌표가 아니라 동시 연결 수 N 에 달려 있어서다.
 const PICKUP = { roadAddress: '서울 강남구 테헤란로 152', detailAddress: '5층', postalCode: '06236', latitude: 37.5006, longitude: 127.0366 };
 const DESTINATION = { roadAddress: '서울 송파구 올림픽로 300', detailAddress: '1동', postalCode: '05551', latitude: 37.5145, longitude: 127.1059 };
 
@@ -106,11 +138,11 @@ function seedCustomer(index) {
       name: `부하고객${index}`,
       phoneNumber,
       phoneVerificationToken: phoneToken,
-      agreedTermIds: [], // term 0행 전제(#373 조사) — 약관이 생기면 조회 API 연동 필요.
+      agreedTermIds: CUSTOMER_TERM_IDS,
     }),
     jsonHeaders()
   );
-  checkOk(signupRes, `customer/signup(${loginId})`);
+  checkSignup(signupRes, `customer/signup(${loginId})`, 'CUSTOMER', CUSTOMER_TERM_IDS);
 
   const loginRes = http.post(
     `${BASE_URL}/api/customer/login`,
@@ -156,11 +188,11 @@ function seedRider(index) {
       name: `부하라이더${index}`,
       phoneNumber,
       phoneVerificationToken: phoneToken,
-      agreedTermIds: [],
+      agreedTermIds: RIDER_TERM_IDS,
     }),
     jsonHeaders()
   );
-  checkOk(signupRes, `rider/signup(${loginId})`);
+  checkSignup(signupRes, `rider/signup(${loginId})`, 'RIDER', RIDER_TERM_IDS);
 
   const loginRes = http.post(
     `${BASE_URL}/api/rider/login`,

@@ -25,9 +25,9 @@ public class CustomerLoginService {
 
     private static final String LOGIN_FAILURE_MESSAGE = "아이디 또는 비밀번호가 일치하지 않습니다.";
 
-    // 세션 TTL 2시간 고정(사람 확인, #26 계약). 슬라이딩 갱신 여부는 세션 검증 기능(#27)에서
-    // 따로 결정한다 — 로그인 시점엔 최초 TTL만 정하면 된다.
-    private static final Duration SESSION_TTL = Duration.ofHours(2);
+    // 최초 TTL 2시간(사람 확인, #26 계약). 인증을 통과한 요청마다 인터셉터가 같은 값으로 다시
+    // 건다(슬라이딩, #439) — 값이 갈리면 안 되므로 SessionStore.DEFAULT_TTL 하나만 쓴다.
+    private static final Duration SESSION_TTL = SessionStore.DEFAULT_TTL;
 
     private final MemberRepository memberRepository;
     private final SessionStore sessionStore;
@@ -50,9 +50,9 @@ public class CustomerLoginService {
         }
 
         String sessionId = generateSessionId();
-        sessionStore.create(sessionId, member.getId(), member.getRole().name(), SESSION_TTL);
+        sessionStore.create(sessionId, member.getId(), SESSION_TTL);
 
-        return new CustomerLoginResult(sessionId, SESSION_TTL, member.getId(), member.getLoginId(), member.getName());
+        return new CustomerLoginResult(sessionId, member.getId(), member.getLoginId(), member.getName());
     }
 
     private String generateSessionId() {

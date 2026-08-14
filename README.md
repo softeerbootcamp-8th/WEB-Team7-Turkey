@@ -1,274 +1,103 @@
 # Turkey
 
-> 카카오 T 퀵의 사용자 흐름을 참고한 실시간 퀵배송 매칭 서비스
+> 카카오 T 퀵의 사용자 흐름을 참고한 실시간 퀵배송 서비스
 
 **Softeer Bootcamp 8기 Team 7 종합 프로젝트**
 
 <br>
 
-## 🚚 프로젝트 소개
+## 🚚 서비스 소개
 
 Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실시간으로 연결하는 웹 기반 퀵서비스 플랫폼입니다.
 
-고객은 출발지와 도착지를 입력해 배송을 요청하고, 라이더는 주변 배송 요청을 확인한 뒤 원하는 요청을 수락할 수 있습니다.
+ **고객 배송요청 → 배차 → 실시간 위치 추적 → 배송 완료**로 이어지는 핵심 흐름을 제대로 구현하고, 그 과정에서 마주치는 기술적 도전에 집중하는 것을 목표로 삼았습니다.
 
-주문 생성부터 배차, 라이더 위치 추적, 배송 완료 및 정산까지 퀵서비스의 핵심 흐름을 구현합니다.
+- 🔗 [배포 링크](https://dw1nqa61d1no6.cloudfront.net/)
 
-<br>
-
-## 🎯 프로젝트 목표
-
-* 위치 기반 주변 라이더 검색
-* 동시 배송 수락 상황에서 중복 배차 방지
-* 라이더 위치의 실시간 수집 및 전달
-* 안전한 배송 상태 전이 관리
-* 배송 완료와 라이더 정산의 트랜잭션 처리
-* 네트워크 단절 및 장애 상황을 고려한 배송 흐름 설계
+- 📑 [API 문서 (Swagger)](https://dw1nqa61d1no6.cloudfront.net/swagger-ui/index.html#/)
 
 <br>
 
-## 서비스 아키텍처
+## 🎬 시연 영상
+
+<div align="center">
+  <video src="https://github.com/user-attachments/assets/f5b42518-73b6-4d11-9ab6-8b4ec31e0d78" controls width="600"></video>
+</div>
+
+<br>
+
+## 🗺️ 사용자 흐름도
+
+| 표기 | 뜻 |
+| --- | --- |
+| 🟦 파란 노드 | 고객 · 웹 브라우저 |
+| 🟨 노란 노드 | 라이더 · 안드로이드 앱 |
+| 🔴 빨간 화살표 | 두 액터가 서버를 통해 서로를 움직이는 지점 |
+| 🟠 주황 화살표 | 고객이 흐름에서 빠져나가는 분기(취소) |
+| 굵은 테두리 | **클릭하면 그 주제의 CORE 위키로 이동** |
+
+```mermaid
+flowchart TB
+    C1["🧑 ① 회원가입"] --> C2["🧑 ② 로그인"] --> C3["🧑 ③ 포인트 충전"] --> C4["🧑 ④ 배송요청 생성"] --> C5["🧑 ⑤ 실시간 위치 추적"]
+    C4 -->|"배차 전(WAITING)에만 취소"| C8["🧑 ⑧ 취소 · 포인트 환급"]
+    C5 --> C6["🧑 ⑥ 포인트 내역"]
+    C5 --> C7["🧑 ⑦ 배송 내역"]
+
+    R1["🛵 ① 회원가입"] --> R2["🛵 ② 로그인"] --> R3["🛵 ③ 콜 목록"] --> R4["🛵 ④ 콜 받기"] --> R5["🛵 ⑤ 진행 배송"] --> R6["🛵 ⑥ 완료 인증"]
+    R6 --> R7["🛵 ⑦ 포인트 · 정산"]
+    R6 --> R8["🛵 ⑧ 운행 기록"]
+
+    C4 -->|"WAITING 주문 노출"| R3
+    R4 -->|"배차 확정"| C5
+    R5 -->|"위치 → SSE"| C5
+    R6 -->|"COMPLETED · 정산"| C7
+
+    click C2 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-쿠키-세션-인증방식" "CORE 쿠키-세션 인증방식"
+    click R2 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-쿠키-세션-인증방식" "CORE 쿠키-세션 인증방식"
+    click C3 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-결제-정합성" "CORE 결제 정합성"
+    click C8 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-결제-정합성" "CORE 결제 정합성 · 취소=환급"
+    click C5 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-실시간-위치-추적" "CORE 실시간 위치 추적"
+    click R3 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-배차-위치-검색" "CORE 배차 위치 검색"
+    click R4 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-콜받기" "CORE 콜받기"
+    click R5 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-배송-상태-전이" "CORE 배송 상태 전이"
+
+    classDef cus fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
+    classDef rid fill:#fef3c7,stroke:#f59e0b,color:#5c4813
+    classDef core stroke-width:3px
+    class C1,C2,C3,C4,C5,C6,C7,C8 cus
+    class R1,R2,R3,R4,R5,R6,R7,R8 rid
+    class C2,C3,C5,C8,R2,R3,R4,R5 core
+    linkStyle 14,15,16,17 stroke:#dc2626,stroke-width:3px
+    linkStyle 4 stroke:#ea580c,stroke-width:3px
+```
+<br>
+
+## 👥 팀원 소개 및 맡은 일
+
+| 이름 | 담당 도메인 |
+| --- | --- |
+| [정상진](https://github.com/jsj3473) | 위치·실시간 통신, 인증 |
+| [백홍빈](https://github.com/githings) | 고객 서비스, 결제·정산, 웹앱 |
+| [유승종](https://github.com/bigbell999) | 위치·실시간 통신, AWS 인프라 |
+| [박민서](https://github.com/minseo6753) | 배차 동시성, 라이더 서비스, AWS 인프라 |
+| [주민석](https://github.com/emes-g) | 배차 동시성, 라이더 서비스, AWS 인프라 |
+
+<br>
+
+
+## 🏗️ 인프라 아키텍처
+
 ![architecture_img](./imgs/architecture.png)
 
 <br>
 
-## 📌 주요 기능
-
-### 고객
-
-* 출발지와 도착지를 기반으로 배송 요청
-* 예상 거리와 배송 요금 확인
-* 배차 진행 상태 확인
-* 배정된 라이더 정보 확인
-* 라이더 위치와 배송 상태 실시간 조회
-* 배송 완료 증빙 및 배송 내역 확인
-
-### 라이더
-
-* 대기 상태 활성화 및 현재 위치 공유
-* 주변 배송 요청 조회
-* 배송 요청 상세 정보 확인 및 수락
-* 픽업지 이동 및 물품 수령 처리
-* 배송 중 실시간 위치 전송
-* 배송 완료 사진 등록
-* 배송 수익 및 정산 내역 조회
-
-<br>
-
-## 🔄 서비스 흐름
-
-```text
-고객 배송 요청
-    ↓
-주변 대기 라이더 검색
-    ↓
-라이더 호출
-    ↓
-배차 수락 경쟁
-    ↓
-라이더 한 명 배정
-    ↓
-픽업지 이동
-    ↓
-물품 수령
-    ↓
-실시간 배송 위치 추적
-    ↓
-배송 완료
-    ↓
-결제 및 라이더 정산
-```
-
-<br>
-
-## 🧭 배송 상태
-
-```text
-배차 대기
-    ↓
-라이더 배정
-    ↓
-픽업지 이동
-    ↓
-물품 수령
-    ↓
-배송 중
-    ↓
-배송 완료
-```
-
-배송 상태는 정해진 순서에 따라 변경됩니다.
-
-잘못된 상태 전이, 중복 요청, 권한이 없는 사용자의 상태 변경은 도메인 검증을 통해 차단합니다.
-
-<br>
-
-## 🔥 핵심 기술 과제
-
-### 배차 동시성 제어
-
-하나의 배송 요청을 여러 라이더가 동시에 수락하더라도 단 한 명의 라이더만 배차에 성공하도록 처리합니다.
-
-조건부 업데이트, 낙관적 락 또는 비관적 락을 비교하고 프로젝트 상황에 적합한 방식을 적용합니다.
-
-### 위치 기반 라이더 검색
-
-고객의 픽업 위치를 기준으로 일정 반경 안에 있는 대기 라이더를 조회합니다.
-
-Redis GEO 또는 공간 인덱스를 활용해 가까운 라이더를 거리순으로 검색합니다.
-
-### 실시간 위치 추적
-
-라이더의 현재 위치를 주기적으로 서버에 전달하고, 해당 배송을 기다리는 고객에게 실시간으로 전송합니다.
-
-```text
-라이더 → 서버: HTTP 또는 WebSocket
-서버 → 고객: SSE 또는 WebSocket
-```
-
-### 배송 상태 정합성
-
-배송 상태와 요청 사용자의 권한을 함께 검증합니다.
-
-동시에 여러 상태 변경 요청이 발생해도 상태가 역행하거나 중간 단계를 건너뛰지 않도록 제어합니다.
-
-### 결제 및 정산 트랜잭션
-
-배송 완료 시 다음 작업을 하나의 트랜잭션으로 처리합니다.
-
-* 배송 완료 처리
-* 고객 결제 금액 확정
-* 플랫폼 수수료 계산
-* 라이더 수익금 적립
-* 정산 내역 생성
-
-자세한 구현 과정은 [핵심 기술 과제 문서](./docs/technical-challenges.md)에서 확인할 수 있습니다.
-
-<br>
-
-## 🖥️ 서비스 화면
-
-### 배송 요청
-
-<!-- 이미지 추가 후 주석을 제거합니다. -->
-
-<!-- ![배송 요청](./docs/images/customer-order.png) -->
-
-### 배차 대기
-
-<!-- ![배차 대기](./docs/images/customer-matching.png) -->
-
-### 라이더 콜 수신
-
-<!-- ![라이더 콜 수신](./docs/images/rider-call.png) -->
-
-### 실시간 배송 추적
-
-<!-- ![실시간 배송 추적](./docs/images/delivery-tracking.png) -->
-
-### 배송 완료
-
-<!-- ![배송 완료](./docs/images/delivery-completed.png) -->
-
-<br>
-
-
 ## 🛠️ 기술 스택
 
-### Frontend
-
-* TypeScript
-* React
-* Next.js
-* Tailwind CSS
-* TanStack Query
-* Storybook
-* Vitest
-
-### Backend
-
-* Java 21
-* Spring Boot
-* Spring Data JPA
-* MySQL
-* Redis
-* Flyway
-* JUnit 5
-* Server-Sent Events
-
-> 프로젝트 요구사항에 따라 Spring Security는 사용하지 않고 인증과 인가에 필요한 기능을 직접 구현합니다.
-
-### Infrastructure
-
-* AWS EC2
-* AWS S3
-* Docker
-* GitHub Actions
-
-### Monitoring
-
-* Spring Boot Actuator
-* Prometheus
-* Grafana
+| 분류 | 기술 스택 |
+| --- | --- |
+| 프론트엔드 | ![React](https://img.shields.io/badge/React-61DAFB?style=for-the-badge&logo=react&logoColor=black) ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white) ![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white) ![TanStack Query](https://img.shields.io/badge/TanStack_Query-FF4154?style=for-the-badge&logo=reactquery&logoColor=white) ![TanStack Router](https://img.shields.io/badge/TanStack_Router-0EA5E9?style=for-the-badge&logo=tanstack&logoColor=white) ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)   ![Orval](https://img.shields.io/badge/Orval-FF6B6B?style=for-the-badge) |
+| 백엔드 | ![Java](https://img.shields.io/badge/Java%2021-007396?style=for-the-badge&logo=openjdk&logoColor=white) ![Spring Boot](https://img.shields.io/badge/Spring_Boot-6DB33F?style=for-the-badge&logo=springboot&logoColor=white) ![Gradle](https://img.shields.io/badge/Gradle-02303A?style=for-the-badge&logo=gradle&logoColor=white) ![JPA](https://img.shields.io/badge/JPA-59666C?style=for-the-badge&logo=hibernate&logoColor=white) ![Flyway](https://img.shields.io/badge/Flyway-CC0200?style=for-the-badge&logo=flyway&logoColor=white) ![MySQL](https://img.shields.io/badge/MySQL-4479A1?style=for-the-badge&logo=mysql&logoColor=white) ![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white) ![JUnit5](https://img.shields.io/badge/JUnit5-25A162?style=for-the-badge&logo=junit5&logoColor=white) |
+| 인프라 | ![AWS EC2](https://img.shields.io/badge/AWS%20EC2-FF9900?style=for-the-badge&logo=amazonec2&logoColor=white) ![AWS S3](https://img.shields.io/badge/AWS%20S3-569A31?style=for-the-badge&logo=amazons3&logoColor=white) ![AWS CloudFront](https://img.shields.io/badge/CloudFront-8C4FFF?style=for-the-badge&logo=amazonaws&logoColor=white) ![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white) ![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white) |
+| 협업 | ![Figma](https://img.shields.io/badge/Figma-F24E1E?style=for-the-badge&logo=figma&logoColor=white) ![Slack](https://img.shields.io/badge/Slack-4A154B?style=for-the-badge&logo=slack&logoColor=white) ![GitHub](https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white) |
 
 <br>
-
-## 📅 프로젝트 일정
-
-| Phase               | 목표                | 기간                        | 문서                   |
-| ------------------- | ----------------- | ------------------------- | -------------------- |
-| Phase 1. MVP        | 핵심 배송 흐름 구현       | `YYYY.MM.DD ~ YYYY.MM.DD` | [Notion](링크를-입력해주세요) |
-| Phase 2. Deep Dive  | 동시성·실시간 위치·정산 고도화 | `YYYY.MM.DD ~ YYYY.MM.DD` | [Notion](링크를-입력해주세요) |
-| Phase 3. 최적화 및 리팩터링 | 성능, 안정성, 테스트 개선   | `YYYY.MM.DD ~ YYYY.MM.DD` | [Notion](링크를-입력해주세요) |
-
-<br>
-
-## 📚 상세 문서
-
-* [서비스 기획서](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/discussions/180)
-* [Frontend README](./frontend/README.md)
-* [Backend README](frontend/README.md)
-* [API 명세](링크를-입력해주세요)
-* [ERD](링크를-입력해주세요)
-* [시스템 아키텍처](./docs/architecture.md)
-* [핵심 기술 과제](./docs/technical-challenges.md)
-* [협업 규칙 및 컨벤션](./docs/conventions.md)
-
-<br>
-
-## 🤝 협업 방식
-
-* GitHub Issue를 기준으로 작업을 관리합니다.
-* 기능 개발 전에 API와 데이터 모델을 합의합니다.
-* 모든 변경 사항은 Pull Request를 통해 병합합니다.
-* 최소 한 명 이상의 코드 리뷰를 받은 후 병합합니다.
-* 매일 데일리 스크럼을 진행합니다.
-* 중요한 기술 결정은 문서로 기록합니다.
-
-### 협업 기록
-
-* [회의록](링크를-입력해주세요)
-* [데일리 스크럼](링크를-입력해주세요)
-* [페어 프로그래밍 기록](링크를-입력해주세요)
-* [KPT 회고](링크를-입력해주세요)
-* [기술 의사결정 기록](링크를-입력해주세요)
-
-브랜치, 커밋, Pull Request 규칙은 [협업 규칙 및 컨벤션](./docs/conventions.md)에서 확인할 수 있습니다.
-
-<br>
-
-## 👥 팀원
-
-| 이름   | 역할       | GitHub       | 담당        |
-| ---- | -------- | ------------ | --------- |
-| 팀원 1 | Backend | [GitHub](링크) | 고객 서비스    |
-| 팀원 2 | Backend | [GitHub](링크) | 라이더 서비스   |
-| 팀원 3 | Backend  | [GitHub](링크) | 배송·배차     |
-| 팀원 4 | Backend  | [GitHub](링크) | 위치·실시간 통신 |
-| 팀원 5 | Backend  | [GitHub](링크) | 결제·정산     |
-
-<br>
-
-## 📝 안내
-
-본 프로젝트는 Softeer Bootcamp 8기 교육 과정에서 제작되었습니다.

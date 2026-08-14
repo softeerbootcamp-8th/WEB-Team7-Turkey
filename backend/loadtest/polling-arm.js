@@ -28,11 +28,11 @@
 import http from 'k6/http';
 import { sleep } from 'k6';
 import { Trend, Counter } from 'k6/metrics';
-import { seedPairs } from './seed.js';
-import { loginPairs } from './ec2-login.js';
+import { seedPairs } from './local/seed.js';
+import { loginPairs } from './remote/ec2-login.js';
 
-// -e RUN_ID=... 를 주면 EC2 모드(ec2-seed.sh 로 미리 만들어 둔 계정에 로그인만 한다).
-// 안 주면 로컬 모드(seed.js 가 회원가입부터 API로 직접 만든다). N은 두 모드 다 ec2-seed.sh
+// -e RUN_ID=... 를 주면 EC2 모드(remote/ec2-seed.sh 로 미리 만들어 둔 계정에 로그인만 한다).
+// 안 주면 로컬 모드(seed.js 가 회원가입부터 API로 직접 만든다). N은 두 모드 다 remote/ec2-seed.sh
 // 실행 때 쓴 값과 여기 -e N=... 을 사람이 맞춰 줘야 한다(자동 감지 안 함 — 간단하게 유지).
 const EC2_MODE = Boolean(__ENV.RUN_ID);
 
@@ -65,7 +65,10 @@ export const options = {
       startTime: `${RIDER_INTERVAL_SEC}s`,
     },
   },
-  setupTimeout: '25m', // N=50 실측 88s(1.76s/쌍) 기준 대규모 N 역산(#259 실측, 2026-08-11).
+  // N=50 실측 88s(1.76s/쌍) 기준 대규모 N 역산(#259 실측, 2026-08-11).
+  // sse-arm.js 와 **같은 값을 유지할 것** — 달라지면 같은 N 에서 한쪽만 setup 타임아웃으로 죽어
+  // 두 arm 비교가 성립하지 않는다.
+  setupTimeout: __ENV.SETUP_TIMEOUT || '25m',
 };
 
 export function setup() {
