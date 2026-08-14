@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 
 import com.turkey.quick.common.routing.Coordinate;
 import com.turkey.quick.common.routing.RoutingClient;
+import com.turkey.quick.common.routing.RoutingClient.RouteEstimate;
 import com.turkey.quick.location.dto.LocationPayload;
 import com.turkey.quick.location.repository.RiderLocationRepository;
 import com.turkey.quick.order.domain.Address;
@@ -20,6 +21,7 @@ import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -102,14 +104,16 @@ class DeliveryRouteEstimatorTest {
     @DisplayName("픽업 전에는 픽업지까지의 경로를 구한다")
     void routesToPickupBeforePickup(OrderStatus status) {
         givenRiderAt(RIDER_POSITION);
-        given(routingClient.findRoute(any(), any())).willReturn(Optional.of(Duration.ofMinutes(7)));
+        given(routingClient.findRoute(any(), any()))
+                .willReturn(Optional.of(new RouteEstimate(Duration.ofMinutes(7), List.of(PICKUP))));
 
-        Optional<Duration> found = estimator.findRemainingRoute(order(status, address(PICKUP)));
+        Optional<RouteEstimate> found = estimator.findRemainingRoute(order(status, address(PICKUP)));
 
         // 러시아워 보정(최대 x1.3)이 실행 시각에 따라 걸릴 수 있어 상한까지 넉넉히 잡는다.
         assertThat(found).isPresent();
-        assertThat(found.get().toMillis())
+        assertThat(found.get().duration().toMillis())
                 .isBetween(Duration.ofMinutes(7).toMillis(), Duration.ofMinutes(10).toMillis());
+        assertThat(found.get().path()).containsExactly(PICKUP);
         assertThat(capturedDestination()).isEqualTo(PICKUP);
     }
 
@@ -118,7 +122,8 @@ class DeliveryRouteEstimatorTest {
     @DisplayName("픽업 후에는 도착지까지의 경로를 구한다")
     void routesToDestinationAfterPickup(OrderStatus status) {
         givenRiderAt(RIDER_POSITION);
-        given(routingClient.findRoute(any(), any())).willReturn(Optional.of(Duration.ofMinutes(12)));
+        given(routingClient.findRoute(any(), any()))
+                .willReturn(Optional.of(new RouteEstimate(Duration.ofMinutes(12), List.of(DESTINATION))));
 
         estimator.findRemainingRoute(order(status, address(DESTINATION)));
 

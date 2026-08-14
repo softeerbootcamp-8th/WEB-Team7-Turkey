@@ -113,9 +113,10 @@ function ContactFields({ legend, prefix, value, errors, onChange }: ContactField
       <Field label="연락처" error={errors[`${prefix}.phoneNumber`]}>
         <input
           value={value.phoneNumber}
-          onChange={(event) => onChange({ ...value, phoneNumber: event.target.value })}
+          onChange={(event) => onChange({ ...value, phoneNumber: event.target.value.replace(/[^0-9-]/g, '') })}
           className={inputClassName}
           inputMode="tel"
+          type="tel"
           placeholder="연락처 *"
         />
       </Field>
@@ -137,9 +138,13 @@ function Field({ label, error, children }: {
   )
 }
 
-export function DeliveryForm() {
+export function DeliveryForm({ defaultSenderName }: { defaultSenderName?: string } = {}) {
   const navigate = useNavigate()
-  const [values, setValues] = useState<DeliveryFormValues>(INITIAL_DELIVERY_FORM_VALUES)
+  const [values, setValues] = useState<DeliveryFormValues>(() => (
+    defaultSenderName
+      ? { ...INITIAL_DELIVERY_FORM_VALUES, sender: { ...INITIAL_DELIVERY_FORM_VALUES.sender, name: defaultSenderName } }
+      : INITIAL_DELIVERY_FORM_VALUES
+  ))
   const [showErrors, setShowErrors] = useState(false)
   const [quotedFare, setQuotedFare] = useState<number>()
   const [estimatedMinutes, setEstimatedMinutes] = useState<number>()

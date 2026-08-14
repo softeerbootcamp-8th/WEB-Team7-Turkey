@@ -392,7 +392,7 @@ function RiderSignup() {
                 onChange={(event) => updateField('password', event.target.value)}
                 aria-invalid={Boolean(fieldErrors.password)}
                 aria-describedby={fieldErrors.password ? 'signup-password-error' : undefined}
-                placeholder="비밀번호 입력"
+                placeholder="비밀번호 입력 (8자 이상)"
                 type="password"
               />
               {fieldErrors.password && <FieldError id="signup-password-error">{fieldErrors.password}</FieldError>}

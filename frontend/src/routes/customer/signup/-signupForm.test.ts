@@ -65,6 +65,20 @@ describe('validateCustomerSignup', () => {
       name: '이름을 입력해 주세요.',
     })
   })
+
+  it('비밀번호가 8자 미만이면 오류를 반환한다', () => {
+    expect(validateCustomerSignup({
+      ...validFields,
+      password: 'short1',
+      passwordConfirm: 'short1',
+    }, {
+      checkedLoginId: 'customer1',
+      phoneVerificationToken: 'verified-token',
+      verifiedPhoneNumber: '010-1234-5678',
+    })).toMatchObject({
+      password: '비밀번호는 8자 이상이어야 합니다.',
+    })
+  })
 })
 
 describe('휴대전화 번호 검증', () => {

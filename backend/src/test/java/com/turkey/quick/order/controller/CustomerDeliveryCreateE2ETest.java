@@ -258,6 +258,24 @@ class CustomerDeliveryCreateE2ETest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("연락처 전화번호 형식이 올바르지 않으면(한글 등) 400을 반환하고 주문도 만들어지지 않는다")
+    void returnsBadRequestForInvalidContactPhoneNumber() {
+        saveActiveFarePolicy();
+        saveCustomerWithWallet("e2e_order_contact", "p@ssw0rd", "01011119999", 50_000L);
+        String cookie = loginAndGetSessionCookie("e2e_order_contact", "p@ssw0rd");
+        long fare = quotedFare();
+
+        Map<String, Object> body = createBody(UUID.randomUUID().toString(), fare);
+        body.put("recipient", Map.of("name", "이수령", "phoneNumber", "공일공일이삼사오"));
+
+        var response = rest.exchange(DELIVERIES_ENDPOINT, HttpMethod.POST,
+                withCookie(cookie, body), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(balanceOf("e2e_order_contact")).isEqualTo(50_000L);
+    }
+
+    @Test
     @DisplayName("포인트가 모자라면 402를 반환하고 주문도 만들어지지 않는다")
     void returnsPaymentRequiredWhenPointsAreInsufficient() {
         saveActiveFarePolicy();
