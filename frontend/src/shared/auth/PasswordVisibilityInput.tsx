@@ -28,7 +28,7 @@ export function PasswordVisibilityInput({
         onChange={onChange}
         aria-invalid={invalid}
         aria-describedby={describedBy}
-        placeholder="비밀번호 입력"
+        placeholder="비밀번호 입력 (8자 이상)"
         type={isVisible ? 'text' : 'password'}
       />
       <button

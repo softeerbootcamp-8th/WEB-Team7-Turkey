@@ -1,12 +1,15 @@
 package com.turkey.quick.order.service;
 
 import com.turkey.quick.common.exception.BusinessException;
+import com.turkey.quick.common.routing.RoutingClient.RouteEstimate;
 import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.dto.DeliveryEtaResponse;
+import com.turkey.quick.order.dto.RoutePointResponse;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -62,12 +65,17 @@ public class DeliveryEtaQueryService {
         }
 
         // 여기부터 트랜잭션 밖이다 — 위 조회가 끝난 뒤에 외부 서버를 부른다.
-        Optional<Duration> eta = routeEstimator.findRemainingRoute(order);
+        Optional<RouteEstimate> route = routeEstimator.findRemainingRoute(order);
 
         return new DeliveryEtaResponse(
                 order.getId(),
                 order.getStatus(),
-                eta.map(DeliveryEtaQueryService::arrivalAt).orElse(null));
+                route.map(RouteEstimate::duration).map(DeliveryEtaQueryService::arrivalAt).orElse(null),
+                route.map(DeliveryEtaQueryService::toPathResponse).orElse(null));
+    }
+
+    private static List<RoutePointResponse> toPathResponse(RouteEstimate route) {
+        return route.path().stream().map(RoutePointResponse::from).toList();
     }
 
     /**

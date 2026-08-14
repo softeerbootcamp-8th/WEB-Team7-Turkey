@@ -57,6 +57,8 @@ export function validateCustomerSignup(
 
   if (!fields.password) {
     errors.password = '비밀번호를 입력해 주세요.'
+  } else if (fields.password.length < 8) {
+    errors.password = '비밀번호는 8자 이상이어야 합니다.'
   }
 
   if (!name) {

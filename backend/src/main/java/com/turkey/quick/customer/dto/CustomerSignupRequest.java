@@ -14,8 +14,9 @@ public record CustomerSignupRequest(
         @Size(max = 50, message = "로그인 ID는 50자를 넘을 수 없습니다.")
         String loginId,
 
-        @Schema(description = "비밀번호", example = "p@ssw0rd")
+        @Schema(description = "비밀번호(8자 이상)", example = "p@ssw0rd")
         @NotBlank(message = "비밀번호는 필수입니다.")
+        @Size(min = 8, message = "비밀번호는 8자 이상이어야 합니다.")
         String password,
 
         @Schema(description = "비밀번호 확인", example = "p@ssw0rd")

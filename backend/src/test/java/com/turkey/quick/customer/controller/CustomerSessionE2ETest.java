@@ -74,7 +74,9 @@ class CustomerSessionE2ETest extends IntegrationTestSupport {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).extracting("data").asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
-                .containsEntry("loginId", "e2e_session01");
+                .containsEntry("loginId", "e2e_session01")
+                // 배송요청 생성 화면이 보내는 분 정보를 자동입력하는 데 쓴다(#533).
+                .containsEntry("phoneNumber", "01011112222");
     }
 
     @Test

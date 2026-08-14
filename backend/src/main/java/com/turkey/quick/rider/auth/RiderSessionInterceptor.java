@@ -5,7 +5,6 @@ import com.turkey.quick.common.auth.SessionStore;
 import com.turkey.quick.common.exception.BusinessException;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
-import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.rider.domain.RiderProfile;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
 import jakarta.servlet.http.HttpServletRequest;
@@ -28,14 +27,12 @@ public class RiderSessionInterceptor implements HandlerInterceptor {
     private static final String AUTH_FAILURE_MESSAGE = "로그인이 필요합니다.";
 
     private final SessionStore sessionStore;
-    private final MemberRepository memberRepository;
     private final RiderProfileRepository riderProfileRepository;
     private final boolean cookieSecure;
 
-    public RiderSessionInterceptor(SessionStore sessionStore, MemberRepository memberRepository,
+    public RiderSessionInterceptor(SessionStore sessionStore,
                                     RiderProfileRepository riderProfileRepository, boolean cookieSecure) {
         this.sessionStore = sessionStore;
-        this.memberRepository = memberRepository;
         this.riderProfileRepository = riderProfileRepository;
         this.cookieSecure = cookieSecure;
     }
@@ -52,17 +49,13 @@ public class RiderSessionInterceptor implements HandlerInterceptor {
             throw authFailure(response);
         }
 
-        Member member = memberRepository.findById(memberId).orElse(null);
-        if (member == null) {
-            throw authFailure(response);
-        }
-
-        if (member.getRole() != MemberRole.RIDER || !member.isActive()) {
-            throw authFailure(response);
-        }
-
-        RiderProfile profile = riderProfileRepository.findById(memberId).orElse(null);
+        RiderProfile profile = riderProfileRepository.findWithMemberById(memberId).orElse(null);
         if (profile == null) {
+            throw authFailure(response);
+        }
+
+        Member member = profile.getMember(); // join fetch로 이미 로딩됨, 추가 쿼리 없음
+        if (member.getRole() != MemberRole.RIDER || !member.isActive()) {
             throw authFailure(response);
         }
 

@@ -1,7 +1,6 @@
 package com.turkey.quick.rider.config;
 
 import com.turkey.quick.common.auth.SessionStore;
-import com.turkey.quick.member.repository.MemberRepository;
 import com.turkey.quick.rider.auth.RiderSessionInterceptor;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +23,6 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class RiderWebMvcConfig implements WebMvcConfigurer {
 
     private final SessionStore sessionStore;
-    private final MemberRepository memberRepository;
     private final RiderProfileRepository riderProfileRepository;
 
     @Value("${session.cookie.secure:true}")
@@ -32,7 +30,7 @@ public class RiderWebMvcConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(new RiderSessionInterceptor(sessionStore, memberRepository, riderProfileRepository, cookieSecure))
+        registry.addInterceptor(new RiderSessionInterceptor(sessionStore, riderProfileRepository, cookieSecure))
                 .addPathPatterns("/api/rider/session",
                                  "/api/rider/requests",
                                  "/api/rider/requests/**",

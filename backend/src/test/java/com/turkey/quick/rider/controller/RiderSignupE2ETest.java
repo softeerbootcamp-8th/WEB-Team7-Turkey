@@ -88,8 +88,8 @@ class RiderSignupE2ETest extends IntegrationTestSupport {
 
         var signupRequest = Map.of(
                 "loginId", "e2e_rider01",
-                "password", "aaa",
-                "passwordConfirm", "aaa",
+                "password", "p@ssw0rd",
+                "passwordConfirm", "p@ssw0rd",
                 "name", "라이더1",
                 "phoneNumber", phoneNumber,
                 "phoneVerificationToken", token,
@@ -116,8 +116,8 @@ class RiderSignupE2ETest extends IntegrationTestSupport {
 
         var signupRequest = Map.of(
                 "loginId", "e2e_rider02",
-                "password", "aaa",
-                "passwordConfirm", "aaa",
+                "password", "p@ssw0rd",
+                "passwordConfirm", "p@ssw0rd",
                 "name", "라이더2",
                 "phoneNumber", phoneNumber,
                 "phoneVerificationToken", token,
@@ -138,8 +138,8 @@ class RiderSignupE2ETest extends IntegrationTestSupport {
 
         var signupRequest = Map.of(
                 "loginId", "taken_rider_login",
-                "password", "aaa",
-                "passwordConfirm", "aaa",
+                "password", "p@ssw0rd",
+                "passwordConfirm", "p@ssw0rd",
                 "name", "라이더3",
                 "phoneNumber", phoneNumber,
                 "phoneVerificationToken", token,
@@ -151,12 +151,33 @@ class RiderSignupE2ETest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("비밀번호가 8자 미만이면 400을 반환한다")
+    void shouldReturnBadRequestWhenPasswordShorterThanEightCharacters() {
+        String phoneNumber = "01099990000";
+        String token = issueVerifiedToken(phoneNumber);
+
+        var signupRequest = Map.of(
+                "loginId", "e2e_rider_short_pw",
+                "password", "short1",
+                "passwordConfirm", "short1",
+                "name", "라이더9",
+                "phoneNumber", phoneNumber,
+                "phoneVerificationToken", token,
+                "agreedTermIds", List.of());
+
+        var response = rest.postForEntity(SIGNUP_ENDPOINT, signupRequest, ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(memberRepository.existsByLoginId("e2e_rider_short_pw")).isFalse();
+    }
+
+    @Test
     @DisplayName("휴대전화 인증 없이 가입하면 400을 반환한다")
     void shouldReturnBadRequestWithoutPhoneVerification() {
         var signupRequest = Map.of(
                 "loginId", "e2e_rider05",
-                "password", "aaa",
-                "passwordConfirm", "aaa",
+                "password", "p@ssw0rd",
+                "passwordConfirm", "p@ssw0rd",
                 "name", "라이더5",
                 "phoneNumber", "010-9999-0000",
                 "phoneVerificationToken", "not-a-real-token",

@@ -3,6 +3,7 @@ package com.turkey.quick.order.dto;
 import com.turkey.quick.order.domain.OrderStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 추적 화면이 <b>주기적으로</b> 부르는 도착 예정 시각(#447).
@@ -34,11 +35,16 @@ public record DeliveryEtaResponse(
                 + "도착지 기준이다 — 어느 쪽인지는 status 로 판단한다. "
                 + "산정할 수 없으면(배차 전·완료·취소, 라이더 위치 없음, 경로 서버 장애) null.",
                 example = "2026-07-28T02:47:00")
-        LocalDateTime estimatedArrivalAt
+        LocalDateTime estimatedArrivalAt,
+
+        @Schema(description = "라이더 현재 위치에서 estimatedArrivalAt 이 향하는 지점까지의 실제 도로 "
+                + "경로 좌표(#532, 순서 보장). 직선거리 대신 이 경로를 지도에 그린다. "
+                + "estimatedArrivalAt 과 같은 조건에서만 채워진다 — 산정할 수 없으면 null.")
+        List<RoutePointResponse> path
 ) {
 
     /** 산정할 수 없는 경우. 오류가 아니라 정상 응답이다(위 javadoc 참고). */
     public static DeliveryEtaResponse unavailable(Long deliveryId, OrderStatus status) {
-        return new DeliveryEtaResponse(deliveryId, status, null);
+        return new DeliveryEtaResponse(deliveryId, status, null, null);
     }
 }

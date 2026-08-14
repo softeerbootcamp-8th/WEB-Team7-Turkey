@@ -44,6 +44,17 @@ describe('배송요청 생성 폼', () => {
     expect(hasQuoteInputErrors(errors)).toBe(true)
   })
 
+  it('연락처 형식이 올바르지 않으면 오류를 반환한다', () => {
+    const values = validValues()
+    values.sender.phoneNumber = '한글전화번호'
+    values.recipient.phoneNumber = ''
+
+    const errors = validateDeliveryForm(values)
+
+    expect(errors['sender.phoneNumber']).toBe('휴대전화 번호 형식이 올바르지 않습니다.')
+    expect(errors['recipient.phoneNumber']).toBe('연락처를 입력해 주세요.')
+  })
+
   it('유효한 주소와 물품 정보로 견적 요청을 만든다', () => {
     const request = toFareQuoteRequest(validValues())
 

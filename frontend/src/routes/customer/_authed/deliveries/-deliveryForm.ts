@@ -63,6 +63,19 @@ export const INITIAL_DELIVERY_FORM_VALUES: DeliveryFormValues = {
   riderNote: '',
 }
 
+const PHONE_NUMBER_PATTERN = /^01(?:0|1|[6-9])-?\d{3,4}-?\d{4}$/
+
+function contactPhoneError(phoneNumber: string): string | undefined {
+  const trimmed = phoneNumber.trim()
+  if (!trimmed) {
+    return '연락처를 입력해 주세요.'
+  }
+  if (!PHONE_NUMBER_PATTERN.test(trimmed)) {
+    return '휴대전화 번호 형식이 올바르지 않습니다.'
+  }
+  return undefined
+}
+
 function coordinateError(value: string, minimum: number, maximum: number): string | undefined {
   if (!value.trim()) {
     return '필수 입력 항목입니다.'
@@ -101,8 +114,9 @@ export function validateDeliveryForm(values: DeliveryFormValues): DeliveryFormEr
     if (!values[contact].name.trim()) {
       errors[`${contact}.name`] = '이름을 입력해 주세요.'
     }
-    if (!values[contact].phoneNumber.trim()) {
-      errors[`${contact}.phoneNumber`] = '연락처를 입력해 주세요.'
+    const phoneError = contactPhoneError(values[contact].phoneNumber)
+    if (phoneError) {
+      errors[`${contact}.phoneNumber`] = phoneError
     }
   }
 
