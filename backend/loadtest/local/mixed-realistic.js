@@ -5,7 +5,7 @@
 // "실제 라이더가 일정 간격으로 보낸다"를 재현하지 못했다. 이 스크립트는 세 트래픽을 각자의
 // 실제 간격으로 페이싱해(open model) 동시에 돌린다:
 //
-//   1) BUSY 라이더 N명   — POST /api/rider/location, 0.5초 간격
+//   1) BUSY 라이더 N명   — POST /api/rider/location, 2.4초 간격
 //   2) 그 라이더를 추적하는 고객 N명 — GET .../tracking/stream (SSE) 연결 유지
 //   3) AVAILABLE 라이더 M명 — GET /api/rider/requests, 3초 간격
 //
@@ -38,7 +38,7 @@ const PASSWORD = __ENV.PASSWORD || 'aa';
 const BUSY_COUNT = Number(__ENV.BUSY_COUNT || 700);
 const AVAILABLE_COUNT = Number(__ENV.AVAILABLE_COUNT || 300);
 const DURATION = __ENV.DURATION || '150s';
-const LOCATION_INTERVAL_SEC = Number(__ENV.LOCATION_INTERVAL_SEC || 0.5);
+const LOCATION_INTERVAL_SEC = Number(__ENV.LOCATION_INTERVAL_SEC || 2.4);
 const CALLLIST_INTERVAL_SEC = Number(__ENV.CALLLIST_INTERVAL_SEC || 3);
 const RADIUS = Number(__ENV.RADIUS_METERS || 3000);
 const LOGIN_BATCH = Number(__ENV.LOGIN_BATCH || 50);

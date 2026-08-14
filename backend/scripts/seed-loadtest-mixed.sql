@@ -10,6 +10,9 @@
 --   lt_c1..lt_c{@busy}   그 라이더의 진행 중(DELIVERING) 배송을 추적하는 고객
 --   lt_a1..lt_a{@available}  AVAILABLE 라이더 (콜 목록 폴링 대상)
 --   lt_w1..lt_w{@waiting}    콜 목록이 찾을 WAITING 주문의 고객
+--   lt_w 고객당 과거 COMPLETED 주문 다수 — WAITING 이 전체 주문의 10%가 되도록 채우는 이력.
+--   실제 운영 DB는 대부분 종결된 과거 주문이고 지금 살아있는 WAITING 은 일부라는 걸 근사한다
+--   (전부 WAITING 인 채로 재면 콜 목록 인덱스가 실제보다 훨씬 좁은 후보군을 본다).
 --
 -- seed-loadtest-riders.sql / seed-loadtest-call-list.sql 을 순서대로 그냥 이어 돌리면 안 된다 —
 -- 둘 다 정리 단계에서 `login_id LIKE 'lt\_%'`로 넓게 지우기 때문에 뒤에 도는 스크립트가 앞선
@@ -26,6 +29,11 @@ SET SESSION cte_max_recursion_depth = 5000;
 SET @busy := 700;        -- BUSY 라이더(=위치 전송) 수 = 추적 고객 수
 SET @available := 300;   -- AVAILABLE 라이더(=콜 목록 폴링) 수
 SET @waiting := 500;     -- 콜 목록이 찾을 WAITING 주문 수(=그 주문의 고객 수)
+-- WAITING(@waiting)이 전체 주문의 10%가 되도록 나머지 90%를 lt_w 고객의 과거 COMPLETED
+-- 주문으로 채운다. 전체 = @waiting / 0.10, 이미 있는 DELIVERING(@busy)·WAITING(@waiting)을
+-- 뺀 나머지가 채워야 할 이력 건수다.
+SET @waiting_ratio := 0.10;
+SET @history_count := CEIL(@waiting / @waiting_ratio) - @busy - @waiting;
 SET @password_hash := '$2y$10$Lt6WtA6CYLmEjEtyFIQKTOwZN3QZqsumCPe6eSBLuiPZXfEohtbpy'; -- 'aa'
 SET @fare_policy_id := (SELECT fare_policy_id FROM fare_policy WHERE policy_version = 'LOCAL-1.0');
 
@@ -139,6 +147,46 @@ SELECT c.member_id,
 FROM (SELECT CAST(SUBSTRING(login_id, 5) AS UNSIGNED) AS i, member_id
       FROM member WHERE login_id LIKE 'lt\_w%') c;
 
+-- lt_w 고객당 과거 COMPLETED 이력(WAITING 10% 비율을 맞추는 채움용, 위 주석 참고).
+-- lt_w 고객·lt_r 라이더를 순환 배정한다 — 라이더는 이미 다른 주문에서 BUSY 지만, 과거 완료
+-- 이력은 동시성 제약(라이더당 진행 중 배송 1건)의 대상이 아니라 FK 만 유효하면 된다.
+INSERT INTO delivery_order (
+    customer_id, assigned_rider_id, status, request_key, item_type,
+    straight_distance_meters,
+    pickup_road_address, pickup_postal_code, pickup_latitude, pickup_longitude,
+    destination_road_address, destination_postal_code, destination_latitude, destination_longitude,
+    sender_name, sender_phone_number, recipient_name, recipient_phone_number,
+    requested_at, assigned_at, moving_to_pickup_at, picked_up_at, delivering_at, completed_at
+)
+SELECT cust.member_id,
+       rider.member_id,
+       'COMPLETED',
+       CONCAT('52000000-0000-0000-0000-', LPAD(seq.i, 12, '0')),
+       ELT(1 + (seq.i % 5), 'DOCUMENT', 'SMALL_PARCEL', 'MEDIUM_PARCEL', 'LARGE_PARCEL', 'FOOD'),
+       1000 + (seq.i * 137 % 19000),
+       CONCAT('서울특별시 콜구 대기로 ', seq.i), '04524',
+       37.430 + (seq.i * 37 % 270) * 0.001,
+       126.800 + (seq.i * 53 % 380) * 0.001,
+       CONCAT('서울특별시 콜구 도착로 ', seq.i), '06232',
+       37.440 + (seq.i * 41 % 260) * 0.001,
+       126.810 + (seq.i * 59 % 370) * 0.001,
+       CONCAT('발송인 ', seq.i), CONCAT('0104', LPAD(seq.i % 10000000, 7, '0')),
+       CONCAT('수령인 ', seq.i), CONCAT('0105', LPAD(seq.i % 10000000, 7, '0')),
+       NOW(3) - INTERVAL (7 * 24 * 60 + seq.i) MINUTE,
+       NOW(3) - INTERVAL (7 * 24 * 60 + seq.i - 5) MINUTE,
+       NOW(3) - INTERVAL (7 * 24 * 60 + seq.i - 10) MINUTE,
+       NOW(3) - INTERVAL (7 * 24 * 60 + seq.i - 15) MINUTE,
+       NOW(3) - INTERVAL (7 * 24 * 60 + seq.i - 20) MINUTE,
+       NOW(3) - INTERVAL (7 * 24 * 60 + seq.i - 25) MINUTE
+FROM (WITH RECURSIVE seq(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM seq WHERE i < @history_count)
+      SELECT i FROM seq) seq
+         JOIN (SELECT CAST(SUBSTRING(login_id, 5) AS UNSIGNED) AS i, member_id
+               FROM member WHERE login_id LIKE 'lt\_w%') cust
+              ON cust.i = ((seq.i - 1) % @waiting) + 1
+         JOIN (SELECT CAST(SUBSTRING(login_id, 5) AS UNSIGNED) AS i, member_id
+               FROM member WHERE login_id LIKE 'lt\_r%') rider
+              ON rider.i = ((seq.i - 1) % @busy) + 1;
+
 INSERT INTO order_fare_snapshot (
     order_id, fare_policy_id, fare_type, policy_version,
     calculation_distance_meters, base_fare, distance_fare, item_surcharge, total_fare
@@ -164,4 +212,22 @@ SELECT
     (SELECT COUNT(*) FROM member m JOIN rider_profile rp ON rp.member_id = m.member_id
      WHERE m.login_id LIKE 'lt\_a%' AND rp.operating_status = 'AVAILABLE') AS available_riders,
     (SELECT COUNT(*) FROM delivery_order o JOIN member m ON m.member_id = o.customer_id
-     WHERE m.login_id LIKE 'lt\_w%' AND o.status = 'WAITING') AS waiting_orders;
+     WHERE m.login_id LIKE 'lt\_w%' AND o.status = 'WAITING') AS waiting_orders,
+    -- customer_id·assigned_rider_id 를 IN(...) 으로 한 번에 조인하면 둘 다 lt_ 패턴에 걸리는
+    -- 행(예: lt_c 고객 + lt_r 라이더의 DELIVERING 주문)이 두 번 잡힌다 — EXISTS 로 갈라야
+    -- 주문 1건이 정확히 1번만 세어진다.
+    (SELECT COUNT(*) FROM delivery_order o
+     WHERE EXISTS (SELECT 1 FROM member m WHERE m.member_id = o.customer_id
+                   AND (m.login_id LIKE 'lt\_r%' OR m.login_id LIKE 'lt\_c%' OR m.login_id LIKE 'lt\_w%'))
+        OR EXISTS (SELECT 1 FROM member m WHERE m.member_id = o.assigned_rider_id
+                   AND (m.login_id LIKE 'lt\_r%' OR m.login_id LIKE 'lt\_c%' OR m.login_id LIKE 'lt\_w%')))
+        AS total_orders_this_dataset,
+    (SELECT ROUND(100 *
+        (SELECT COUNT(*) FROM delivery_order o JOIN member m ON m.member_id = o.customer_id
+         WHERE m.login_id LIKE 'lt\_w%' AND o.status = 'WAITING') /
+        (SELECT COUNT(*) FROM delivery_order o
+         WHERE EXISTS (SELECT 1 FROM member m WHERE m.member_id = o.customer_id
+                       AND (m.login_id LIKE 'lt\_r%' OR m.login_id LIKE 'lt\_c%' OR m.login_id LIKE 'lt\_w%'))
+            OR EXISTS (SELECT 1 FROM member m WHERE m.member_id = o.assigned_rider_id
+                       AND (m.login_id LIKE 'lt\_r%' OR m.login_id LIKE 'lt\_c%' OR m.login_id LIKE 'lt\_w%'))), 1))
+        AS waiting_ratio_pct;

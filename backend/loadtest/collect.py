@@ -74,6 +74,7 @@ RAW = [
     ("tomcat_connections", "max(tomcat_connections_current_connections)"),
     ("heap_used_bytes", 'sum(jvm_memory_used_bytes{{area="heap"}})'),
     ("gc_pause_seconds_per_sec", "sum(rate(jvm_gc_pause_seconds_sum[1m]))"),
+    ("jit_compile_ms_per_sec", "sum(rate(jvm_compilation_time_ms_total[1m]))"),
     ("mysql_questions_per_sec", "sum(rate(mysql_global_status_questions[1m]))"),
     ("redis_commands_per_sec", "sum(rate(redis_commands_processed_total[1m]))"),
 ]
@@ -333,6 +334,11 @@ ROWS = [
     # 벽시계 대비 비율이 절대 초보다 읽기 쉽다. 계단 런에서 이 값이 4.7% → 51.3% 로 오르며
     # 병목이 CPU 에서 GC 로 옮겨 가는 것을 드러냈다(2026-08-11 실측).
     ("GC 정지 비율", "sum(increase(jvm_gc_pause_seconds_sum[{w}s])) / {w}", "%", 100, 1),
+    # 콜드 JVM 은 요청 처리 스레드와 같은 코어를 놓고 JIT 컴파일러가 경쟁한다 — 웜업 없이
+    # 잰 런은 이 값이 측정 구간 내내 안 죽고 수백 ms/s 씩 오른다(#502 IHOP 스윕에서 실측:
+    # 콜드 런 20,000~27,000ms 대 웜업된 런 3,111ms). 값이 낮게(구간 대비 미미하게) 나와야
+    # "이 런은 웜업이 됐다"고 믿을 수 있다 — 안 그러면 힙·GC 옵션 비교 자체가 무의미해진다.
+    ("JIT 컴파일 부하", "sum(increase(jvm_compilation_time_ms_total[{w}s])) / {w}", " ms/s", 1, 1),
     ("힙 사용 최대",
      'max_over_time((sum(jvm_memory_used_bytes{{area="heap"}}))[{w}s:15s])',
      " MiB", 1 / 1048576, 0),
