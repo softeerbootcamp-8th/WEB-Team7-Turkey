@@ -1,6 +1,7 @@
 package com.turkey.quick.common.routing;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -42,7 +43,15 @@ public interface RoutingClient {
      * <p>그 대가로 호출자는 실패 사유를 알 수 없다. 사유별 대응(예: 서비스 지역 밖 안내)이 필요해지면
      * 그때 반환 타입을 넓히고, 그전까지는 로그와 지표로만 구분한다.
      *
-     * @return 예상 소요시간. 찾지 못했거나 라우팅 서버를 호출할 수 없으면 빈 값
+     * @return 예상 소요시간과 경로 좌표. 찾지 못했거나 라우팅 서버를 호출할 수 없으면 빈 값
      */
-    Optional<Duration> findRoute(Coordinate origin, Coordinate destination);
+    Optional<RouteEstimate> findRoute(Coordinate origin, Coordinate destination);
+
+    /**
+     * 소요시간과 경로 좌표(#532, 고객 추적 화면에 직선거리 대신 실제 도로 경로를 표시하기 위해
+     * duration-only 계약을 다시 넓혔다). {@code path} 는 origin → destination 순서의 도로 경로
+     * 좌표이며, 하나의 OSRM 호출 결과이므로 duration과 항상 함께 있거나 함께 없다.
+     */
+    record RouteEstimate(Duration duration, List<Coordinate> path) {
+    }
 }

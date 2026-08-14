@@ -5,11 +5,23 @@ import { loadKakaoMaps } from '@/lib/kakaoMaps'
 import type { LocationPing } from '@/shared/hooks/useTrackingStream'
 import type { AddressResponse } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
 
+interface RoutePoint {
+  latitude: number
+  longitude: number
+}
+
 interface TrackingMapProps {
   location: LocationPing | null
   pickup?: AddressResponse
   destination?: AddressResponse
   isTrackable?: boolean
+  /**
+   * 라이더가 실제로 지날 도로 경로(OSRM, #532). 백엔드 `DeliveryEtaResponse.path`에서 온다 —
+   * 이 프론트 세션에서는 Orval 재생성을 못 해 아직 아무 화면도 이 prop을 채워 보내지 않는다
+   * (CLAUDE.md "경로 탐색·ETA" 참고). 값이 없으면 예전처럼 픽업↔도착지 직선을 그리지
+   * 않는다 — 실제 경로가 아닌 직선거리를 보여주는 것이 이번에 없애려는 문제였기 때문이다.
+   */
+  routePath?: RoutePoint[]
 }
 
 /** 위치를 아직 못 받았을 때 지도 초기 중심(서울시청) — 실제 위치가 오면 바로 그쪽으로 이동한다. */
@@ -112,7 +124,7 @@ function buildMarkerImage(facing: Facing): kakao.maps.MarkerImage {
  * 배차 직후라 라이더가 아직 위치를 안 보냈거나 재연결 중) 지도 위에 안내 문구를 겹쳐 보여주고,
  * 지도 자체는 기본 중심에 그대로 둔다.
  */
-export function TrackingMap({ location, pickup, destination, isTrackable = false }: TrackingMapProps) {
+export function TrackingMap({ location, pickup, destination, isTrackable = false, routePath }: TrackingMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<kakao.maps.Map | null>(null)
   const markerRef = useRef<kakao.maps.Marker | null>(null)
@@ -192,17 +204,28 @@ export function TrackingMap({ location, pickup, destination, isTrackable = false
       map,
       image: createPinMarkerImage(DESTINATION_MARKER_COLOR),
     })
-    routeLineRef.current = new window.kakao.maps.Polyline({
-      path: [pickupPosition, destinationPosition],
-      strokeWeight: 5,
-      strokeColor: '#4A74E8',
-      strokeOpacity: 0.85,
-      strokeStyle: 'solid',
-      map,
-    })
+
     const bounds = new window.kakao.maps.LatLngBounds()
     bounds.extend(pickupPosition)
     bounds.extend(destinationPosition)
+
+    // 실제 도로 경로가 있을 때만 그린다 — 없다고 픽업↔도착지 직선으로 대신하지 않는다.
+    // 직선거리를 실제 경로처럼 보여주는 것이 이번에 없애려는 문제였다(#532).
+    if (routePath && routePath.length >= 2) {
+      const routePositions = routePath.map(
+        (point) => new window.kakao.maps.LatLng(point.latitude, point.longitude),
+      )
+      routeLineRef.current = new window.kakao.maps.Polyline({
+        path: routePositions,
+        strokeWeight: 5,
+        strokeColor: '#4A74E8',
+        strokeOpacity: 0.85,
+        strokeStyle: 'solid',
+        map,
+      })
+      routePositions.forEach((position) => bounds.extend(position))
+    }
+
     // 핀 이미지(세로 40px)와 하단 "픽업 · 도착 위치" 라벨에 안 잘리도록 여백을 둔다.
     map.setBounds(bounds, 40, 40, 60, 40)
 
@@ -214,7 +237,7 @@ export function TrackingMap({ location, pickup, destination, isTrackable = false
       routeLineRef.current?.setMap(null)
       routeLineRef.current = null
     }
-  }, [pickup?.latitude, pickup?.longitude, destination?.latitude, destination?.longitude, mapReady])
+  }, [pickup?.latitude, pickup?.longitude, destination?.latitude, destination?.longitude, routePath, mapReady])
 
   const showRoutePins = hasCoordinates(pickup) && hasCoordinates(destination)
 

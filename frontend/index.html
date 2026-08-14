@@ -3,6 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- 이 화면들은 라이트 팔레트로만 디자인됐다(dark: 유틸리티는 아직 실제로 쓰이지 않는다).
+         선언이 없으면 시스템 다크모드에서 브라우저/WebView가 알고리즘적으로 색을 반전·조정해
+         버려 텍스트 대비가 무너진다(#531) — 실제 다크 테마가 생기기 전까지는 라이트로 고정한다. -->
+    <meta name="color-scheme" content="light" />
     <title>Quick — 퀵배송 매칭</title>
 
     <!-- 디자인 시안 폰트: Be Vietnam Pro (본문) + Material Symbols (아이콘) -->
