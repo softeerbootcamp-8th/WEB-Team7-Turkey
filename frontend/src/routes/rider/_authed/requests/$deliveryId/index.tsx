@@ -293,20 +293,12 @@ function RiderRequestDetail() {
           )}
         </div>
 
-        <nav aria-label="콜 상세 동작" className="sticky bottom-0 z-20 grid w-full grid-cols-3 border-t border-outline-variant bg-surface-container-lowest p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          <button
-            type="button"
-            onClick={goToList}
-            disabled={isAccepting}
-            className="h-14 rounded-l-xl bg-surface-container-high text-label-lg font-bold text-secondary disabled:opacity-50"
-          >
-            넘기기
-          </button>
+        <nav aria-label="콜 상세 동작" className="sticky bottom-0 z-20 w-full border-t border-outline-variant bg-surface-container-lowest p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <button
             type="button"
             onClick={acceptRequest}
             disabled={isAccepting || competitionLost}
-            className="col-span-2 h-14 rounded-r-xl bg-primary-container text-label-lg font-bold text-on-primary-container transition-colors hover:bg-primary-fixed disabled:cursor-not-allowed disabled:opacity-60"
+            className="h-14 w-full rounded-xl bg-primary-container text-label-lg font-bold text-on-primary-container transition-colors hover:bg-primary-fixed disabled:cursor-not-allowed disabled:opacity-60"
           >
             {checkingResult ? '배차 확인 중…' : acceptMutation.isPending ? '수락 처리 중…' : '수락하기'}
           </button>
