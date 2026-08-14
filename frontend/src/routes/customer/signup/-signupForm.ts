@@ -3,7 +3,6 @@ import { isAxiosError } from 'axios'
 export interface CustomerSignupFields {
   loginId: string
   password: string
-  passwordConfirm: string
   name: string
   phoneNumber: string
   verificationCode: string
@@ -18,7 +17,7 @@ export interface CustomerSignupValidationContext {
 }
 
 export interface CustomerSignupRequestError {
-  target: 'loginId' | 'phoneNumber' | 'passwordConfirm' | 'identity' | 'form'
+  target: 'loginId' | 'phoneNumber' | 'password' | 'identity' | 'form'
   message: string
 }
 
@@ -58,11 +57,6 @@ export function validateCustomerSignup(
 
   if (!fields.password) {
     errors.password = '비밀번호를 입력해 주세요.'
-  }
-  if (!fields.passwordConfirm) {
-    errors.passwordConfirm = '비밀번호 확인을 입력해 주세요.'
-  } else if (fields.password !== fields.passwordConfirm) {
-    errors.passwordConfirm = '비밀번호가 일치하지 않습니다.'
   }
 
   if (!name) {
@@ -125,7 +119,7 @@ export function classifyCustomerSignupError(error: unknown): CustomerSignupReque
     return { target: 'phoneNumber', message }
   }
   if (error.response.status === 400 && message.includes('비밀번호')) {
-    return { target: 'passwordConfirm', message }
+    return { target: 'password', message }
   }
   return { target: 'form', message }
 }
