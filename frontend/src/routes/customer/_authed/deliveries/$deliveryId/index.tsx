@@ -10,6 +10,7 @@ import {
 import type { DeliveryDetailResponse } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
 import { getCustomerDeliveryStatusLabel, isTrackableDeliveryStatus } from '@/shared/delivery/status'
 import { useWaitingExpiryTimer } from '@/shared/hooks/useWaitingExpiryTimer'
+import { WaitingCountdown } from './-components/WaitingCountdown'
 import {
   formatDetailAddress,
   formatDetailContact,
@@ -130,6 +131,12 @@ function DeliveryDetail() {
             </div>
             <span className="material-symbols-outlined text-4xl text-primary" aria-hidden="true">package_2</span>
           </div>
+          {/* 배차 대기 중에는 자동 취소까지 남은 시간을 보여 준다(#42/#444). */}
+          <WaitingCountdown
+            requestedAt={detail.requestedAt}
+            enabled={detail.status === 'WAITING'}
+            className="mt-4 rounded-xl bg-surface-container-low px-4 py-3 text-body-md font-semibold text-secondary"
+          />
           {canTrack && (
             <Link
               to="/customer/deliveries/$deliveryId/tracking"
