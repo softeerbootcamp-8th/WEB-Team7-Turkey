@@ -12,7 +12,6 @@ import {
 const validFields: CustomerSignupFields = {
   loginId: 'customer1',
   password: 'password',
-  passwordConfirm: 'password',
   name: '홍길동',
   phoneNumber: '01012345678',
   verificationCode: '123456',
@@ -49,11 +48,11 @@ describe('validateCustomerSignup', () => {
     })
   })
 
-  it('비밀번호 확인 불일치와 필수 입력값 누락을 필드별로 반환한다', () => {
+  it('필수 입력값 누락을 필드별로 반환한다', () => {
     expect(validateCustomerSignup({
       ...validFields,
       loginId: ' ',
-      passwordConfirm: 'different',
+      password: '',
       name: '',
     }, {
       checkedLoginId: null,
@@ -61,7 +60,7 @@ describe('validateCustomerSignup', () => {
       verifiedPhoneNumber: null,
     })).toMatchObject({
       loginId: '아이디를 입력해 주세요.',
-      passwordConfirm: '비밀번호가 일치하지 않습니다.',
+      password: '비밀번호를 입력해 주세요.',
       name: '이름을 입력해 주세요.',
     })
   })
@@ -70,7 +69,6 @@ describe('validateCustomerSignup', () => {
     expect(validateCustomerSignup({
       ...validFields,
       password: 'short1',
-      passwordConfirm: 'short1',
     }, {
       checkedLoginId: 'customer1',
       phoneVerificationToken: 'verified-token',

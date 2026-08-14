@@ -3,7 +3,6 @@ import { isAxiosError } from 'axios'
 export interface RiderSignupFields {
   loginId: string
   password: string
-  passwordConfirm: string
   name: string
   phoneNumber: string
   verificationCode: string
@@ -18,7 +17,7 @@ export interface RiderSignupValidationContext {
 }
 
 export interface RiderSignupRequestError {
-  target: 'loginId' | 'phoneNumber' | 'passwordConfirm' | 'identity' | 'form'
+  target: 'loginId' | 'phoneNumber' | 'password' | 'identity' | 'form'
   message: string
 }
 
@@ -60,11 +59,6 @@ export function validateRiderSignup(
     errors.password = '비밀번호를 입력해 주세요.'
   } else if (fields.password.length < 8) {
     errors.password = '비밀번호는 8자 이상이어야 합니다.'
-  }
-  if (!fields.passwordConfirm) {
-    errors.passwordConfirm = '비밀번호 확인을 입력해 주세요.'
-  } else if (fields.password !== fields.passwordConfirm) {
-    errors.passwordConfirm = '비밀번호가 일치하지 않습니다.'
   }
 
   if (!name) {
@@ -127,7 +121,7 @@ export function classifyRiderSignupError(error: unknown): RiderSignupRequestErro
     return { target: 'phoneNumber', message }
   }
   if (error.response.status === 400 && message.includes('비밀번호')) {
-    return { target: 'passwordConfirm', message }
+    return { target: 'password', message }
   }
   return { target: 'form', message }
 }

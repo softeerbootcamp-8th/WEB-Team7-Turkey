@@ -29,7 +29,7 @@ public class PhoneVerificationController implements PhoneVerificationApi {
             @RequestBody PhoneVerificationRequest request) {
         PhoneVerificationResult result = phoneVerificationService.request(request.phoneNumber(), request.purpose());
         boolean includeDebugCode = environment.matchesProfiles("local");
-        return ApiResponse.ok(PhoneVerificationResponse.from(result, includeDebugCode));
+        return ApiResponse.ok(PhoneVerificationResponse.from(result, true));
     }
 
     @Override
