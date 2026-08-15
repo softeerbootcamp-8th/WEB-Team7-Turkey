@@ -7,7 +7,8 @@
 --
 -- 만드는 것:
 --   lt_r1..lt_r{@busy}   BUSY 라이더 (위치 전송 대상)
---   lt_c1..lt_c{@busy}   그 라이더의 진행 중(DELIVERING) 배송을 추적하는 고객
+--   lt_c1..lt_c{@busy}   그 라이더의 진행 중(ASSIGNED 시작 — k6 가 완료까지 진행시킨다) 배송을
+--                        추적하는 고객
 --   lt_a1..lt_a{@available}  AVAILABLE 라이더 (콜 목록 폴링 대상)
 --   lt_w1..lt_w{@waiting}    콜 목록이 찾을 WAITING 주문의 고객
 --   lt_w 고객당 과거 COMPLETED 주문 다수 — WAITING 이 전체 주문의 10%가 되도록 채우는 이력.
@@ -26,8 +27,8 @@ USE turkey;
 
 SET SESSION cte_max_recursion_depth = 5000;
 
-SET @busy := 700;        -- BUSY 라이더(=위치 전송) 수 = 추적 고객 수
-SET @available := 300;   -- AVAILABLE 라이더(=콜 목록 폴링) 수
+SET @busy := 800;        -- BUSY 라이더(=위치 전송) 수 = 추적 고객 수
+SET @available := 500;   -- AVAILABLE 라이더(=콜 목록 폴링) 수
 SET @waiting := 500;     -- 콜 목록이 찾을 WAITING 주문 수(=그 주문의 고객 수)
 -- WAITING(@waiting)이 전체 주문의 10%가 되도록 나머지 90%를 lt_w 고객의 과거 COMPLETED
 -- 주문으로 채운다. 전체 = @waiting / 0.10, 이미 있는 DELIVERING(@busy)·WAITING(@waiting)을
@@ -37,28 +38,46 @@ SET @history_count := CEIL(@waiting / @waiting_ratio) - @busy - @waiting;
 SET @password_hash := '$2y$10$Lt6WtA6CYLmEjEtyFIQKTOwZN3QZqsumCPe6eSBLuiPZXfEohtbpy'; -- 'aa'
 SET @fare_policy_id := (SELECT fare_policy_id FROM fare_policy WHERE policy_version = 'LOCAL-1.0');
 
--- 정리(한 번만, 네 접두어 전부). FK 순서: 거래내역·스냅샷 → 주문 → 지갑/프로필 → 회원.
+-- 정리(한 번만, 네 접두어 전부). FK 순서: 거래내역 → 정산 → 스냅샷 → 주문 → 지갑/프로필 → 회원.
 -- point_transaction 은 만료 스캐너의 자동 취소·환급(WAITING → CANCELED)이 재실행 사이에
 -- 이미 만들어 놨을 수 있다 — 먼저 안 지우면 delivery_order 삭제가 FK 위반으로 실패한다.
+-- member_id 로 직접 조인한다(delivery_order_id 경유 조인은 놓치는 행이 있다) — k6 가 실제로
+-- 배송을 완료시키면서 라이더 쪽 SETTLEMENT 거래(delivery_order_id 는 NULL, rider_settlement_id
+-- 로만 연결됨)가 생기는데, 예전 조인은 그걸 못 잡아 재시드가 FK 위반으로 깨졌다.
 DELETE pt FROM point_transaction pt
-    JOIN delivery_order o ON o.order_id = pt.delivery_order_id
-    JOIN member m ON m.member_id = o.customer_id
+    JOIN member m ON m.member_id = pt.member_id
+WHERE m.login_id LIKE 'lt\_r%' OR m.login_id LIKE 'lt\_c%' OR m.login_id LIKE 'lt\_w%';
+-- rider_settlement 은 order_fare_snapshot·delivery_order 둘 다를 참조한다 — k6 가 완료(complete)
+-- 까지 진행시키면서 생긴다. 스냅샷보다 먼저 지워야 한다.
+DELETE rs FROM rider_settlement rs
+    JOIN delivery_order o ON o.order_id = rs.order_id
+    JOIN member m ON m.member_id IN (o.customer_id, o.assigned_rider_id)
+WHERE m.login_id LIKE 'lt\_r%' OR m.login_id LIKE 'lt\_c%' OR m.login_id LIKE 'lt\_w%';
+-- delivery_proof 도 complete 가 만든다(완료 인증 1건, uk_delivery_proof_order) — delivery_order
+-- 보다 먼저 지운다.
+DELETE dp FROM delivery_proof dp
+    JOIN delivery_order o ON o.order_id = dp.order_id
+    JOIN member m ON m.member_id IN (o.customer_id, o.assigned_rider_id)
 WHERE m.login_id LIKE 'lt\_r%' OR m.login_id LIKE 'lt\_c%' OR m.login_id LIKE 'lt\_w%';
 DELETE fs FROM order_fare_snapshot fs
     JOIN delivery_order o ON o.order_id = fs.order_id
     JOIN member m ON m.member_id = o.customer_id
-WHERE m.login_id LIKE 'lt\_w%';
+WHERE m.login_id LIKE 'lt\_w%' OR m.login_id LIKE 'lt\_c%';
 DELETE o FROM delivery_order o
     JOIN member m ON m.member_id IN (o.customer_id, o.assigned_rider_id)
 WHERE m.login_id LIKE 'lt\_r%' OR m.login_id LIKE 'lt\_c%' OR m.login_id LIKE 'lt\_w%';
 DELETE pw FROM point_wallet pw JOIN member m ON m.member_id = pw.member_id
-WHERE m.login_id LIKE 'lt\_w%';
+WHERE m.login_id LIKE 'lt\_w%' OR m.login_id LIKE 'lt\_r%';
 DELETE rp FROM rider_profile rp JOIN member m ON m.member_id = rp.member_id
 WHERE m.login_id LIKE 'lt\_r%' OR m.login_id LIKE 'lt\_a%';
 DELETE FROM member
 WHERE login_id LIKE 'lt\_r%' OR login_id LIKE 'lt\_c%' OR login_id LIKE 'lt\_a%' OR login_id LIKE 'lt\_w%';
 
--- ── BUSY 라이더 + 추적 고객 + DELIVERING 배송(seed-loadtest-riders.sql과 동일 패턴) ──
+-- ── BUSY 라이더 + 추적 고객 + ASSIGNED 배송 ──
+-- 예전엔 여기서 DELIVERING까지 만들어 뒀지만, k6 가 START_MOVING_TO_PICKUP→PICK_UP→
+-- START_DELIVERING→complete 순서로 직접 진행시키게 바뀌면서 시작점을 ASSIGNED로 당겼다
+-- (RiderDeliveryAction 은 목표 상태가 아니라 "현재 상태에서 가능한 행위"만 받는다 — 이미
+-- DELIVERING이면 더 갈 곳이 없다).
 INSERT INTO member (login_id, password_hash, name, phone_number, role, status)
 WITH RECURSIVE seq(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM seq WHERE i < @busy)
 SELECT CONCAT('lt_c', i), @password_hash, CONCAT('부하 고객 ', i),
@@ -74,17 +93,22 @@ FROM seq;
 INSERT INTO rider_profile (member_id, operating_status, status_changed_at)
 SELECT member_id, 'BUSY', NOW(3) FROM member WHERE login_id LIKE 'lt\_r%';
 
+-- 배송 완료(complete) 시 정산 적립 대상 지갑이 필요하다(없으면 "정산할 라이더의 포인트
+-- 지갑이 없습니다"로 완료 자체가 실패한다 — k6 가 실제로 완료까지 진행시키며 발견).
+INSERT INTO point_wallet (member_id, balance)
+SELECT member_id, 0 FROM member WHERE login_id LIKE 'lt\_r%';
+
 INSERT INTO delivery_order (
     customer_id, assigned_rider_id, status, request_key, item_type,
     straight_distance_meters,
     pickup_road_address, pickup_postal_code, pickup_latitude, pickup_longitude,
     destination_road_address, destination_postal_code, destination_latitude, destination_longitude,
     sender_name, sender_phone_number, recipient_name, recipient_phone_number,
-    requested_at, assigned_at, moving_to_pickup_at, picked_up_at, delivering_at
+    requested_at, assigned_at
 )
 SELECT c.member_id,
        r.member_id,
-       'DELIVERING',
+       'ASSIGNED',
        CONCAT('40000000-0000-0000-0000-', LPAD(r.i, 12, '0')),
        'DOCUMENT',
        1000 + r.i,
@@ -94,8 +118,7 @@ SELECT c.member_id,
        37.4600 + (r.i % 50) * 0.002, 126.9500 + (r.i % 50) * 0.004,
        CONCAT('발송인 ', r.i), CONCAT('0106', LPAD(r.i, 7, '0')),
        CONCAT('수령인 ', r.i), CONCAT('0107', LPAD(r.i, 7, '0')),
-       NOW(3) - INTERVAL 30 MINUTE, NOW(3) - INTERVAL 25 MINUTE,
-       NOW(3) - INTERVAL 20 MINUTE, NOW(3) - INTERVAL 15 MINUTE, NOW(3) - INTERVAL 10 MINUTE
+       NOW(3) - INTERVAL 5 MINUTE, NOW(3) - INTERVAL 4 MINUTE
 FROM (SELECT CAST(SUBSTRING(login_id, 5) AS UNSIGNED) AS i, member_id FROM member WHERE login_id LIKE 'lt\_r%') r
          JOIN (SELECT CAST(SUBSTRING(login_id, 5) AS UNSIGNED) AS i, member_id FROM member WHERE login_id LIKE 'lt\_c%') c
               ON c.i = r.i;
@@ -201,14 +224,19 @@ FROM delivery_order o
          JOIN member m ON m.member_id = o.customer_id
          JOIN item_type_surcharge s
               ON s.fare_policy_id = @fare_policy_id AND s.item_type = o.item_type
-WHERE m.login_id LIKE 'lt\_w%';
+WHERE m.login_id LIKE 'lt\_w%' OR m.login_id LIKE 'lt\_c%';
+-- lt_c(=BUSY 쌍의 고객, customer_id 로 조인되므로 여기서 같이 잡힌다)도 포함해야 한다 —
+-- 빠뜨리면 /transition, /complete, /current 처럼 운임 스냅샷을 조회하는 API가 전부
+-- "배차된 주문의 예상 운임 스냅샷이 없습니다"(IllegalStateException→400)로 죽는다.
+-- 이 스크립트가 처음 만들어졌을 땐 lt_r/lt_c 가 DELIVERING 고정이라 /location 만 썼고
+-- 이 경로를 아무도 안 건드려 안 드러났었다(k6 가 상태 전이를 직접 하게 되며 발견).
 
 -- 컬럼 별칭은 ASCII 로 둔다 — mysql 클라이언트 기본 문자셋에서 한글 식별자가 깨진다.
 SELECT
     (SELECT COUNT(*) FROM member m JOIN rider_profile rp ON rp.member_id = m.member_id
      WHERE m.login_id LIKE 'lt\_r%' AND rp.operating_status = 'BUSY') AS busy_riders,
     (SELECT COUNT(*) FROM delivery_order o JOIN member m ON m.member_id = o.assigned_rider_id
-     WHERE m.login_id LIKE 'lt\_r%' AND o.status = 'DELIVERING') AS delivering_orders,
+     WHERE m.login_id LIKE 'lt\_r%' AND o.status = 'ASSIGNED') AS assigned_orders,
     (SELECT COUNT(*) FROM member m JOIN rider_profile rp ON rp.member_id = m.member_id
      WHERE m.login_id LIKE 'lt\_a%' AND rp.operating_status = 'AVAILABLE') AS available_riders,
     (SELECT COUNT(*) FROM delivery_order o JOIN member m ON m.member_id = o.customer_id

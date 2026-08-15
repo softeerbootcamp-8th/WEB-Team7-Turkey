@@ -61,7 +61,15 @@ RAW = [
     ("k6_vus", "sum(k6_vus{{{k6}}})"),
     ("k6_p95_seconds", 'max(k6_http_req_duration_p95{{group="",{k6}}})'),
     ("k6_p99_seconds", 'max(k6_http_req_duration_p99{{group="",{k6}}})'),
-    ("k6_failed_rate", "max(k6_http_req_failed_rate{{{k6}}})"),
+    # max(k6_http_req_failed_rate)는 상태코드별로 이미 쪼개진 시리즈에 max()를 거는 꼴이라,
+    # 표본이 적은 URL(예: 배송당 한 번만 부르는 API)이 우연히 실패 1건이면 그 시리즈 자체가
+    # 정의상 100%가 돼 전체 실패율처럼 보인다(#502 확장 시나리오에서 실측). 분자·분모를 각각
+    # sum() 한 뒤 나눠야 시리즈 개수와 무관한 진짜 비율이 나온다.
+    # 실패가 진짜 0건이면 expected_response="false" 라벨 조합 자체가 없어 분자 시리즈가
+    # 통째로 없다(0이 아니라 빈 결과) — or vector(0) 으로 그 경우를 0으로 채운다.
+    ("k6_failed_rate",
+     '(sum(increase(k6_http_reqs_total{{expected_response="false",{k6}}}[1m])) or vector(0)) '
+     "/ sum(increase(k6_http_reqs_total{{{k6}}}[1m]))"),
     # 스크레이프 주기가 15초라 rate() 의 범위는 최소 그 2배여야 한다. `[15s]` 로 두면 창에
     # 표본이 하나뿐이라 **결과가 조용히 빈다**(실제로 그랬다). k6 지표는 5초 flush 라 15s 로 족하다.
     ("app_rps", "sum(rate(http_server_requests_seconds_count[1m]))"),
@@ -308,7 +316,12 @@ ROWS = [
     ("평균 처리량", "sum(increase(k6_http_reqs_total{{{k6}}}[{w}s])) / {w}", " req/s", 1, 0),
     ("피크 처리량(15초 해상도)",
      "max_over_time((sum(rate(k6_http_reqs_total{{{k6}}}[15s])))[{w}s:15s])", " req/s", 1, 0),
-    ("실패율(구간 최댓값)", "max(max_over_time(k6_http_req_failed_rate{{{k6}}}[{w}s]))", "%", 100, 2),
+    # 분자·분모를 각각 sum() 한 뒤 나눈다 — RAW 의 k6_failed_rate 항목 주석 참고. 상태코드별로
+    # 쪼개진 시리즈에 max() 를 걸면 표본이 적은 URL(배송당 한 번만 부르는 API 등)의 우연한
+    # 실패 1건이 "전체 실패율 100%"로 보인다.
+    ("실패율",
+     '(sum(increase(k6_http_reqs_total{{expected_response="false",{k6}}}[{w}s])) or vector(0)) '
+     "/ sum(increase(k6_http_reqs_total{{{k6}}}[{w}s]))", "%", 100, 2),
     ("p95(구간 최댓값·참고)",
      'max(max_over_time(k6_http_req_duration_p95{{group="",{k6}}}[{w}s]))', " ms", 1000, 2),
     ("p99(구간 최댓값·참고)",
