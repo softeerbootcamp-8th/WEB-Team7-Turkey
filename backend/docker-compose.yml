@@ -128,8 +128,9 @@ services:
       # 안 주면 평소 동작 그대로). Spring 환경변수가 application.yml의 리터럴보다 우선한다.
       SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${HIKARI_MAX_POOL_SIZE:-10}
       SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: ${HIKARI_MIN_IDLE:-10}
-      # 힙·GC 튜닝 실험(#502)용. 안 주면 Dockerfile 기본값(-Xmx228m, G1GC, 추가 옵션 없음) 그대로다.
-      JAVA_HEAP_OPTS: ${JAVA_HEAP_OPTS:--Xmx228m}
+      # 힙·GC 튜닝 실험(#502) 결론 반영: 배포(deploy.yml JAVA_TOOL_OPTIONS)와 동일하게
+      # -Xms=-Xmx=512m 고정을 기본값으로 둔다(실측에서 힙이 512MiB를 넘은 적이 없었다).
+      JAVA_HEAP_OPTS: ${JAVA_HEAP_OPTS:--Xms512m -Xmx512m}
       # GC 알고리즘 자체(SerialGC 등)와 그 안의 튜닝 옵션을 분리한다 — Dockerfile 주석 참고.
       JAVA_GC_ALGO: ${JAVA_GC_ALGO:--XX:+UseG1GC}
       JAVA_GC_OPTS: ${JAVA_GC_OPTS:-}
