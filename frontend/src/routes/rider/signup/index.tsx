@@ -10,6 +10,9 @@ import {
   PhoneVerificationConfirmRequestPurpose,
   PhoneVerificationRequestPurpose,
 } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
+import { PhoneVerificationToast } from '@/shared/auth/PhoneVerificationToast'
+import { PasswordVisibilityInput } from '@/shared/auth/PasswordVisibilityInput'
+import { SignupLogo } from '@/shared/auth/SignupLogo'
 import {
   classifyRiderSignupError,
   getApiErrorMessage,
@@ -27,11 +30,11 @@ export const Route = createFileRoute('/rider/signup/')({
 
 type LoginIdStatus = 'idle' | 'available' | 'unavailable'
 type PhoneVerificationStatus = 'idle' | 'code-sent' | 'verified'
+type DebugCodeToast = { code: string; id: number }
 
 const initialFields: RiderSignupFields = {
   loginId: '',
   password: '',
-  passwordConfirm: '',
   name: '',
   phoneNumber: '',
   verificationCode: '',
@@ -51,7 +54,7 @@ function RiderSignup() {
   const [requestedPhoneNumber, setRequestedPhoneNumber] = useState<string | null>(null)
   const [verifiedPhoneNumber, setVerifiedPhoneNumber] = useState<string | null>(null)
   const [phoneVerificationToken, setPhoneVerificationToken] = useState<string | null>(null)
-  const [debugCode, setDebugCode] = useState<string | null>(null)
+  const [debugCodeToast, setDebugCodeToast] = useState<DebugCodeToast | null>(null)
 
   const loginIdQuery = useCheckLoginIdAvailability(
     { loginId: fields.loginId.trim() },
@@ -74,8 +77,11 @@ function RiderSignup() {
         setVerifiedPhoneNumber(null)
         setPhoneVerificationToken(null)
         setPhoneStatus('code-sent')
-        setDebugCode(response.data.debugCode ?? null)
-        setFields((current) => ({ ...current, verificationCode: '' }))
+        const receivedDebugCode = response.data.debugCode ?? null
+        setDebugCodeToast((current) => receivedDebugCode
+          ? { code: receivedDebugCode, id: (current?.id ?? 0) + 1 }
+          : null)
+        setFields((current) => ({ ...current, verificationCode: receivedDebugCode ?? '' }))
         setFieldErrors((current) => ({
           ...current,
           phoneNumber: undefined,
@@ -107,7 +113,6 @@ function RiderSignup() {
         setVerifiedPhoneNumber(phoneNumber)
         setPhoneVerificationToken(token)
         setPhoneStatus('verified')
-        setDebugCode(null)
         setFieldErrors((current) => ({
           ...current,
           phoneNumber: undefined,
@@ -152,8 +157,8 @@ function RiderSignup() {
           setFieldErrors((current) => ({ ...current, phoneNumber: result.message }))
           return
         }
-        if (result.target === 'passwordConfirm') {
-          setFieldErrors((current) => ({ ...current, passwordConfirm: result.message }))
+        if (result.target === 'password') {
+          setFieldErrors((current) => ({ ...current, password: result.message }))
           return
         }
         if (result.target === 'identity') {
@@ -181,7 +186,7 @@ function RiderSignup() {
     setRequestedPhoneNumber(null)
     setVerifiedPhoneNumber(null)
     setPhoneVerificationToken(null)
-    setDebugCode(null)
+    setDebugCodeToast(null)
     setFields((current) => ({ ...current, verificationCode: '' }))
   }
 
@@ -201,9 +206,6 @@ function RiderSignup() {
     }
     if (field === 'phoneNumber') {
       resetPhoneVerification()
-    }
-    if (field === 'password') {
-      setFieldErrors((current) => ({ ...current, passwordConfirm: undefined }))
     }
   }
 
@@ -320,7 +322,7 @@ function RiderSignup() {
       data: {
         loginId: fields.loginId.trim(),
         password: fields.password,
-        passwordConfirm: fields.passwordConfirm,
+        passwordConfirm: fields.password,
         name: fields.name.trim(),
         phoneNumber: normalizePhoneNumber(fields.phoneNumber),
         phoneVerificationToken,
@@ -334,18 +336,27 @@ function RiderSignup() {
 
   return (
     <div className="max-w-md mx-auto min-h-screen bg-surface-container-lowest relative flex flex-col shadow-sm">
+      {debugCodeToast && (
+        <PhoneVerificationToast
+          key={debugCodeToast.id}
+          code={debugCodeToast.code}
+          onClose={() => setDebugCodeToast(null)}
+        />
+      )}
       <header className="bg-surface dark:bg-surface-container-lowest text-on-surface docked full-width top-0 border-b border-surface-container dark:border-outline-variant flex justify-between items-center w-full px-container-margin h-14 sticky z-20">
         <Link to="/rider/login" className="text-on-surface-variant hover:bg-surface-container-low rounded-full w-10 h-10 flex items-center justify-center transition-colors" aria-label="라이더 로그인으로 돌아가기">
           <span className="material-symbols-outlined">arrow_back</span>
         </Link>
-        <h1 className="text-headline-sm font-headline-sm font-bold text-on-surface flex-1 text-center">라이더 회원가입</h1>
-        <Link to="/" className="text-on-surface-variant hover:bg-surface-container-low rounded-lg px-2 h-10 flex items-center justify-center transition-colors">
-          <span className="text-label-lg font-label-lg">취소</span>
-        </Link>
+        <h1 className="flex-1 text-center text-headline-sm font-bold text-on-surface">라이더 회원가입</h1>
+        <div className="h-10 w-10" aria-hidden="true" />
       </header>
 
       <form className="flex-1 flex flex-col" onSubmit={handleSubmit} noValidate>
-        <main aria-label="라이더 회원가입" className="flex-1 px-container-margin pt-lg pb-32 flex flex-col gap-xl">
+        <main aria-label="라이더 회원가입" className="flex flex-1 flex-col justify-center gap-xl px-container-margin pb-32 pt-lg">
+          <div className="flex justify-center" aria-hidden="true">
+            <SignupLogo />
+          </div>
+
           <section className="flex flex-col gap-lg">
             <h2 className="text-headline-md font-headline-md text-on-surface">로그인 정보</h2>
 
@@ -383,32 +394,14 @@ function RiderSignup() {
 
             <div className="flex flex-col gap-2">
               <label className="text-label-lg font-label-lg text-on-surface-variant" htmlFor="password">비밀번호</label>
-              <input
+              <PasswordVisibilityInput
                 className={inputClassName}
-                id="password"
-                name="password"
-                autoComplete="new-password"
                 value={fields.password}
                 onChange={(event) => updateField('password', event.target.value)}
-                aria-invalid={Boolean(fieldErrors.password)}
-                aria-describedby={fieldErrors.password ? 'signup-password-error' : undefined}
-                placeholder="비밀번호 입력"
-                type="password"
+                invalid={Boolean(fieldErrors.password)}
+                describedBy={fieldErrors.password ? 'signup-password-error' : undefined}
               />
               {fieldErrors.password && <FieldError id="signup-password-error">{fieldErrors.password}</FieldError>}
-              <input
-                className={inputClassName}
-                id="passwordConfirm"
-                name="passwordConfirm"
-                autoComplete="new-password"
-                value={fields.passwordConfirm}
-                onChange={(event) => updateField('passwordConfirm', event.target.value)}
-                aria-invalid={Boolean(fieldErrors.passwordConfirm)}
-                aria-describedby={fieldErrors.passwordConfirm ? 'signup-password-confirm-error' : undefined}
-                placeholder="비밀번호 확인"
-                type="password"
-              />
-              {fieldErrors.passwordConfirm && <FieldError id="signup-password-confirm-error">{fieldErrors.passwordConfirm}</FieldError>}
             </div>
           </section>
 
@@ -490,7 +483,7 @@ function RiderSignup() {
                       value={fields.verificationCode}
                       onChange={(event) => updateField('verificationCode', event.target.value)}
                       aria-invalid={Boolean(fieldErrors.verificationCode)}
-                      aria-describedby={fieldErrors.verificationCode ? 'signup-verification-code-error' : debugCode ? 'signup-debug-code' : undefined}
+                      aria-describedby={fieldErrors.verificationCode ? 'signup-verification-code-error' : undefined}
                       placeholder="6자리 인증번호"
                       type="text"
                     />
@@ -504,11 +497,6 @@ function RiderSignup() {
                     </button>
                   </div>
                   {fieldErrors.verificationCode && <FieldError id="signup-verification-code-error">{fieldErrors.verificationCode}</FieldError>}
-                  {debugCode && (
-                    <p id="signup-debug-code" className="px-1 text-body-md text-on-surface-variant" aria-live="polite">
-                      로컬 테스트 인증번호: {debugCode}
-                    </p>
-                  )}
                 </div>
               )}
             </div>
@@ -520,12 +508,6 @@ function RiderSignup() {
             <h2 className="text-label-lg font-label-lg text-on-surface">가입 후 운행 상태 안내</h2>
             <p className="text-body-md font-body-md text-on-surface-variant">
               가입 직후에는 운행 종료 상태로 시작합니다. 로그인 후 라이더 홈에서 콜 받기를 시작할 수 있습니다.
-            </p>
-          </section>
-
-          <section className="rounded-xl border border-surface-container bg-surface-bright p-5">
-            <p className="text-body-md font-body-md text-on-surface-variant">
-              약관 동의 기능은 약관 목록 조회 API(#72) 연결 후 제공됩니다.
             </p>
           </section>
 

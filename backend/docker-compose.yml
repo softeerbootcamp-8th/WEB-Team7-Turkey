@@ -19,6 +19,12 @@ services:
         limits:
           cpus: "2"
           memory: 1g
+    # cpus 쿼터만으로는 "얼마나 쓰는지"만 제한하고 "어느 물리 코어에서 쓰는지"는 못 막는다 —
+    # k6·모니터링 스택(CPU 제한 없음)이 이 컨테이너와 같은 코어 풀을 두고 경쟁할 수 있다(#502
+    # 실측 중 발견). 이 개발 PC(11코어)를 0-1=app / 2-3=mysql / 4-5=redis / 6-10=k6+모니터링으로
+    # 나눠 고정한다. **코어 수가 다른 PC에서는 이 범위를 맞게 조정할 것**(예: 6코어면 0-1/2-2/3-3
+    # 처럼 좁히고 k6·모니터링은 나머지에).
+    cpuset: "2-3"
     ports:
       - "3306:3306"
     environment:
@@ -54,6 +60,8 @@ services:
         limits:
           cpus: "2"
           memory: 1g
+    # 위 mysql 의 cpuset 코멘트와 같은 이유·같은 배치.
+    cpuset: "4-5"
     ports:
       - "6379:6379"
     # 주의: 개발 PC 에 Redis 를 직접 설치하지 않는다(Homebrew 등). 호스트 Redis 는
@@ -98,6 +106,8 @@ services:
         limits:
           cpus: "2"
           memory: 1g
+    # 위 mysql 의 cpuset 코멘트와 같은 이유·같은 배치.
+    cpuset: "0-1"
     ports:
       - "8080-8089:8080"
       # Actuator(지표) 포트. Prometheus 가 이걸 긁는다(infra/monitoring-ec2 의
@@ -114,6 +124,16 @@ services:
       RIDER_DELIVERY_PROOF_STORAGE: s3mock
       AWS_S3_ENDPOINT: http://s3mock:9090
       AWS_S3_BUCKET: turkey-delivery-proof-local
+      # 부하테스트로 Hikari 풀 크기를 실험할 때만 덮어쓴다(기본값 10은 application.yml과 동일 —
+      # 안 주면 평소 동작 그대로). Spring 환경변수가 application.yml의 리터럴보다 우선한다.
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${HIKARI_MAX_POOL_SIZE:-10}
+      SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: ${HIKARI_MIN_IDLE:-10}
+      # 힙·GC 튜닝 실험(#502) 결론 반영: 배포(deploy.yml JAVA_TOOL_OPTIONS)와 동일하게
+      # -Xms=-Xmx=512m 고정을 기본값으로 둔다(실측에서 힙이 512MiB를 넘은 적이 없었다).
+      JAVA_HEAP_OPTS: ${JAVA_HEAP_OPTS:--Xms512m -Xmx512m}
+      # GC 알고리즘 자체(SerialGC 등)와 그 안의 튜닝 옵션을 분리한다 — Dockerfile 주석 참고.
+      JAVA_GC_ALGO: ${JAVA_GC_ALGO:--XX:+UseG1GC}
+      JAVA_GC_OPTS: ${JAVA_GC_OPTS:-}
     # mysql·redis 에는 healthcheck 가 있는데 app 에만 없었다. 없으면 `up -d` 가 기동 완료를
     # 기다려 주지 않아서 부하테스트 절차가 `sleep` 으로 감을 잡아야 한다(실제로 그랬다).
     # 이제 `--wait` 를 주면 실제 준비 완료까지 블록한다. curl 은 eclipse-temurin JRE 이미지에
@@ -169,6 +189,10 @@ services:
     # `up -d` 가 이걸 띄우지 않게 막는 용도다. `docker compose run k6` 는 대상 서비스의
     # 프로파일을 자동으로 켜므로(Compose v2 이상) 실행할 때 --profile 을 줄 필요가 없다.
     profiles: ["loadtest"]
+    # app/mysql/redis(0-5)와 물리 코어를 겹치지 않게 한다 — infra/monitoring-ec2 의 모니터링
+    # 스택도 같은 6-10 대를 쓴다(그쪽 docker-compose.loadtest.yml 참고). CPU 제한은 안 둔다(부하
+    # 발생기가 스스로 병목이면 안 되므로 쿼터 없이, 코어만 격리).
+    cpuset: "6-10"
     volumes:
       - ./loadtest:/scripts
     environment:
