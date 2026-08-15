@@ -20,6 +20,13 @@
 #
 # 앱 컨테이너의 CPU·메모리는 여기서 안 나온다. node-exporter 는 호스트 루트를 보므로 개발 PC
 # 전체 수치다 — 컨테이너별 값은 `docker stats` 로 읽고 리포트에 출처를 적는다.
+#
+# cpuset(#502 실측 중 발견): 이 모니터링 스택 전체(exporter·Prometheus·Grafana·Loki·Caddy)는
+# CPU 제한이 없어 backend/docker-compose.yml 의 app/mysql/redis(cpuset 0-5)와 같은 코어 풀을
+# 두고 경쟁할 수 있었다. 여기서는 6-10 대로 몰아 물리 코어를 완전히 분리한다 — 이 개발 PC가
+# 11코어라는 전제다(다른 코어 수의 PC는 backend/docker-compose.yml 의 배치와 함께 조정할 것).
+# 이 파일이 대상인 이유: 이 오버레이는 로컬 부하테스트 때만 함께 켜지고, 배포 모니터링 EC2가
+# 쓰는 base docker-compose.yml 에는 이 개발 PC 전용 코어 배치를 넣지 않는다.
 services:
   mysqld-exporter:
     volumes: !override
@@ -28,6 +35,7 @@ services:
     depends_on: !override []
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    cpuset: "6-10"
 
   redis-exporter:
     environment:
@@ -35,3 +43,19 @@ services:
     depends_on: !override []
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    cpuset: "6-10"
+
+  prometheus:
+    cpuset: "6-10"
+
+  grafana:
+    cpuset: "6-10"
+
+  loki:
+    cpuset: "6-10"
+
+  caddy:
+    cpuset: "6-10"
+
+  node-exporter:
+    cpuset: "6-10"

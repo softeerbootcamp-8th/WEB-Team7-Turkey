@@ -1,8 +1,8 @@
 #!/bin/sh
 # 컨테이너별 CPU·메모리를 주기적으로 찍는다. **부하 실행과 병행해서** 돌려야 한다.
 #
-#   ./loadtest/sample-stats.sh [출력csv] [초]      # 인자 없으면 규약 경로
-#   ./loadtest/sample-stats.sh /tmp/stats.csv 600 &
+#   ./loadtest/sample-stats.sh [출력csv] [초] [샘플링간격초]   # 인자 없으면 규약 경로, 간격 기본 5초
+#   ./loadtest/sample-stats.sh /tmp/stats.csv 600 1 &
 #   docker compose run --rm ... k6 run ...
 #   ./loadtest/collect.py --latest --steps          # 규약 경로면 --stats 도 불필요
 #
@@ -35,5 +35,5 @@ while [ "$(date +%s)" -lt "$END" ]; do
         if (unit ~ /GiB/) v=v*1024; else if (unit ~ /kB|KiB/) v=v/1024;
         printf "%s,%s,%s,%.1f\n", t, $1, cpu, v;
       }' >> "$OUT"
-  sleep 5
+  sleep "${3:-5}"
 done
