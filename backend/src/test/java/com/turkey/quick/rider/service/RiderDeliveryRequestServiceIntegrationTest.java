@@ -100,16 +100,16 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
     }
 
     private static final RiderDeliveryRequestFilter NO_FILTER =
-            new RiderDeliveryRequestFilter(null, null, null, null);
+            new RiderDeliveryRequestFilter(null, null, null, null, null);
     private static final RiderDeliveryRequestCursor FIRST_PAGE =
-            new RiderDeliveryRequestCursor(null, null, null, null);
+            new RiderDeliveryRequestCursor(null, null, null, null, null);
     private static final int DEFAULT_SIZE = 20;
 
     /** #60 이전(필터·정렬 방향·페이지네이션 없음) 동작을 검증하던 기존 테스트가 쓰는 기본 호출. */
     private List<RiderDeliveryRequestSummaryResponse> callDefault(
             AuthenticatedRider rider, BigDecimal latitude, BigDecimal longitude, int radiusMeters, String sort) {
         return riderDeliveryRequestService.getDeliveryRequests(rider, latitude, longitude, radiusMeters, sort,
-                null, NO_FILTER, DEFAULT_SIZE, FIRST_PAGE).items();
+                NO_FILTER, DEFAULT_SIZE, FIRST_PAGE).items();
     }
 
     /**
@@ -252,8 +252,8 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         DeliveryOrder expensive = saveWaitingOrderWithFareAndDistance(9000L, 1000);
 
         RiderDeliveryRequestPageResponse result = riderDeliveryRequestService.getDeliveryRequests(
-                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "REQUESTED_AT", null,
-                new RiderDeliveryRequestFilter(5000L, null, null, null), DEFAULT_SIZE, FIRST_PAGE);
+                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "REQUESTED_AT",
+                new RiderDeliveryRequestFilter(5000L, null, null, null, null), DEFAULT_SIZE, FIRST_PAGE);
 
         assertThat(result.items()).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
                 .contains(expensive.getId())
@@ -267,8 +267,8 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         DeliveryOrder far = saveWaitingOrderWithFareAndDistance(4000L, 5000);
 
         RiderDeliveryRequestPageResponse result = riderDeliveryRequestService.getDeliveryRequests(
-                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "REQUESTED_AT", null,
-                new RiderDeliveryRequestFilter(null, null, null, 2000), DEFAULT_SIZE, FIRST_PAGE);
+                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "REQUESTED_AT",
+                new RiderDeliveryRequestFilter(null, null, null, 2000, null), DEFAULT_SIZE, FIRST_PAGE);
 
         assertThat(result.items()).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
                 .contains(near.getId())
@@ -277,39 +277,41 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
 
     /**
      * keyset 페이지네이션이 offset과 다르게 목록 변경에 안전한지 실제 DB로 검증한다(#60).
+     * sort=FARE는 방향을 요청하지 않아도 항상 내림차순(#522)이라, 이 테스트도 내림차순 기준으로
+     * 검증한다 — o3(9000)·o2(5000)·o1(3000) 순.
      *
-     * <p>1페이지(size=2, 운임 오름차순)를 받은 뒤, 두 페이지 사이에 1페이지에서 이미 봤던 항목과
-     * 그다음 항목(o2) "사이" 값(운임 4000)을 가진 새 주문을 끼워 넣는다. offset 방식이었다면 이
-     * 삽입으로 모든 뒤 항목이 한 칸씩 밀려, 2페이지(OFFSET 2)가 이미 1페이지에서 보여준 o2를
-     * 다시 보여주는 중복이 생긴다. keyset은 "커서(o2의 운임+id) 다음 값"만 비교하므로 새로 끼어든
-     * 항목(4000 — 커서 값 5000보다 작음)이 있어도 o2를 중복해서 보여주지 않고, o3만 정확히 반환한다.
+     * <p>1페이지(size=2)를 받은 뒤, 두 페이지 사이에 1페이지에서 이미 보여준 두 항목(o3=9000,
+     * o2=5000) "사이" 값(운임 7000)을 가진 새 주문을 끼워 넣는다. offset 방식이었다면 이 삽입으로
+     * 뒤 항목이 한 칸씩 밀려 2페이지가 이미 1페이지에서 보여준 o2를 다시 보여주는 중복이 생긴다.
+     * keyset은 "커서(o2의 운임+id)보다 작은 값"만 비교하므로 새로 끼어든 항목(7000 — 커서 값
+     * 5000보다 큼)이 있어도 o2를 중복해서 보여주지 않고, o1만 정확히 반환한다.
      */
     @Test
-    @DisplayName("페이지 사이에 새 주문이 끼어들어도 keyset은 중복 없이 다음 항목만 반환한다(#60)")
+    @DisplayName("페이지 사이에 새 주문이 끼어들어도 keyset은 중복 없이 다음 항목만 반환한다(#60/#522, FARE 내림차순)")
     void keysetPaginationSurvivesConcurrentInsertBetweenPages() {
         DeliveryOrder o1 = saveWaitingOrderWithFareAndDistance(3000L, 1000);
         DeliveryOrder o2 = saveWaitingOrderWithFareAndDistance(5000L, 1000);
         DeliveryOrder o3 = saveWaitingOrderWithFareAndDistance(9000L, 1000);
 
         RiderDeliveryRequestPageResponse firstPage = riderDeliveryRequestService.getDeliveryRequests(
-                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "FARE", "ASC",
+                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "FARE",
                 NO_FILTER, 2, FIRST_PAGE);
         assertThat(firstPage.items()).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
-                .containsExactly(o1.getId(), o2.getId());
+                .containsExactly(o3.getId(), o2.getId());
 
-        // 1페이지와 2페이지 사이에 o1·o2 사이 값(4000)을 가진 새 주문이 생긴다.
-        saveWaitingOrderWithFareAndDistance(4000L, 1000);
+        // 1페이지와 2페이지 사이에 o3·o2 사이 값(7000)을 가진 새 주문이 생긴다.
+        saveWaitingOrderWithFareAndDistance(7000L, 1000);
 
         RiderDeliveryRequestSummaryResponse lastOfFirstPage = firstPage.items().get(1);
         RiderDeliveryRequestCursor afterO2 = new RiderDeliveryRequestCursor(
-                null, lastOfFirstPage.expectedSettlementAmount(), null, lastOfFirstPage.deliveryId());
+                null, lastOfFirstPage.expectedSettlementAmount(), null, null, lastOfFirstPage.deliveryId());
 
         RiderDeliveryRequestPageResponse secondPage = riderDeliveryRequestService.getDeliveryRequests(
-                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "FARE", "ASC",
+                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "FARE",
                 NO_FILTER, 2, afterO2);
 
         assertThat(secondPage.items()).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
-                .containsExactly(o3.getId());
+                .containsExactly(o1.getId());
         assertThat(secondPage.hasNext()).isFalse();
     }
 

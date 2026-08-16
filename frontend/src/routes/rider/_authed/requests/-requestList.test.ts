@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest'
 import type { RiderDeliveryRequestSummaryResponse } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
 import {
   buildNextRequestCursor,
-  filterRequestsByItem,
   formatDistance,
   formatItemType,
   formatRequestedAt,
@@ -44,22 +43,6 @@ describe('콜 목록 표시값', () => {
     expect(formatRequestedAt(undefined)).toBeNull()
     expect(formatRequestedAt('invalid')).toBeNull()
     expect(formatRequestedAt('2026-08-03T04:00:00Z')).not.toBeNull()
-  })
-})
-
-describe('물품 크기 필터', () => {
-  const requests: RiderDeliveryRequestSummaryResponse[] = [
-    { deliveryId: 1, itemType: 'SMALL_PARCEL' },
-    { deliveryId: 2, itemType: 'LARGE_PARCEL' },
-    { deliveryId: 3, itemType: 'SMALL_PARCEL' },
-  ]
-
-  it('전체 선택 시 원본 목록을 반환한다', () => {
-    expect(filterRequestsByItem(requests, 'ALL')).toBe(requests)
-  })
-
-  it('선택한 물품 종류만 남긴다', () => {
-    expect(filterRequestsByItem(requests, 'SMALL_PARCEL').map((request) => request.deliveryId)).toEqual([1, 3])
   })
 })
 
