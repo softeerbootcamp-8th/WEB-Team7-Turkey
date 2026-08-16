@@ -10,16 +10,26 @@ import {
   useChangeRiderOperatingStatus,
 } from '@/api/generated/rider-operating-status/rider-operating-status'
 import { getGetRiderSessionQueryKey } from '@/api/generated/rider-session/rider-session'
-import type { ItemFilter, RequestCursor, RiderPosition } from './-requestList'
+import type {
+  DistanceMaxFilter,
+  FareMinFilter,
+  ItemFilter,
+  RequestCursor,
+  RiderPosition,
+  SortOption,
+} from './-requestList'
 import {
   buildNextRequestCursor,
   DEFAULT_RADIUS_METERS,
+  DISTANCE_MAX_OPTIONS,
+  FARE_MIN_OPTIONS,
   getPositionUnavailableGuidance,
   getPositionUnavailableSummary,
   getRequestListErrorMessage,
   ITEM_FILTER_OPTIONS,
   RADIUS_OPTIONS,
   requestRiderPosition,
+  SORT_OPTIONS,
 } from './-requestList'
 import { RequestCard } from './-components/RequestCard'
 
@@ -34,6 +44,9 @@ function RiderRequests() {
   const queryClient = useQueryClient()
   const [radiusMeters, setRadiusMeters] = useState(DEFAULT_RADIUS_METERS)
   const [itemFilter, setItemFilter] = useState<ItemFilter>('ALL')
+  const [sortOption, setSortOption] = useState<SortOption>('DISTANCE')
+  const [fareMinFilter, setFareMinFilter] = useState<FareMinFilter>('ALL')
+  const [distanceMaxFilter, setDistanceMaxFilter] = useState<DistanceMaxFilter>('ALL')
   const [statusError, setStatusError] = useState<string | null>(null)
   const [position, setPosition] = useState<PositionState>({ status: 'loading' })
   const [showPositionDetail, setShowPositionDetail] = useState(false)
@@ -66,17 +79,18 @@ function RiderRequests() {
   const longitude = position.status === 'resolved' ? position.longitude : undefined
   const hasPosition = latitude != null && longitude != null
   const itemTypeParam = itemFilter === 'ALL' ? undefined : itemFilter
+  const fareMinParam = fareMinFilter === 'ALL' ? undefined : fareMinFilter
+  const distanceMaxParam = distanceMaxFilter === 'ALL' ? undefined : distanceMaxFilter
 
-  // 반경·좌표·물품 종류가 바뀌면 이전 목록은 그 조건 기준이 아니므로 커서·누적 목록을 버리고
-  // 첫 페이지부터 다시 쌓는다(#509/#522). itemType은 #522부터 서버 요청 파라미터라(이전에는
-  // 화면에서만 거르는 값이라 재조회가 필요 없었다) 다른 서버 필터와 똑같이 취급한다.
+  // 반경·좌표·물품 종류·정렬 기준·요금·배송거리 필터가 바뀌면 이전 목록은 그 조건 기준이
+  // 아니므로 커서·누적 목록을 버리고 첫 페이지부터 다시 쌓는다(#509/#522/#510).
   useEffect(() => {
     setCursor(undefined)
     setItems([])
     setHasNext(false)
     setHasLoadedOnce(false)
     setLoadMoreError(null)
-  }, [radiusMeters, latitude, longitude, itemTypeParam])
+  }, [radiusMeters, latitude, longitude, itemTypeParam, sortOption, fareMinParam, distanceMaxParam])
 
   function retryPosition() {
     setPosition({ status: 'loading' })
@@ -91,8 +105,10 @@ function RiderRequests() {
       latitude,
       longitude,
       radiusMeters,
-      sort: 'DISTANCE',
+      sort: sortOption,
       itemType: itemTypeParam,
+      fareMin: fareMinParam,
+      distanceMax: distanceMaxParam,
       ...cursor,
     },
     { query: { retry: false, enabled: position.status === 'resolved' } },
@@ -143,7 +159,7 @@ function RiderRequests() {
     if (!hasNext || requestsQuery.isFetching) {
       return
     }
-    const nextCursor = buildNextRequestCursor(hasPosition, items[items.length - 1])
+    const nextCursor = buildNextRequestCursor(sortOption, hasPosition, items[items.length - 1])
     if (!nextCursor) {
       return
     }
@@ -222,6 +238,28 @@ function RiderRequests() {
 
       <main aria-label="배송요청 목록" className="flex flex-1 flex-col">
         <section aria-label="콜 필터" className="border-b border-outline-variant bg-surface-container-lowest px-5 py-4">
+          <fieldset className="mb-3">
+            <legend className="mb-1.5 text-label-sm font-bold text-secondary">정렬 기준</legend>
+            <div role="radiogroup" aria-label="정렬 기준" className="grid grid-cols-3 gap-1.5">
+              {SORT_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={sortOption === option.value}
+                  onClick={() => setSortOption(option.value)}
+                  className={`h-11 rounded-xl px-1 text-label-sm font-bold transition-colors ${
+                    sortOption === option.value
+                      ? 'bg-primary-container text-on-primary-container'
+                      : 'border border-outline-variant bg-surface-container-lowest text-secondary hover:bg-surface-container-low'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-1.5 text-label-sm font-bold text-secondary">
               물품 크기
@@ -249,6 +287,44 @@ function RiderRequests() {
                 >
                   {RADIUS_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>{option.label} 이내</option>
+                  ))}
+                </select>
+                <span className="material-symbols-outlined pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xl text-outline">expand_more</span>
+              </span>
+            </label>
+
+            <label className="flex flex-col gap-1.5 text-label-sm font-bold text-secondary">
+              요금
+              <span className="relative">
+                <select
+                  value={fareMinFilter}
+                  onChange={(event) => {
+                    const raw = event.target.value
+                    setFareMinFilter(raw === 'ALL' ? 'ALL' : Number(raw))
+                  }}
+                  className="h-11 w-full appearance-none rounded-xl border border-outline-variant bg-surface-container-lowest px-3 pr-9 text-body-md font-semibold text-on-surface outline-none focus:border-tertiary focus:ring-2 focus:ring-tertiary-container"
+                >
+                  {FARE_MIN_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+                <span className="material-symbols-outlined pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xl text-outline">expand_more</span>
+              </span>
+            </label>
+
+            <label className="flex flex-col gap-1.5 text-label-sm font-bold text-secondary">
+              배송 거리
+              <span className="relative">
+                <select
+                  value={distanceMaxFilter}
+                  onChange={(event) => {
+                    const raw = event.target.value
+                    setDistanceMaxFilter(raw === 'ALL' ? 'ALL' : Number(raw))
+                  }}
+                  className="h-11 w-full appearance-none rounded-xl border border-outline-variant bg-surface-container-lowest px-3 pr-9 text-body-md font-semibold text-on-surface outline-none focus:border-tertiary focus:ring-2 focus:ring-tertiary-container"
+                >
+                  {DISTANCE_MAX_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
                 </select>
                 <span className="material-symbols-outlined pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xl text-outline">expand_more</span>
