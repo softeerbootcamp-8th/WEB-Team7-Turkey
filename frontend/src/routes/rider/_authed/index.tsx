@@ -74,14 +74,14 @@ function RiderHome() {
 
   return (
     <div className="bg-background text-on-background flex min-h-screen flex-col">
-      <header className="sticky top-0 z-50 w-full bg-surface dark:bg-surface-dim">
+      <header className="sticky top-0 z-50 w-full bg-surface">
         <div className="flex h-[64px] items-center justify-between px-container-margin">
-          <h1 className="font-headline-lg text-headline-lg font-bold tracking-tight text-on-surface dark:text-on-surface">Quick</h1>
+          <h1 className="font-headline-lg text-headline-lg font-bold tracking-tight text-on-surface">Quick</h1>
           <button
             type="button"
             aria-label="설정"
             onClick={() => void router.navigate({ to: '/account/settings' })}
-            className="flex items-center justify-center rounded-full p-2 text-secondary transition-colors duration-150 hover:bg-surface-container active:scale-95 dark:text-secondary-fixed-dim dark:hover:bg-surface-container-high"
+            className="flex items-center justify-center rounded-full p-2 text-secondary transition-colors duration-150 hover:bg-surface-container active:scale-95"
           >
             <span className="material-symbols-outlined" aria-hidden="true">settings</span>
           </button>
