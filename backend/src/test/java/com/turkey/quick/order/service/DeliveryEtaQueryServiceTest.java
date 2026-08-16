@@ -8,13 +8,17 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.turkey.quick.common.exception.BusinessException;
+import com.turkey.quick.common.routing.Coordinate;
+import com.turkey.quick.common.routing.RoutingClient.RouteEstimate;
 import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.DeliveryEtaResponse;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -80,7 +84,9 @@ class DeliveryEtaQueryServiceTest {
     @DisplayName("추적 가능 상태면 소요 시간을 응답 시각에 더해 도착 예정 시각을 만든다")
     void fillsEtaWhenTrackable(OrderStatus status) {
         givenOrderWithStatus(status);
-        given(routeEstimator.findRemainingRoute(any())).willReturn(Optional.of(Duration.ofSeconds(420)));
+        Coordinate point = new Coordinate(new BigDecimal("37.5100000"), new BigDecimal("127.0200000"));
+        given(routeEstimator.findRemainingRoute(any()))
+                .willReturn(Optional.of(new RouteEstimate(Duration.ofSeconds(420), List.of(point))));
         LocalDateTime before = LocalDateTime.now(ZoneOffset.UTC);
 
         DeliveryEtaResponse response = queryService.getEta(DELIVERY_ID, CUSTOMER_ID);
@@ -89,6 +95,9 @@ class DeliveryEtaQueryServiceTest {
         assertThat(response.estimatedArrivalAt())
                 .isBetween(before.plusSeconds(420), LocalDateTime.now(ZoneOffset.UTC).plusSeconds(420));
         assertThat(response.deliveryId()).isEqualTo(DELIVERY_ID);
+        assertThat(response.path()).hasSize(1);
+        assertThat(response.path().getFirst().latitude()).isEqualTo(point.latitude());
+        assertThat(response.path().getFirst().longitude()).isEqualTo(point.longitude());
     }
 
     @Test
@@ -103,6 +112,7 @@ class DeliveryEtaQueryServiceTest {
 
         assertThat(response.estimatedArrivalAt()).isNull();
         assertThat(response.status()).isEqualTo(OrderStatus.DELIVERING);
+        assertThat(response.path()).isNull();
     }
 
     @Test

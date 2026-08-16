@@ -62,20 +62,23 @@ public class RiderDeliveryRequestService {
     private static final int MAX_PAGE_SIZE = 100;
 
     /**
-     * AVAILABLE 라이더가 수락할 수 있는 배차 대기(WAITING) 배송요청 목록을 조회한다(#55/#367/#60).
+     * AVAILABLE 라이더가 수락할 수 있는 배차 대기(WAITING) 배송요청 목록을 조회한다(#55/#367/#60/#522).
      *
      * <p><b>동작 순서</b>
      * <ol>
-     *   <li>라이더 상태·반경·페이지 크기·정렬 기준·정렬 방향·범위 필터(운임/배송거리) 값을
+     *   <li>라이더 상태·반경·페이지 크기·정렬 기준·범위 필터(운임/배송거리)·물품 종류 값을
      *       검증한다. 위반하면 예외를 던진다(라이더 상태 위반은 403, 나머지는 400으로 변환).</li>
      *   <li>{@code latitude}·{@code longitude}가 둘 다 있으면(#367) bounding box 쿼리로
      *       {@code radiusMeters}를 감싸는 사각형 범위의 WAITING 주문만 가져온다. 하나라도 없으면
      *       WAITING 전부를 가져온다(#55 계약 확정 — 위치 없음은 에러가 아니다).</li>
-     *   <li>배송요청마다 요약(summary)으로 변환하고, 반경(원)·운임 범위·배송거리 범위로 자바
-     *       메모리에서 거른다(#60 계약 확정 — SQL로 내리지 않고 기존 반경 필터와 같은 구조 유지).</li>
-     *   <li>정렬 기준·방향으로 전체를 정렬한다. DISTANCE인데 좌표가 없으면 REQUESTED_AT으로
-     *       대체한다(#55 계약 확정). 정렬 방향을 생략하면 기준별 기본값(FARE=내림차순, 나머지=
-     *       오름차순)을 쓴다.</li>
+     *   <li>배송요청마다 요약(summary)으로 변환하고, 반경(원)·운임 범위·배송거리 범위·물품
+     *       종류로 자바 메모리에서 거른다(#60/#522 계약 확정 — SQL로 내리지 않고 기존 반경
+     *       필터와 같은 구조 유지).</li>
+     *   <li>정렬 기준으로 전체를 정렬한다. {@code DISTANCE}인데 좌표가 없으면
+     *       {@code REQUESTED_AT}으로 대체한다(#55 계약 확정) — {@code DELIVERY_DISTANCE}는
+     *       좌표와 무관해 이 대체가 필요 없다. 방향은 기준별 고정값(FARE=내림차순, 나머지=
+     *       오름차순)을 항상 쓴다(#522 — 예전엔 요청으로 오버라이드했으나 실제로 쓰는 조합이
+     *       기준별 고정 방향 하나뿐이라 파라미터를 없앴다).</li>
      *   <li>정렬된 전체 목록에서 {@code cursor}(이전 페이지 마지막 항목의 정렬값+id) 다음
      *       위치부터 {@code size}개(+1개 더)를 잘라, 실제로 {@code size}개를 넘겼으면
      *       {@code hasNext=true}로 표시하고 {@code size}개만 남긴다(#60 계약 확정 — keyset을
@@ -88,9 +91,9 @@ public class RiderDeliveryRequestService {
      * @param latitude 라이더 현재 위도. {@code longitude}와 둘 다 있어야 위치 필터가 적용된다.
      * @param longitude 라이더 현재 경도. {@code latitude}와 둘 다 있어야 위치 필터가 적용된다.
      * @param radiusMeters 검색 반경(m). 좌표가 있을 때만 실제로 적용된다.
-     * @param sortParam {@code "DISTANCE"} · {@code "FARE"} · {@code "REQUESTED_AT"} 중 하나.
-     * @param sortDirectionParam {@code "ASC"} · {@code "DESC"} 또는 {@code null}(기준별 기본값).
-     * @param filter 운임·배송거리 범위 필터(#60). 전부 선택값.
+     * @param sortParam {@code "DISTANCE"} · {@code "FARE"} · {@code "REQUESTED_AT"} ·
+     *                  {@code "DELIVERY_DISTANCE"} 중 하나.
+     * @param filter 운임·배송거리 범위 필터 + 물품 종류 필터(#60/#522). 전부 선택값.
      * @param size 페이지 크기(1~{@value #MAX_PAGE_SIZE}).
      * @param cursor 이전 페이지 마지막 항목의 커서(#60). 첫 페이지면 전부 {@code null}.
      * @return 이 페이지의 목록과 다음 페이지 존재 여부.
@@ -98,7 +101,7 @@ public class RiderDeliveryRequestService {
     @Transactional(readOnly = true)
     public RiderDeliveryRequestPageResponse getDeliveryRequests(
             AuthenticatedRider rider, BigDecimal latitude, BigDecimal longitude, int radiusMeters,
-            String sortParam, String sortDirectionParam,
+            String sortParam,
             RiderDeliveryRequestFilter filter, int size, RiderDeliveryRequestCursor cursor) {
 
         requireAvailable(rider);
@@ -106,7 +109,6 @@ public class RiderDeliveryRequestService {
         requireValidSize(size);
         requireValidRange(filter);
         DeliveryRequestSort sort = DeliveryRequestSort.from(sortParam);
-        SortDirection requestedDirection = SortDirection.from(sortDirectionParam);
 
         boolean hasPosition = latitude != null && longitude != null;
 
@@ -127,14 +129,13 @@ public class RiderDeliveryRequestService {
                 .filter(summary -> withinRadius(summary, riderPosition, radiusMeters))
                 .filter(summary -> withinFareRange(summary, filter))
                 .filter(summary -> withinDistanceRange(summary, filter))
+                .filter(summary -> withinItemType(summary, filter))
                 .collect(Collectors.toCollection(ArrayList::new));
 
         DeliveryRequestSort effectiveSort = (sort == DeliveryRequestSort.DISTANCE && riderPosition.isEmpty())
                 ? DeliveryRequestSort.REQUESTED_AT
                 : sort;
-        SortDirection effectiveDirection = requestedDirection != null
-                ? requestedDirection
-                : defaultDirectionFor(effectiveSort);
+        SortDirection effectiveDirection = defaultDirectionFor(effectiveSort);
         summaries.sort(comparatorFor(effectiveSort, effectiveDirection));
 
         requireCursorMatchesSort(cursor, effectiveSort);
@@ -375,6 +376,7 @@ public class RiderDeliveryRequestService {
             case DISTANCE -> cursor.afterDistanceMeters() != null;
             case FARE -> cursor.afterFare() != null;
             case REQUESTED_AT -> cursor.afterRequestedAt() != null;
+            case DELIVERY_DISTANCE -> cursor.afterDeliveryDistanceMeters() != null;
         };
         if (!matches) {
             throw new IllegalArgumentException(
@@ -444,19 +446,36 @@ public class RiderDeliveryRequestService {
         return filter.distanceMax() == null || summary.straightDistanceMeters() <= filter.distanceMax();
     }
 
-    /** 정렬 방향을 생략했을 때 정렬 기준별 기본값이다(#55/#367부터의 기존 동작을 그대로 기본값으로 유지). */
+    /** itemType이 null이면(전체) 통과, 아니면 정확히 일치하는 것만 남긴다(#522). */
+    private boolean withinItemType(RiderDeliveryRequestSummaryResponse summary, RiderDeliveryRequestFilter filter) {
+        return filter.itemType() == null || summary.itemType() == filter.itemType();
+    }
+
+    /**
+     * 정렬 기준별 고정 방향이다(#522 — 예전엔 요청 파라미터로 오버라이드를 허용했으나(#55/#367),
+     * 실제로 쓰는 조합이 이 고정값 하나뿐으로 확정돼 오버라이드 자체를 없앴다).
+     */
     private SortDirection defaultDirectionFor(DeliveryRequestSort sort) {
         return switch (sort) {
             case FARE -> SortDirection.DESC;
-            case DISTANCE, REQUESTED_AT -> SortDirection.ASC;
+            case DISTANCE, REQUESTED_AT, DELIVERY_DISTANCE -> SortDirection.ASC;
         };
     }
 
     /**
-     * 정렬 기준·방향에 맞는 비교자를 만든다. 어떤 기준이든 마지막에 {@code deliveryId} 오름차순을
-     * tiebreaker로 덧붙인다(#60) — 동점(같은 운임, 같은 거리 등)이 있을 때 정렬 순서를 매 요청마다
-     * 항상 같게 고정해야, 그 위에서 도는 커서 비교({@link #isAfterCursor})가 항목을 건너뛰거나
-     * 중복시키지 않는다.
+     * 정렬 기준·방향에 맞는 비교자를 만든다.
+     *
+     * <p>{@code switch(sort)}로 고르는 것은 "주 키(primary)" 하나뿐이고, {@code Comparator.comparing(...)}은
+     * 항상 오름차순 비교자를 만든다 — {@code direction == DESC}일 때만 그 주 키에 {@code .reversed()}를
+     * 걸어 뒤집는다. 그 뒤에 {@code .thenComparing(deliveryId)}를 조건 없이 항상 덧붙이는데, 이건
+     * 방향과 무관한 별도 규칙이다: 이 목록은 매 요청마다 최신 데이터로 다시 걸러 새로 정렬되므로(#60),
+     * 주 키가 동점(같은 운임, 같은 거리 등)인 두 항목의 순서가 요청마다 달라질 수 있다.
+     * {@code deliveryId} 오름차순을 항상 tiebreaker로 고정해야 "운임이 같으면 항상 먼저 생성된
+     * 주문이 앞"이라는 순서가 요청마다 흔들리지 않는다.
+     *
+     * <p><b>tiebreaker는 절대 뒤집지 않는다</b> — {@link #isAfterCursor}가 동점 판정에서 쓰는
+     * 규칙과 정확히 같아야 하기 때문이다(아래 참고). {@code .reversed()}가 주 키에만 걸리고
+     * {@code .thenComparing}은 그 뒤에 별도로 붙는 구조가 그걸 보장한다.
      */
     private Comparator<RiderDeliveryRequestSummaryResponse> comparatorFor(DeliveryRequestSort sort,
                                                                           SortDirection direction) {
@@ -464,6 +483,7 @@ public class RiderDeliveryRequestService {
             case DISTANCE -> Comparator.comparing(RiderDeliveryRequestSummaryResponse::distanceToPickupMeters);
             case FARE -> Comparator.comparing(RiderDeliveryRequestSummaryResponse::expectedSettlementAmount);
             case REQUESTED_AT -> Comparator.comparing(RiderDeliveryRequestSummaryResponse::requestedAt);
+            case DELIVERY_DISTANCE -> Comparator.comparing(RiderDeliveryRequestSummaryResponse::straightDistanceMeters);
         };
         if (direction == SortDirection.DESC) {
             primary = primary.reversed();
@@ -472,9 +492,28 @@ public class RiderDeliveryRequestService {
     }
 
     /**
-     * 이 항목이 커서보다 뒤에 있는지 판정한다(#60, keyset 페이지네이션). 커서가 없으면(첫 페이지)
-     * 전부 통과시킨다. 정렬 기준 값이 같으면 {@code deliveryId}로 갈라 판정한다 —
-     * {@link #comparatorFor}가 쓰는 tiebreaker와 반드시 같은 규칙이어야 한다.
+     * 이 항목이 커서보다 뒤에 있는지 판정한다(#60, keyset 페이지네이션) — "뒤"는 절대적인 크기가
+     * 아니라 {@link #comparatorFor}가 만든 목록의 **실제 순서 기준**이다. 커서가 없으면(첫 페이지)
+     * 전부 통과시킨다.
+     *
+     * <p>{@code comparison}은 항상 "자연스러운(오름차순 의미의)" 비교값이다 — 예:
+     * {@code Integer.compare(700, 500)}은 700이 더 크므로 양수를 반환한다. 그런데
+     * {@code direction == DESC}인 목록에서는 "큰 값이 앞"이라서, "커서 다음"은 오히려 "커서보다
+     * 작은 값"을 뜻한다. 자연 비교로는 그게 음수로 나오므로, DESC일 때 부호를 뒤집어
+     * ({@code comparison = -comparison}) "이 목록의 실제 순서 기준으로 커서 다음인가"라는 하나의
+     * 질문({@code comparison > 0})으로 통일한다.
+     *
+     * <p>예를 들어 {@code sort=FARE, direction=DESC}로 9000·5000·3000원 주문을 내림차순 정렬해
+     * [9000, 5000, 3000] 순으로 1페이지(size=2)에 [9000, 5000]을 보여줬다면, 커서는
+     * {@code (afterFare=5000, afterId=해당 주문 id)}가 된다. 다음 판정 대상 3000원 주문은
+     * {@code Long.compare(3000, 5000)}이 음수 → DESC라 부호 반전 → 양수 → {@code true}(포함,
+     * 다음 페이지에 정확히 등장). 반대로 이미 보여준 9000원 주문이 다시 후보에 오른다면
+     * {@code Long.compare(9000, 5000)}이 양수 → 반전 → 음수 → {@code false}(제외, 중복 방지).
+     *
+     * <p>주 키가 동점(comparison == 0)이면 {@code deliveryId}로 갈라 판정하는데, 이 tiebreaker
+     * 비교는 {@code direction}과 무관하게 항상 오름차순이다 — {@link #comparatorFor}의
+     * tiebreaker와 정확히 같은 규칙이어야 한다. 둘 중 하나만 방향을 반영하면 정렬 결과와 커서
+     * 판정이 어긋나 항목이 건너뛰어지거나 중복될 수 있다.
      */
     private boolean isAfterCursor(RiderDeliveryRequestSummaryResponse summary, DeliveryRequestSort sort,
                                   SortDirection direction, RiderDeliveryRequestCursor cursor) {
@@ -486,6 +525,8 @@ public class RiderDeliveryRequestService {
             case DISTANCE -> Integer.compare(summary.distanceToPickupMeters(), cursor.afterDistanceMeters());
             case FARE -> Long.compare(summary.expectedSettlementAmount(), cursor.afterFare());
             case REQUESTED_AT -> summary.requestedAt().compareTo(cursor.afterRequestedAt());
+            case DELIVERY_DISTANCE ->
+                    Integer.compare(summary.straightDistanceMeters(), cursor.afterDeliveryDistanceMeters());
         };
         if (direction == SortDirection.DESC) {
             comparison = -comparison;

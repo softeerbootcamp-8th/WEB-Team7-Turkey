@@ -34,16 +34,6 @@ const ITEM_TYPE_LABELS: Record<RiderDeliveryRequestSummaryResponseItemType, stri
   FOOD: '음식',
 }
 
-export function filterRequestsByItem(
-  requests: RiderDeliveryRequestSummaryResponse[],
-  itemFilter: ItemFilter,
-): RiderDeliveryRequestSummaryResponse[] {
-  if (itemFilter === 'ALL') {
-    return requests
-  }
-  return requests.filter((request) => request.itemType === itemFilter)
-}
-
 export function formatItemType(itemType: RiderDeliveryRequestSummaryResponseItemType | undefined): string {
   return itemType ? ITEM_TYPE_LABELS[itemType] : '물품 정보 없음'
 }
@@ -64,6 +54,44 @@ export function formatSettlement(amount: number | undefined): string {
 
 export function formatRequestedAt(requestedAt: string | undefined): string | null {
   return formatSeoul(requestedAt, { hour: '2-digit', minute: '2-digit' })
+}
+
+export interface RequestCursor {
+  afterDistanceMeters?: number
+  afterFare?: number
+  afterRequestedAt?: string
+  afterId?: number
+}
+
+/**
+ * 지금까지 받은 마지막 항목(lastItem) 기준으로 "이 다음부터 보여달라"는 커서를 만든다.
+ * 정렬값 + deliveryId 쌍을 담고, 어느 정렬값을 담을지는 hasPosition으로 갈린다:
+ *
+ *  - 좌표가 있으면 → 픽업거리(afterDistanceMeters). 화면이 sort=DISTANCE로 요청하므로.
+ *  - 좌표가 없으면 → 요청시각(afterRequestedAt). 백엔드가 좌표 없는 DISTANCE 요청을 조용히
+ *    REQUESTED_AT으로 바꿔 처리하기 때문(#55 계약) — 이때 afterDistanceMeters를 보내면
+ *    백엔드가 "정렬 기준과 커서가 안 맞는다"며 요청 자체를 거부한다(requireCursorMatchesSort).
+ *
+ * lastItem에 필요한 값이 없으면(방어적) undefined를 반환한다 — 호출자는 이 경우 다음 페이지를
+ * 요청하지 말아야 한다.
+ */
+export function buildNextRequestCursor(
+  hasPosition: boolean,
+  lastItem: RiderDeliveryRequestSummaryResponse | undefined,
+): RequestCursor | undefined {
+  if (!lastItem || lastItem.deliveryId == null) {
+    return undefined
+  }
+  if (hasPosition) {
+    if (lastItem.distanceToPickupMeters == null) {
+      return undefined
+    }
+    return { afterDistanceMeters: lastItem.distanceToPickupMeters, afterId: lastItem.deliveryId }
+  }
+  if (lastItem.requestedAt == null) {
+    return undefined
+  }
+  return { afterRequestedAt: lastItem.requestedAt, afterId: lastItem.deliveryId }
 }
 
 export function getRequestListErrorMessage(error: unknown): string {

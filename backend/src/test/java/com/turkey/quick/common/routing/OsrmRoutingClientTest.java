@@ -31,7 +31,8 @@ class OsrmRoutingClientTest {
             new Coordinate(new BigDecimal("37.4979000"), new BigDecimal("127.0276000"));
 
     private static final String OK_RESPONSE = """
-            {"code":"Ok","routes":[{"duration":730.7,"distance":9945.2}]}
+            {"code":"Ok","routes":[{"duration":730.7,"distance":9945.2,
+            "geometry":{"coordinates":[[126.9779000,37.5665000],[127.0100000,37.5200000],[127.0276000,37.4979000]]}}]}
             """;
 
     private HttpServer server;
@@ -71,15 +72,16 @@ class OsrmRoutingClientTest {
     }
 
     @Test
-    @DisplayName("좌표를 {경도},{위도} 순서로 싣고 overview=false 를 붙인다")
-    void sendsCoordinatesInLongitudeLatitudeOrderWithoutGeometry() {
+    @DisplayName("좌표를 {경도},{위도} 순서로 싣고 overview=full&geometries=geojson 을 붙인다")
+    void sendsCoordinatesInLongitudeLatitudeOrderWithFullGeometry() {
         stubResponse(200, OK_RESPONSE);
 
         clientForStub().findRoute(SEOUL_CITY_HALL, GANGNAM_STATION);
 
         assertThat(receivedUris).singleElement().asString()
                 .startsWith("/route/v1/driving/126.9779000,37.5665000;127.0276000,37.4979000")
-                .contains("overview=false");
+                .contains("overview=full")
+                .contains("geometries=geojson");
     }
 
     @Test
@@ -87,9 +89,24 @@ class OsrmRoutingClientTest {
     void parsesDuration() {
         stubResponse(200, OK_RESPONSE);
 
-        Optional<Duration> duration = clientForStub().findRoute(SEOUL_CITY_HALL, GANGNAM_STATION);
+        Optional<RoutingClient.RouteEstimate> route = clientForStub().findRoute(SEOUL_CITY_HALL, GANGNAM_STATION);
 
-        assertThat(duration).contains(Duration.ofMillis(730_700));
+        assertThat(route).isPresent();
+        assertThat(route.get().duration()).isEqualTo(Duration.ofMillis(730_700));
+    }
+
+    @Test
+    @DisplayName("GeoJSON [경도,위도] 좌표를 Coordinate(위도,경도)로 뒤집어 경로에 순서대로 담는다")
+    void parsesGeometryFlippingLongitudeLatitudeOrder() {
+        stubResponse(200, OK_RESPONSE);
+
+        Optional<RoutingClient.RouteEstimate> route = clientForStub().findRoute(SEOUL_CITY_HALL, GANGNAM_STATION);
+
+        assertThat(route).isPresent();
+        assertThat(route.get().path()).containsExactly(
+                new Coordinate(new BigDecimal("37.5665000"), new BigDecimal("126.9779000")),
+                new Coordinate(new BigDecimal("37.5200000"), new BigDecimal("127.0100000")),
+                new Coordinate(new BigDecimal("37.4979000"), new BigDecimal("127.0276000")));
     }
 
     @Test

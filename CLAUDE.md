@@ -195,7 +195,7 @@ k6 부하테스트는 `loadtest` 스킬(`.claude/skills/loadtest/`)이 정본 �
 
 - **경로 탐색은 자체 호스팅 OSRM**(`common/routing/OsrmRoutingClient`, #416/#420). 카카오모빌리티로 바꿨다가(#431) 실제 사용 불가로 되돌렸다(2026-08-10). 계약은 `Optional<Duration>`(`overview=false`, 좌표 미요청). 연결 300ms/읽기 700ms 타임아웃, 재시도 없음, 실패는 예외 대신 빈 값, 4xx는 "경로 없음"이라 실패로 안 셈, 연속 3회 실패 시 호출 스킵(1초→2배씩→30초 상한, `RoutingFailureBackoff`). 평일 출퇴근(Asia/Seoul 07-09·18-20시)엔 raw duration에 **×1.3**(잠정).
 - **추적 스냅샷이 ETA를 싣는다**(#421). 출발점은 Redis 최신 위치, 도착점은 픽업 전(`ASSIGNED`·`MOVING_TO_PICKUP`)이면 픽업지, 픽업 후(`PICKED_UP`·`DELIVERING`)면 도착지. **라이더 위치가 없으면 픽업지로 대체하지 않고 null**(출발=도착이 되어 "지금 도착"이라는 틀린 값이 나옴). WAITING도 라이더가 없어 ETA는 null.
-- **예상 경로 좌표는 싣지 않는다**(#421, 구현했다 걷어냄). 다시 실을 땐 `{latitude, longitude}` **이름 붙은 객체 배열**로 — GeoJSON `[경도, 위도]`를 그대로 흘리면 카카오맵과 반대인데 서울 좌표는 뒤집어도 유효 범위라 조용히 엉뚱한 곳에 그려진다.
+- **예상 경로 좌표를 다시 싣는다**(#421에서 걷어냈다가 #532에서 재도입, 고객 추적 화면의 직선거리 표시를 실제 도로 경로로 바꾸기 위해). `DeliveryEtaResponse.path`에 `{latitude, longitude}` **이름 붙은 객체 배열**(`RoutePointResponse`)로 담는다 — GeoJSON `[경도, 위도]`를 그대로 흘리면 카카오맵과 반대인데 서울 좌표는 뒤집어도 유효 범위라 조용히 엉뚱한 곳에 그려진다. `OsrmRoutingClient`는 이제 `overview=full&geometries=geojson`으로 호출하고(예전 `overview=false`에서 변경), GeoJSON 좌표는 파싱 시점에 `Coordinate(latitude, longitude)`로 뒤집는다. `RoutingClient.findRoute`의 반환 타입도 `Optional<Duration>`에서 `Optional<RouteEstimate>`(`duration`+`path`)로 다시 넓어졌다 — ETA와 경로가 같은 OSRM 호출 결과이므로 하나로 묶었다. **프론트 연동은 아직 안 됐다**(Orval 재생성 필요 — 이 작업을 진행한 환경에 로컬 백엔드를 띄울 Docker가 없어 `pnpm generate:api`를 못 돌렸다). `TrackingMap.tsx`는 직선(pickup↔destination) 폴리라인을 이미 제거했고 `routePath` prop을 받으면 그 좌표로 그리도록 준비돼 있다 — 백엔드를 로컬로 띄우고 재생성한 뒤 `tracking.tsx`에서 `useGetCustomerDeliveryEta` 응답의 `path`를 `TrackingMap`에 전달하는 한 줄만 남았다.
 - `DeliveryTrackingQueryService.getTracking`에는 **`@Transactional`이 없다**(외부 HTTP가 DB 커넥션을 안 잡게). 대신 지연 로딩 불가 — **이 경로에 조회를 추가하며 연관을 만지면 `LazyInitializationException`.**
 
 ### API 규약
@@ -248,6 +248,8 @@ k6 부하테스트는 `loadtest` 스킬(`.claude/skills/loadtest/`)이 정본 �
 - 동일 요청 재전송 멱등성 정책(요청 식별값 기준).
 - 로그인·회원가입 화면에 비인증 가드를 걸지(#195). 현재는 로그인 상태로도 열린다.
 - **고객 포인트 거래 내역 조회에 기간(조회 기간) 필터가 없다**(#35). 이슈 명세엔 있으나 라이더 구현(#69)에 선례가 없어 라이더와 동일하게(유형+페이지만) 구현했다. 필요해지면 라이더 쪽도 함께 확장할지 논의 필요.
+- **라이더 콜 목록 물품 종류(itemType) 필터가 서버 파라미터로 노출된 적이 없다**(#214부터 클라이언트 전용 필터). `#509`로 keyset 페이지네이션이 도입되며, 서버가 페이지를 자른 뒤 클라이언트가 itemType을 거르는 구조가 `hasNext`와 화면에 보이는 개수를 어긋나게 만들 수 있는 문제로 이어졌다 — `#522`에서 서버 필터로 이관하기로 계획.
+- **`sortDirection=DESC`(현재 `FARE` 기본값)와 keyset 커서 페이지네이션이 결합됐을 때의 검증 테스트가 없다**(`#509` 작업 중 코드 추적으로 확인, 로직상으로는 맞아 보이나 실측 안 됨) — `#522`에서 테스트 추가 예정.
 
 ### 알려진 결함 (고칠지 감내할지 미정)
 
@@ -276,6 +278,7 @@ k6 부하테스트는 `loadtest` 스킬(`.claude/skills/loadtest/`)이 정본 �
 - 배포된 OSRM 서버(#416) 사이징이 지금 트래픽에 맞는지.
 - GitHub Actions AWS 인증 방식(OIDC + 최소 권한 IAM Role 권장)과 배포 권한 범위.
 - 라이더 콜 목록 `radiusMeters` 상한 없음(#55). 좌표 미전송 요청은 WAITING 전체를 훑어, WAITING이 크게 늘면 계약을 다시 열어야 한다.
+- **라이더 콜 목록 "더보기"(#509, 프론트 연동)를 누를 때마다 백엔드가 bounding box 후보 전체를 다시 필터·정렬한다**(#60 설계, 캐시 없음). 후보 규모가 커지고 라이더가 페이지를 여러 번 넘기는 사용 패턴이 흔해지면 비용이 커질 수 있는데 아직 실측 없음 — 위 `radiusMeters` 상한 미비와 겹치는 문제라 부하테스트로 함께 확인해야 한다.
 - 러시아워 배수(×1.3)·시간대(07-09, 18-20시)가 실측 없는 잠정값. 실제 배송 데이터로 재조정.
 - 외부 SMS 발송 연동(현재 로그만 남기는 모킹) — 벤더 선정 시 `SmsSender` 구현체 교체(#20).
 - **Flyway 자동 적용 안 되던 버그가 아직 운영에 반영 안 됨**(#373, 수정은 PR #460, 아직 dev·main 머지 전). 운영 `flyway_schema_history`는 V18(정상 — V19가 어느 브랜치에도 아직 안 들어갔으니 당연한 상태). PR #460 머지·배포 후 실제로 새 마이그레이션이 자동 적용되는지 재확인 필요.

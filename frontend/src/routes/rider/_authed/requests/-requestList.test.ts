@@ -2,7 +2,7 @@ import { AxiosError, AxiosHeaders, type AxiosResponse } from 'axios'
 import { describe, expect, it, vi } from 'vitest'
 import type { RiderDeliveryRequestSummaryResponse } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
 import {
-  filterRequestsByItem,
+  buildNextRequestCursor,
   formatDistance,
   formatItemType,
   formatRequestedAt,
@@ -46,19 +46,41 @@ describe('콜 목록 표시값', () => {
   })
 })
 
-describe('물품 크기 필터', () => {
-  const requests: RiderDeliveryRequestSummaryResponse[] = [
-    { deliveryId: 1, itemType: 'SMALL_PARCEL' },
-    { deliveryId: 2, itemType: 'LARGE_PARCEL' },
-    { deliveryId: 3, itemType: 'SMALL_PARCEL' },
-  ]
+describe('다음 페이지 커서 생성(#509)', () => {
+  it('좌표가 있으면(DISTANCE 정렬) afterDistanceMeters + afterId를 채운다', () => {
+    const lastItem: RiderDeliveryRequestSummaryResponse = {
+      deliveryId: 42,
+      distanceToPickupMeters: 850,
+      requestedAt: '2026-08-13T01:00:00Z',
+    }
 
-  it('전체 선택 시 원본 목록을 반환한다', () => {
-    expect(filterRequestsByItem(requests, 'ALL')).toBe(requests)
+    expect(buildNextRequestCursor(true, lastItem)).toEqual({ afterDistanceMeters: 850, afterId: 42 })
   })
 
-  it('선택한 물품 종류만 남긴다', () => {
-    expect(filterRequestsByItem(requests, 'SMALL_PARCEL').map((request) => request.deliveryId)).toEqual([1, 3])
+  it('좌표가 없으면(백엔드가 REQUESTED_AT으로 대체) afterRequestedAt + afterId를 채운다', () => {
+    const lastItem: RiderDeliveryRequestSummaryResponse = {
+      deliveryId: 7,
+      distanceToPickupMeters: undefined,
+      requestedAt: '2026-08-13T01:00:00Z',
+    }
+
+    expect(buildNextRequestCursor(false, lastItem)).toEqual({ afterRequestedAt: '2026-08-13T01:00:00Z', afterId: 7 })
+  })
+
+  it('마지막 항목이 없으면(빈 페이지) 커서를 만들지 않는다', () => {
+    expect(buildNextRequestCursor(true, undefined)).toBeUndefined()
+  })
+
+  it('deliveryId가 없으면 커서를 만들지 않는다', () => {
+    expect(buildNextRequestCursor(true, { deliveryId: undefined, distanceToPickupMeters: 100 })).toBeUndefined()
+  })
+
+  it('좌표가 있는데 거리값이 없으면(방어적) 커서를 만들지 않는다', () => {
+    expect(buildNextRequestCursor(true, { deliveryId: 1, distanceToPickupMeters: undefined })).toBeUndefined()
+  })
+
+  it('좌표가 없는데 요청 시각이 없으면(방어적) 커서를 만들지 않는다', () => {
+    expect(buildNextRequestCursor(false, { deliveryId: 1, requestedAt: undefined })).toBeUndefined()
   })
 })
 

@@ -2,6 +2,7 @@ package com.turkey.quick.order.service;
 
 import com.turkey.quick.common.routing.Coordinate;
 import com.turkey.quick.common.routing.RoutingClient;
+import com.turkey.quick.common.routing.RoutingClient.RouteEstimate;
 import com.turkey.quick.location.repository.RiderLocationRepository;
 import com.turkey.quick.order.domain.Address;
 import com.turkey.quick.order.domain.DeliveryOrder;
@@ -59,9 +60,10 @@ public class DeliveryRouteEstimator {
     /**
      * @param order 추적 게이트를 통과한 주문(배정 라이더가 반드시 있다)
      * @return 라이더 현재 위치에서 {@link #targetOf(OrderStatus, DeliveryOrder)} 까지의 소요시간
-     *         (러시아워 보정 적용). 라이더 최신 위치가 없거나 경로를 얻지 못하면 빈 값
+     *         (러시아워 보정 적용)과 경로 좌표(origin → target 순). 라이더 최신 위치가 없거나
+     *         경로를 얻지 못하면 빈 값
      */
-    public Optional<Duration> findRemainingRoute(DeliveryOrder order) {
+    public Optional<RouteEstimate> findRemainingRoute(DeliveryOrder order) {
         Long riderId = order.getAssignedRider().getMemberId();
         Optional<Coordinate> origin = findRiderPosition(riderId);
         if (origin.isEmpty()) {
@@ -71,7 +73,9 @@ public class DeliveryRouteEstimator {
             return Optional.empty();
         }
         return routingClient.findRoute(origin.get(), targetOf(order.getStatus(), order))
-                .map(duration -> applyRushHourMultiplier(duration, LocalDateTime.now(SEOUL)));
+                .map(route -> new RouteEstimate(
+                        applyRushHourMultiplier(route.duration(), LocalDateTime.now(SEOUL)),
+                        route.path()));
     }
 
     /**

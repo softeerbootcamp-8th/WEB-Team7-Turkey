@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ChevronRight, Package, Settings, Truck, WalletCards } from 'lucide-react'
+import { ChevronRight, History, Package, Settings, Truck, WalletCards } from 'lucide-react'
 import { useGetCustomerActiveDelivery } from '@/api/generated/customer-delivery/customer-delivery'
 import type { ActiveDeliveryResponseItemType } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
 import { getCustomerDeliveryStatusLabel } from '@/shared/delivery/status'
@@ -120,6 +120,12 @@ function CustomerHome() {
                 <span>퀵 부르기</span>
               </Link>
             )}
+            {/* 배송내역이 설정(톱니바퀴) 안에만 있어 접근성이 떨어진다는 데모데이 피드백(#534)으로
+                메인 화면에도 바로가기를 둔다. 설정 안의 진입점은 유지한다. */}
+            <Link to="/customer/deliveries" className="btn btn--secondary">
+              <History size={20} />
+              <span>배송내역</span>
+            </Link>
             <Link to="/customer/points" className="btn btn--secondary">
               <WalletCards size={20} />
               <span>포인트 기록보기</span>
