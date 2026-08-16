@@ -34,16 +34,6 @@ const ITEM_TYPE_LABELS: Record<RiderDeliveryRequestSummaryResponseItemType, stri
   FOOD: '음식',
 }
 
-export function filterRequestsByItem(
-  requests: RiderDeliveryRequestSummaryResponse[],
-  itemFilter: ItemFilter,
-): RiderDeliveryRequestSummaryResponse[] {
-  if (itemFilter === 'ALL') {
-    return requests
-  }
-  return requests.filter((request) => request.itemType === itemFilter)
-}
-
 export function formatItemType(itemType: RiderDeliveryRequestSummaryResponseItemType | undefined): string {
   return itemType ? ITEM_TYPE_LABELS[itemType] : '물품 정보 없음'
 }

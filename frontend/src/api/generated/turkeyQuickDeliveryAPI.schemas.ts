@@ -247,6 +247,12 @@ export interface ApiResponseRiderDeliveryHistoryListResponse {
   success?: boolean;
 }
 
+export interface ApiResponseRiderDeliveryProofUploadUrlResponse {
+  data?: RiderDeliveryProofUploadUrlResponse;
+  message?: string;
+  success?: boolean;
+}
+
 export interface ApiResponseRiderDeliveryRequestAcceptResponse {
   data?: RiderDeliveryRequestAcceptResponse;
   message?: string;
@@ -1184,6 +1190,33 @@ export interface PointTransactionResponse {
 }
 
 /**
+ * 인증 방식
+ */
+export type RiderDeliveryCompleteRequestProofType = typeof RiderDeliveryCompleteRequestProofType[keyof typeof RiderDeliveryCompleteRequestProofType];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RiderDeliveryCompleteRequestProofType = {
+  PHOTO: 'PHOTO',
+  RECIPIENT_CONFIRMATION: 'RECIPIENT_CONFIRMATION',
+  AUTH_CODE: 'AUTH_CODE',
+} as const;
+
+/**
+ * 배송 완료 요청(인증 참조값)
+ */
+export interface RiderDeliveryCompleteRequest {
+  /** 인증 방식 */
+  proofType: RiderDeliveryCompleteRequestProofType;
+  /**
+   * 인증 참조값. PHOTO는 업로드 URL 발급 시 받은 저장소 키, 그 외는 수령인 확인 참조·인증코드 등.
+   * @minLength 0
+   * @maxLength 500
+   */
+  proofValue?: string;
+}
+
+/**
  * 라이더 운행 상태(완료 시 AVAILABLE)
  */
 export type RiderDeliveryCompleteResponseOperatingStatus = typeof RiderDeliveryCompleteResponseOperatingStatus[keyof typeof RiderDeliveryCompleteResponseOperatingStatus];
@@ -1223,6 +1256,8 @@ export interface RiderDeliveryCompleteResponse {
   deliveryId?: number;
   /** 라이더 운행 상태(완료 시 AVAILABLE) */
   operatingStatus?: RiderDeliveryCompleteResponseOperatingStatus;
+  /** 배송 완료는 확정됐으나 인증 사진 업로드가 사후에 실패했는지 여부. true면 사진이 없는 채로 완료된 상태 — 재업로드 수단은 아직 없다. */
+  proofUploadFailed?: boolean;
   /** 확정된 정산 금액(원) */
   settlementAmount?: number;
   /** 배송 상태(완료 시 COMPLETED) */
@@ -1349,6 +1384,29 @@ export interface RiderDeliveryHistoryListResponse {
   size?: number;
   /** 전체 건수 */
   totalElements?: number;
+}
+
+/**
+ * 배송 완료 인증 사진 업로드용 presigned URL 발급 요청
+ */
+export interface RiderDeliveryProofUploadUrlRequest {
+  /**
+   * 업로드할 사진의 Content-Type(image/jpeg, image/png, image/webp만 허용)
+   * @minLength 1
+   */
+  contentType: string;
+}
+
+/**
+ * 배송 완료 인증 사진 업로드용 presigned URL
+ */
+export interface RiderDeliveryProofUploadUrlResponse {
+  /** URL 만료 시각(UTC) */
+  expiresAt?: string;
+  /** 업로드 후 완료 요청(proofValue)에 그대로 실어 보낼 저장소 키 */
+  key?: string;
+  /** 이 URL로 PUT 요청을 보내면 업로드된다. 발급 시 지정한 Content-Type과 동일한 Content-Type 헤더로 요청해야 서명이 일치한다. */
+  uploadUrl?: string;
 }
 
 /**
@@ -2039,13 +2097,9 @@ longitude?: number;
  */
 radiusMeters?: number;
 /**
- * 정렬 기준
+ * 정렬 기준. 방향은 기준별로 고정(FARE=내림차순, 나머지=오름차순)이라 별도 파라미터로 받지 않는다
  */
 sort?: GetRiderDeliveryRequestsSort;
-/**
- * 정렬 방향(선택, 생략하면 기준별 기본값 — FARE는 내림차순, 나머지는 오름차순)
- */
-sortDirection?: GetRiderDeliveryRequestsSortDirection;
 /**
  * 예상 정산액(운임) 최소값, 원(선택)
  */
@@ -2063,6 +2117,10 @@ distanceMin?: number;
  */
 distanceMax?: number;
 /**
+ * 물품 종류 필터(선택, 생략하면 전체)
+ */
+itemType?: GetRiderDeliveryRequestsItemType;
+/**
  * 페이지 크기(1~100)
  */
 size?: number;
@@ -2079,6 +2137,10 @@ afterFare?: number;
  */
 afterRequestedAt?: string;
 /**
+ * 커서: 이전 페이지 마지막 항목의 배송거리(픽업→도착지, m). sort=DELIVERY_DISTANCE일 때만 채운다
+ */
+afterDeliveryDistanceMeters?: number;
+/**
  * 커서: 이전 페이지 마지막 항목의 배송요청 식별자(정렬값이 같을 때 tiebreaker). 첫 페이지면 생략
  */
 afterId?: number;
@@ -2092,14 +2154,18 @@ export const GetRiderDeliveryRequestsSort = {
   DISTANCE: 'DISTANCE',
   FARE: 'FARE',
   REQUESTED_AT: 'REQUESTED_AT',
+  DELIVERY_DISTANCE: 'DELIVERY_DISTANCE',
 } as const;
 
-export type GetRiderDeliveryRequestsSortDirection = typeof GetRiderDeliveryRequestsSortDirection[keyof typeof GetRiderDeliveryRequestsSortDirection];
+export type GetRiderDeliveryRequestsItemType = typeof GetRiderDeliveryRequestsItemType[keyof typeof GetRiderDeliveryRequestsItemType];
 
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
-export const GetRiderDeliveryRequestsSortDirection = {
-  ASC: 'ASC',
-  DESC: 'DESC',
+export const GetRiderDeliveryRequestsItemType = {
+  DOCUMENT: 'DOCUMENT',
+  SMALL_PARCEL: 'SMALL_PARCEL',
+  MEDIUM_PARCEL: 'MEDIUM_PARCEL',
+  LARGE_PARCEL: 'LARGE_PARCEL',
+  FOOD: 'FOOD',
 } as const;
 

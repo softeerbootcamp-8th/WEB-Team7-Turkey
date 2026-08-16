@@ -14,7 +14,6 @@ import type { ItemFilter, RequestCursor, RiderPosition } from './-requestList'
 import {
   buildNextRequestCursor,
   DEFAULT_RADIUS_METERS,
-  filterRequestsByItem,
   getPositionUnavailableGuidance,
   getPositionUnavailableSummary,
   getRequestListErrorMessage,
@@ -66,18 +65,18 @@ function RiderRequests() {
   const latitude = position.status === 'resolved' ? position.latitude : undefined
   const longitude = position.status === 'resolved' ? position.longitude : undefined
   const hasPosition = latitude != null && longitude != null
+  const itemTypeParam = itemFilter === 'ALL' ? undefined : itemFilter
 
-  // 반경·좌표가 바뀌면 이전 목록은 그 조건 기준이 아니므로 커서·누적 목록을 버리고 첫
-  // 페이지부터 다시 쌓는다(#509). itemFilter는 서버 요청 파라미터가 아니라 화면에서만 거르는
-  // 값이라(#60 당시에도 프론트 연동 자체가 없었음) 바뀌어도 이미 불러온 페이지를 버릴 필요가
-  // 없다 — 그대로 두고 필터링만 다시 적용한다.
+  // 반경·좌표·물품 종류가 바뀌면 이전 목록은 그 조건 기준이 아니므로 커서·누적 목록을 버리고
+  // 첫 페이지부터 다시 쌓는다(#509/#522). itemType은 #522부터 서버 요청 파라미터라(이전에는
+  // 화면에서만 거르는 값이라 재조회가 필요 없었다) 다른 서버 필터와 똑같이 취급한다.
   useEffect(() => {
     setCursor(undefined)
     setItems([])
     setHasNext(false)
     setHasLoadedOnce(false)
     setLoadMoreError(null)
-  }, [radiusMeters, latitude, longitude])
+  }, [radiusMeters, latitude, longitude, itemTypeParam])
 
   function retryPosition() {
     setPosition({ status: 'loading' })
@@ -93,6 +92,7 @@ function RiderRequests() {
       longitude,
       radiusMeters,
       sort: 'DISTANCE',
+      itemType: itemTypeParam,
       ...cursor,
     },
     { query: { retry: false, enabled: position.status === 'resolved' } },
@@ -122,8 +122,6 @@ function RiderRequests() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestsQuery.isError, requestsQuery.error])
-
-  const visibleRequests = filterRequestsByItem(items, itemFilter)
 
   function refreshList() {
     // 더보기 등 다른 요청이 이미 진행 중이면 무시한다 — 중복 요청 방지(CLAUDE.md 동시 요청 고려).
@@ -300,7 +298,7 @@ function RiderRequests() {
 
         <div className="flex items-center justify-between px-5 py-3 text-body-md">
           <p className="font-bold">
-            배차 가능 <span className="text-tertiary">{visibleRequests.length}건</span>
+            배차 가능 <span className="text-tertiary">{items.length}건</span>
           </p>
           {isRefreshing && (
             <span aria-live="polite" className="text-label-sm text-secondary">업데이트 중…</span>
@@ -328,7 +326,7 @@ function RiderRequests() {
           </div>
         )}
 
-        {hasLoadedOnce && visibleRequests.length === 0 && (
+        {hasLoadedOnce && items.length === 0 && (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-20 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-surface-container-high">
               <span className="material-symbols-outlined text-3xl text-outline">two_wheeler</span>
@@ -336,15 +334,15 @@ function RiderRequests() {
             <div>
               <p className="text-body-lg font-bold">현재 수행 가능한 콜이 없습니다.</p>
               <p className="mt-1 text-body-md text-secondary">
-                {items.length > 0 ? '다른 물품 크기를 선택해 보세요.' : '잠시 후 새로 고침해 주세요.'}
+                {itemFilter !== 'ALL' ? '다른 물품 크기를 선택해 보세요.' : '잠시 후 새로 고침해 주세요.'}
               </p>
             </div>
           </div>
         )}
 
-        {hasLoadedOnce && visibleRequests.length > 0 && (
+        {hasLoadedOnce && items.length > 0 && (
           <section aria-label="배차 가능한 콜" className="border-y border-outline-variant bg-surface-container-lowest">
-            {visibleRequests.map((request, index) => (
+            {items.map((request, index) => (
               <RequestCard
                 key={request.deliveryId ?? `${request.requestedAt ?? 'request'}-${index}`}
                 request={request}
