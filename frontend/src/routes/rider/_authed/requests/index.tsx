@@ -119,6 +119,13 @@ function RiderRequests() {
   // 응답 페이지를 로컬 state에 쌓는다(#509) — 커서가 없던(첫 페이지) 요청이면 통째로 교체하고,
   // 커서가 있던(다음 페이지) 요청이면 이어붙인다. Orval이 useInfiniteQuery를 생성하지 않아
   // (react-query 모드가 단일 useQuery) 페이지 병합은 화면에서 직접 관리해야 한다.
+  //
+  // 의존성을 requestsQuery.data가 아니라 dataUpdatedAt으로 두는 이유(#543): react-query는 기본으로
+  // structural sharing을 켜둬서, 새로 받은 응답이 이전 응답과 내용이 완전히 같으면(예: 새로고침해도
+  // 서버가 똑같은 목록을 돌려줄 때) data 참조 자체를 재사용한다. data를 의존성으로 쓰면 그럴 때
+  // 이펙트가 다시 안 돌아 setItems가 호출 안 되고, refreshList가 미리 비워 둔 배열이 그대로 남아
+  // "데이터가 있는데 0건으로 보이는" 버그가 났다(데모 부스에서 실측). dataUpdatedAt은 응답 내용이
+  // 같아도 fetch가 끝날 때마다 새 값으로 갱신되므로 이 문제가 없다.
   useEffect(() => {
     if (!requestsQuery.isSuccess || !requestsQuery.data) {
       return
@@ -130,14 +137,15 @@ function RiderRequests() {
     setHasLoadedOnce(true)
     setLoadMoreError(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestsQuery.data, requestsQuery.isSuccess])
+  }, [requestsQuery.dataUpdatedAt, requestsQuery.isSuccess])
 
+  // 위와 같은 이유로 error가 아니라 errorUpdatedAt에 의존한다 — 같은 에러가 반복돼도 매번 갱신된다.
   useEffect(() => {
     if (requestsQuery.isError && cursor !== undefined) {
       setLoadMoreError(getRequestListErrorMessage(requestsQuery.error))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestsQuery.isError, requestsQuery.error])
+  }, [requestsQuery.isError, requestsQuery.errorUpdatedAt])
 
   function refreshList() {
     // 더보기 등 다른 요청이 이미 진행 중이면 무시한다 — 중복 요청 방지(CLAUDE.md 동시 요청 고려).
