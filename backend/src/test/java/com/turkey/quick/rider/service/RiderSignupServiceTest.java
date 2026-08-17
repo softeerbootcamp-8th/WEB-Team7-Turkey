@@ -191,12 +191,23 @@ class RiderSignupServiceTest {
     }
 
     @Test
-    @DisplayName("필수 약관에 동의하지 않으면 거부한다")
-    void shouldRejectMissingRequiredTermAgreement() {
+    @DisplayName("필수 약관에 동의하지 않아도 가입할 수 있다(#546, 백엔드 필수 약관 검증 제거)")
+    void shouldAllowSignupWithoutAgreeingToRequiredTerm() {
         issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
         when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of(term(1L, true)));
 
-        assertThatThrownBy(() -> riderSignupService.signup(request(List.of())))
+        RiderSignupResult result = riderSignupService.signup(request(List.of()));
+
+        assertThat(result.loginId()).isEqualTo(LOGIN_ID);
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 약관 ID로 요청하면 거부한다")
+    void shouldRejectUnknownTermId() {
+        issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
+        when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of(term(1L, true)));
+
+        assertThatThrownBy(() -> riderSignupService.signup(request(List.of(1L, 999L))))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getStatus())
                 .isEqualTo(HttpStatus.BAD_REQUEST);

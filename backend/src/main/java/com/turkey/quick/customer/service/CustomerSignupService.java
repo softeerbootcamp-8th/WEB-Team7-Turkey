@@ -64,8 +64,8 @@ public class CustomerSignupService {
         }
 
         // 결정적 검증(약관)을 먼저 끝내고, 되돌릴 수 없는 토큰 소비(Redis GETDEL)는 마지막에 한다.
-        // 순서가 반대면 약관 미동의로 400을 받은 사용자가 약관만 고쳐 재시도할 때 토큰이 이미
-        // 사라져 있어 인증부터 다시 받아야 한다.
+        // 순서가 반대면 약관 오류로 400을 받은 사용자가 재시도할 때 토큰이 이미 사라져 있어
+        // 인증부터 다시 받아야 한다.
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         List<Term> effectiveTerms = termRepository.findByActiveTrueAndTargetRoleIn(
                         List.of(TermTargetRole.COMMON, TermTargetRole.CUSTOMER))
@@ -119,13 +119,6 @@ public class CustomerSignupService {
                 .anyMatch(id -> activeTerms.stream().noneMatch(term -> term.getId().equals(id)));
         if (hasUnknownTerm) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "유효하지 않은 약관입니다.");
-        }
-
-        boolean missingRequired = activeTerms.stream()
-                .filter(Term::isRequired)
-                .anyMatch(term -> !agreedIds.contains(term.getId()));
-        if (missingRequired) {
-            throw new BusinessException(HttpStatus.BAD_REQUEST, "필수 약관에 모두 동의해야 합니다.");
         }
 
         return activeTerms.stream().filter(term -> agreedIds.contains(term.getId())).collect(Collectors.toList());
