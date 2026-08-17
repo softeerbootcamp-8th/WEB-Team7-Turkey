@@ -94,16 +94,16 @@ class RiderDeliveryRequestServiceTest {
     }
 
     private static final RiderDeliveryRequestFilter NO_FILTER =
-            new RiderDeliveryRequestFilter(null, null, null, null);
+            new RiderDeliveryRequestFilter(null, null, null, null, null);
     private static final RiderDeliveryRequestCursor FIRST_PAGE =
-            new RiderDeliveryRequestCursor(null, null, null, null);
+            new RiderDeliveryRequestCursor(null, null, null, null, null);
     private static final int DEFAULT_SIZE = 20;
 
     /** #60 이전(필터·정렬 방향·페이지네이션 없음) 동작을 검증하던 기존 테스트가 쓰는 기본 호출. */
     private List<RiderDeliveryRequestSummaryResponse> callDefault(
             AuthenticatedRider rider, BigDecimal latitude, BigDecimal longitude, int radiusMeters, String sort) {
         return service.getDeliveryRequests(rider, latitude, longitude, radiusMeters, sort,
-                null, NO_FILTER, DEFAULT_SIZE, FIRST_PAGE).items();
+                NO_FILTER, DEFAULT_SIZE, FIRST_PAGE).items();
     }
 
     @Nested
@@ -333,6 +333,22 @@ class RiderDeliveryRequestServiceTest {
             return order;
         }
 
+        private DeliveryOrder orderWithItemType(ItemType itemType, int straightDistanceMeters,
+                                                LocalDateTime requestedAt) {
+            Member customer = Member.create("customer-" + straightDistanceMeters, "hash", "고객",
+                    "010" + straightDistanceMeters, MemberRole.CUSTOMER);
+            DeliveryOrder order = DeliveryOrder.request(customer, "key-" + straightDistanceMeters,
+                    itemType, straightDistanceMeters,
+                    Address.of("픽업지 도로명", "상세", "12345",
+                            new BigDecimal("37.5010000"), new BigDecimal("127.0010000")),
+                    Address.of("도착지 도로명", "상세", "54321",
+                            new BigDecimal("37.6000000"), new BigDecimal("127.1000000")),
+                    Contact.of("보내는사람", "01011112222"), Contact.of("받는사람", "01033334444"));
+            ReflectionTestUtils.setField(order, "id", (long) straightDistanceMeters);
+            ReflectionTestUtils.setField(order, "requestedAt", requestedAt);
+            return order;
+        }
+
         @Test
         @DisplayName("운임 범위 필터로 범위 밖 주문을 제외한다")
         void shouldExcludeOrdersOutsideFareRange() {
@@ -344,8 +360,8 @@ class RiderDeliveryRequestServiceTest {
                     .willReturn(List.of(estimateSnapshot(cheap, 3000L), estimateSnapshot(expensive, 9000L)));
 
             RiderDeliveryRequestPageResponse result = service.getDeliveryRequests(
-                    rider(OperatingStatus.AVAILABLE), null, null, 3000, "REQUESTED_AT", null,
-                    new RiderDeliveryRequestFilter(5000L, null, null, null), DEFAULT_SIZE, FIRST_PAGE);
+                    rider(OperatingStatus.AVAILABLE), null, null, 3000, "REQUESTED_AT",
+                    new RiderDeliveryRequestFilter(5000L, null, null, null, null), DEFAULT_SIZE, FIRST_PAGE);
 
             assertThat(result.items()).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
                     .containsExactly(expensive.getId());
@@ -362,30 +378,81 @@ class RiderDeliveryRequestServiceTest {
                     .willReturn(List.of(estimateSnapshot(near, 4000L), estimateSnapshot(far, 4000L)));
 
             RiderDeliveryRequestPageResponse result = service.getDeliveryRequests(
-                    rider(OperatingStatus.AVAILABLE), null, null, 3000, "REQUESTED_AT", null,
-                    new RiderDeliveryRequestFilter(null, null, null, 2000), DEFAULT_SIZE, FIRST_PAGE);
+                    rider(OperatingStatus.AVAILABLE), null, null, 3000, "REQUESTED_AT",
+                    new RiderDeliveryRequestFilter(null, null, null, 2000, null), DEFAULT_SIZE, FIRST_PAGE);
 
             assertThat(result.items()).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
                     .containsExactly(near.getId());
         }
 
         @Test
-        @DisplayName("정렬 방향을 명시하면 기준별 기본값을 덮어쓴다")
-        void shouldOverrideDefaultDirection() {
-            DeliveryOrder cheap = orderWithDistance(1000, LocalDateTime.now());
-            DeliveryOrder expensive = orderWithDistance(2000, LocalDateTime.now());
-            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(cheap, expensive));
+        @DisplayName("물품 종류 필터로 다른 종류의 주문을 제외한다(#522)")
+        void shouldExcludeOrdersOfOtherItemType() {
+            DeliveryOrder small = orderWithDistance(1000, LocalDateTime.now());
+            DeliveryOrder food = orderWithItemType(ItemType.FOOD, 2000, LocalDateTime.now());
+            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(small, food));
             given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(
-                    List.of(cheap.getId(), expensive.getId()), FareType.ESTIMATE))
-                    .willReturn(List.of(estimateSnapshot(cheap, 3000L), estimateSnapshot(expensive, 9000L)));
+                    List.of(small.getId(), food.getId()), FareType.ESTIMATE))
+                    .willReturn(List.of(estimateSnapshot(small, 4000L), estimateSnapshot(food, 4000L)));
 
-            // FARE의 기본 방향은 내림차순(높은 순)이지만, 여기선 명시적으로 ASC(낮은 순)를 요청한다.
             RiderDeliveryRequestPageResponse result = service.getDeliveryRequests(
-                    rider(OperatingStatus.AVAILABLE), null, null, 3000, "FARE", "ASC",
-                    NO_FILTER, DEFAULT_SIZE, FIRST_PAGE);
+                    rider(OperatingStatus.AVAILABLE), null, null, 3000, "REQUESTED_AT",
+                    new RiderDeliveryRequestFilter(null, null, null, null, ItemType.FOOD),
+                    DEFAULT_SIZE, FIRST_PAGE);
 
-            assertThat(result.items()).extracting(RiderDeliveryRequestSummaryResponse::expectedSettlementAmount)
-                    .containsExactly(3000L, 9000L);
+            assertThat(result.items()).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
+                    .containsExactly(food.getId());
+        }
+
+        @Test
+        @DisplayName("sort=FARE는 방향을 요청하지 않아도 항상 내림차순(높은 순)이고, keyset 커서도 그 순서를 따라간다(#522)")
+        void shouldPaginateFareDescendingWithCursor() {
+            DeliveryOrder cheapest = orderWithDistance(1000, LocalDateTime.now());
+            DeliveryOrder middle = orderWithDistance(2000, LocalDateTime.now());
+            DeliveryOrder priciest = orderWithDistance(3000, LocalDateTime.now());
+            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING))
+                    .willReturn(List.of(cheapest, middle, priciest));
+            given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(
+                    List.of(cheapest.getId(), middle.getId(), priciest.getId()), FareType.ESTIMATE))
+                    .willReturn(List.of(estimateSnapshot(cheapest, 3000L), estimateSnapshot(middle, 6000L),
+                            estimateSnapshot(priciest, 9000L)));
+
+            RiderDeliveryRequestPageResponse firstPage = service.getDeliveryRequests(
+                    rider(OperatingStatus.AVAILABLE), null, null, 3000, "FARE", NO_FILTER, 2, FIRST_PAGE);
+
+            assertThat(firstPage.items()).extracting(RiderDeliveryRequestSummaryResponse::expectedSettlementAmount)
+                    .containsExactly(9000L, 6000L);
+            assertThat(firstPage.hasNext()).isTrue();
+
+            RiderDeliveryRequestCursor afterMiddle =
+                    new RiderDeliveryRequestCursor(null, 6000L, null, null, middle.getId());
+            RiderDeliveryRequestPageResponse secondPage = service.getDeliveryRequests(
+                    rider(OperatingStatus.AVAILABLE), null, null, 3000, "FARE", NO_FILTER, 2, afterMiddle);
+
+            assertThat(secondPage.items()).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
+                    .containsExactly(cheapest.getId());
+            assertThat(secondPage.hasNext()).isFalse();
+        }
+
+        @Test
+        @DisplayName("sort=DELIVERY_DISTANCE는 배송거리(픽업→도착지) 오름차순으로 정렬하고 keyset 커서를 지원한다(#522)")
+        void shouldPaginateDeliveryDistanceAscendingWithCursor() {
+            DeliveryOrder near = orderWithDistance(1000, LocalDateTime.now());
+            DeliveryOrder far = orderWithDistance(5000, LocalDateTime.now());
+            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(far, near));
+            given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(
+                    List.of(far.getId(), near.getId()), FareType.ESTIMATE))
+                    .willReturn(List.of(estimateSnapshot(far, 4000L), estimateSnapshot(near, 4000L)));
+            RiderDeliveryRequestCursor afterNear =
+                    new RiderDeliveryRequestCursor(null, null, null, 1000, near.getId());
+
+            RiderDeliveryRequestPageResponse secondPage = service.getDeliveryRequests(
+                    rider(OperatingStatus.AVAILABLE), null, null, 3000, "DELIVERY_DISTANCE",
+                    NO_FILTER, DEFAULT_SIZE, afterNear);
+
+            assertThat(secondPage.items()).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
+                    .containsExactly(far.getId());
+            assertThat(secondPage.hasNext()).isFalse();
         }
 
         @Test
@@ -401,7 +468,7 @@ class RiderDeliveryRequestServiceTest {
                             estimateSnapshot(o3, 4000L)));
 
             RiderDeliveryRequestPageResponse firstPage = service.getDeliveryRequests(
-                    rider(OperatingStatus.AVAILABLE), null, null, 3000, "REQUESTED_AT", null,
+                    rider(OperatingStatus.AVAILABLE), null, null, 3000, "REQUESTED_AT",
                     NO_FILTER, 2, FIRST_PAGE);
 
             assertThat(firstPage.items()).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
@@ -421,10 +488,10 @@ class RiderDeliveryRequestServiceTest {
                     .willReturn(List.of(estimateSnapshot(o1, 4000L), estimateSnapshot(o2, 4000L),
                             estimateSnapshot(o3, 4000L)));
             RiderDeliveryRequestCursor afterFirst =
-                    new RiderDeliveryRequestCursor(null, null, o1.getRequestedAt(), o1.getId());
+                    new RiderDeliveryRequestCursor(null, null, o1.getRequestedAt(), null, o1.getId());
 
             RiderDeliveryRequestPageResponse secondPage = service.getDeliveryRequests(
-                    rider(OperatingStatus.AVAILABLE), null, null, 3000, "REQUESTED_AT", null,
+                    rider(OperatingStatus.AVAILABLE), null, null, 3000, "REQUESTED_AT",
                     NO_FILTER, DEFAULT_SIZE, afterFirst);
 
             assertThat(secondPage.items()).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
@@ -436,7 +503,7 @@ class RiderDeliveryRequestServiceTest {
         @DisplayName("페이지 크기가 0 이하면 거부한다")
         void shouldRejectNonPositiveSize() {
             assertThatThrownBy(() -> service.getDeliveryRequests(
-                    rider(OperatingStatus.AVAILABLE), null, null, 3000, "DISTANCE", null,
+                    rider(OperatingStatus.AVAILABLE), null, null, 3000, "DISTANCE",
                     NO_FILTER, 0, FIRST_PAGE))
                     .isInstanceOf(IllegalArgumentException.class);
         }
@@ -445,7 +512,7 @@ class RiderDeliveryRequestServiceTest {
         @DisplayName("페이지 크기가 상한(100)을 넘으면 거부한다")
         void shouldRejectSizeAboveMax() {
             assertThatThrownBy(() -> service.getDeliveryRequests(
-                    rider(OperatingStatus.AVAILABLE), null, null, 3000, "DISTANCE", null,
+                    rider(OperatingStatus.AVAILABLE), null, null, 3000, "DISTANCE",
                     NO_FILTER, 101, FIRST_PAGE))
                     .isInstanceOf(IllegalArgumentException.class);
         }
@@ -454,8 +521,8 @@ class RiderDeliveryRequestServiceTest {
         @DisplayName("fareMin이 fareMax보다 크면 거부한다")
         void shouldRejectInvertedFareRange() {
             assertThatThrownBy(() -> service.getDeliveryRequests(
-                    rider(OperatingStatus.AVAILABLE), null, null, 3000, "DISTANCE", null,
-                    new RiderDeliveryRequestFilter(9000L, 3000L, null, null), DEFAULT_SIZE, FIRST_PAGE))
+                    rider(OperatingStatus.AVAILABLE), null, null, 3000, "DISTANCE",
+                    new RiderDeliveryRequestFilter(9000L, 3000L, null, null, null), DEFAULT_SIZE, FIRST_PAGE))
                     .isInstanceOf(IllegalArgumentException.class);
         }
 
@@ -463,17 +530,25 @@ class RiderDeliveryRequestServiceTest {
         @DisplayName("범위 필터 값이 음수면 거부한다")
         void shouldRejectNegativeRangeValue() {
             assertThatThrownBy(() -> service.getDeliveryRequests(
-                    rider(OperatingStatus.AVAILABLE), null, null, 3000, "DISTANCE", null,
-                    new RiderDeliveryRequestFilter(-1L, null, null, null), DEFAULT_SIZE, FIRST_PAGE))
+                    rider(OperatingStatus.AVAILABLE), null, null, 3000, "DISTANCE",
+                    new RiderDeliveryRequestFilter(-1L, null, null, null, null), DEFAULT_SIZE, FIRST_PAGE))
                     .isInstanceOf(IllegalArgumentException.class);
         }
 
         @Test
-        @DisplayName("정렬 방향 값이 잘못되면 거부한다")
-        void shouldRejectInvalidSortDirection() {
+        @DisplayName("커서 값이 현재 정렬 기준과 안 맞으면 거부한다(#522, DELIVERY_DISTANCE)")
+        void shouldRejectCursorNotMatchingSort() {
+            DeliveryOrder order = orderWithDistance(1000, LocalDateTime.now());
+            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(order));
+            given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(List.of(order.getId()), FareType.ESTIMATE))
+                    .willReturn(List.of(estimateSnapshot(order, 4000L)));
+            // sort=DELIVERY_DISTANCE 인데 afterDeliveryDistanceMeters가 아니라 afterDistanceMeters(픽업거리)만 채운 커서.
+            RiderDeliveryRequestCursor distanceCursor =
+                    new RiderDeliveryRequestCursor(500, null, null, null, 1L);
+
             assertThatThrownBy(() -> service.getDeliveryRequests(
-                    rider(OperatingStatus.AVAILABLE), null, null, 3000, "DISTANCE", "SIDEWAYS",
-                    NO_FILTER, DEFAULT_SIZE, FIRST_PAGE))
+                    rider(OperatingStatus.AVAILABLE), null, null, 3000, "DELIVERY_DISTANCE",
+                    NO_FILTER, DEFAULT_SIZE, distanceCursor))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }

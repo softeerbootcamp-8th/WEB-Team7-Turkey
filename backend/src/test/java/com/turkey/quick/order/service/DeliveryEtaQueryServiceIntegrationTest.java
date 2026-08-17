@@ -6,7 +6,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 
 import com.turkey.quick.common.exception.BusinessException;
+import com.turkey.quick.common.routing.Coordinate;
 import com.turkey.quick.common.routing.RoutingClient;
+import com.turkey.quick.common.routing.RoutingClient.RouteEstimate;
 import com.turkey.quick.location.dto.LocationPayload;
 import com.turkey.quick.location.repository.RiderLocationRepository;
 import com.turkey.quick.order.domain.OrderStatus;
@@ -18,6 +20,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -74,7 +77,9 @@ class DeliveryEtaQueryServiceIntegrationTest extends IntegrationTestSupport {
     void fillsEtaForOwnAssignedDelivery() {
         var scenario = fixture.assignedDelivery();
         givenRiderAt(scenario.riderId());
-        given(routingClient.findRoute(any(), any())).willReturn(Optional.of(Duration.ofSeconds(420)));
+        Coordinate point = new Coordinate(new BigDecimal("37.5100000"), new BigDecimal("127.0200000"));
+        given(routingClient.findRoute(any(), any()))
+                .willReturn(Optional.of(new RouteEstimate(Duration.ofSeconds(420), List.of(point))));
         LocalDateTime before = LocalDateTime.now(ZoneOffset.UTC);
 
         DeliveryEtaResponse response = queryService.getEta(scenario.deliveryId(), scenario.customerId());
@@ -85,6 +90,7 @@ class DeliveryEtaQueryServiceIntegrationTest extends IntegrationTestSupport {
                 .isBetween(before.plusSeconds(420), LocalDateTime.now(ZoneOffset.UTC).plusSeconds(546));
         assertThat(response.status()).isEqualTo(OrderStatus.ASSIGNED);
         assertThat(response.deliveryId()).isEqualTo(scenario.deliveryId());
+        assertThat(response.path()).hasSize(1);
     }
 
     @Test

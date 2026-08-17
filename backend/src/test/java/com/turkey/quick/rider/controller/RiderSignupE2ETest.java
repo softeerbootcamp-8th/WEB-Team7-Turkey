@@ -88,8 +88,8 @@ class RiderSignupE2ETest extends IntegrationTestSupport {
 
         var signupRequest = Map.of(
                 "loginId", "e2e_rider01",
-                "password", "aaa",
-                "passwordConfirm", "aaa",
+                "password", "p@ssw0rd",
+                "passwordConfirm", "p@ssw0rd",
                 "name", "라이더1",
                 "phoneNumber", phoneNumber,
                 "phoneVerificationToken", token,
@@ -107,17 +107,17 @@ class RiderSignupE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("필수 약관에 동의하지 않으면 400을 반환하고 라이더 프로필도 생성되지 않는다")
-    void shouldReturnBadRequestAndNotCreateProfileWithoutRequiredAgreement() {
-        Term required = termRepository.save(Term.create("RIDER_TERM", TermTargetRole.RIDER, "필수 약관", "본문", "1.0",
+    @DisplayName("필수 약관에 동의하지 않아도 가입되고 라이더 프로필도 생성된다(#546, 백엔드 필수 약관 검증 제거)")
+    void shouldCreateProfileWithoutRequiredAgreement() {
+        termRepository.save(Term.create("RIDER_TERM", TermTargetRole.RIDER, "필수 약관", "본문", "1.0",
                 true, LocalDateTime.of(2026, 1, 1, 0, 0), null));
         String phoneNumber = "01033334444";
         String token = issueVerifiedToken(phoneNumber);
 
         var signupRequest = Map.of(
                 "loginId", "e2e_rider02",
-                "password", "aaa",
-                "passwordConfirm", "aaa",
+                "password", "p@ssw0rd",
+                "passwordConfirm", "p@ssw0rd",
                 "name", "라이더2",
                 "phoneNumber", phoneNumber,
                 "phoneVerificationToken", token,
@@ -125,8 +125,9 @@ class RiderSignupE2ETest extends IntegrationTestSupport {
 
         var response = rest.postForEntity(SIGNUP_ENDPOINT, signupRequest, ApiResponse.class);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(memberRepository.existsByLoginId("e2e_rider02")).isFalse();
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Member member = memberRepository.findByLoginId("e2e_rider02").orElseThrow();
+        assertThat(riderProfileRepository.findById(member.getId())).isPresent();
     }
 
     @Test
@@ -138,8 +139,8 @@ class RiderSignupE2ETest extends IntegrationTestSupport {
 
         var signupRequest = Map.of(
                 "loginId", "taken_rider_login",
-                "password", "aaa",
-                "passwordConfirm", "aaa",
+                "password", "p@ssw0rd",
+                "passwordConfirm", "p@ssw0rd",
                 "name", "라이더3",
                 "phoneNumber", phoneNumber,
                 "phoneVerificationToken", token,
@@ -151,12 +152,33 @@ class RiderSignupE2ETest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("비밀번호가 8자 미만이면 400을 반환한다")
+    void shouldReturnBadRequestWhenPasswordShorterThanEightCharacters() {
+        String phoneNumber = "01099990000";
+        String token = issueVerifiedToken(phoneNumber);
+
+        var signupRequest = Map.of(
+                "loginId", "e2e_rider_short_pw",
+                "password", "short1",
+                "passwordConfirm", "short1",
+                "name", "라이더9",
+                "phoneNumber", phoneNumber,
+                "phoneVerificationToken", token,
+                "agreedTermIds", List.of());
+
+        var response = rest.postForEntity(SIGNUP_ENDPOINT, signupRequest, ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(memberRepository.existsByLoginId("e2e_rider_short_pw")).isFalse();
+    }
+
+    @Test
     @DisplayName("휴대전화 인증 없이 가입하면 400을 반환한다")
     void shouldReturnBadRequestWithoutPhoneVerification() {
         var signupRequest = Map.of(
                 "loginId", "e2e_rider05",
-                "password", "aaa",
-                "passwordConfirm", "aaa",
+                "password", "p@ssw0rd",
+                "passwordConfirm", "p@ssw0rd",
                 "name", "라이더5",
                 "phoneNumber", "010-9999-0000",
                 "phoneVerificationToken", "not-a-real-token",

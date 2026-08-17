@@ -3,22 +3,33 @@ import { Capacitor } from '@capacitor/core'
 import { useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { isAxiosError } from 'axios'
+import type { RiderDeliveryRequestSummaryResponse } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
 import { useGetRiderDeliveryRequests } from '@/api/generated/rider-request/rider-request'
 import {
   getGetRiderOperatingStatusQueryKey,
   useChangeRiderOperatingStatus,
 } from '@/api/generated/rider-operating-status/rider-operating-status'
 import { getGetRiderSessionQueryKey } from '@/api/generated/rider-session/rider-session'
-import type { ItemFilter, RiderPosition } from './-requestList'
+import type {
+  DistanceMaxFilter,
+  FareMinFilter,
+  ItemFilter,
+  RequestCursor,
+  RiderPosition,
+  SortOption,
+} from './-requestList'
 import {
+  buildNextRequestCursor,
   DEFAULT_RADIUS_METERS,
-  filterRequestsByItem,
+  DISTANCE_MAX_OPTIONS,
+  FARE_MIN_OPTIONS,
   getPositionUnavailableGuidance,
   getPositionUnavailableSummary,
   getRequestListErrorMessage,
   ITEM_FILTER_OPTIONS,
   RADIUS_OPTIONS,
   requestRiderPosition,
+  SORT_OPTIONS,
 } from './-requestList'
 import { RequestCard } from './-components/RequestCard'
 
@@ -33,9 +44,17 @@ function RiderRequests() {
   const queryClient = useQueryClient()
   const [radiusMeters, setRadiusMeters] = useState(DEFAULT_RADIUS_METERS)
   const [itemFilter, setItemFilter] = useState<ItemFilter>('ALL')
+  const [sortOption, setSortOption] = useState<SortOption>('DISTANCE')
+  const [fareMinFilter, setFareMinFilter] = useState<FareMinFilter>('ALL')
+  const [distanceMaxFilter, setDistanceMaxFilter] = useState<DistanceMaxFilter>('ALL')
   const [statusError, setStatusError] = useState<string | null>(null)
   const [position, setPosition] = useState<PositionState>({ status: 'loading' })
   const [showPositionDetail, setShowPositionDetail] = useState(false)
+  const [cursor, setCursor] = useState<RequestCursor | undefined>(undefined)
+  const [items, setItems] = useState<RiderDeliveryRequestSummaryResponse[]>([])
+  const [hasNext, setHasNext] = useState(false)
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null)
 
   // 화면 진입 시 1회만 조회한다(#496). "새로 고침" 버튼은 이 좌표를 재사용 — 매번 GPS를 다시
   // 잡지 않는다. 권한 거부·타임아웃이어도 requestRiderPosition이 빈 값으로 resolve하므로
@@ -56,6 +75,23 @@ function RiderRequests() {
   // 화면만 봐서는 구분이 안 되고, 라이더 입장에서 "왜 안 가까운 순인지" 알 방법이 없었다.
   const positionUnavailable = position.status === 'resolved' && position.latitude == null
 
+  const latitude = position.status === 'resolved' ? position.latitude : undefined
+  const longitude = position.status === 'resolved' ? position.longitude : undefined
+  const hasPosition = latitude != null && longitude != null
+  const itemTypeParam = itemFilter === 'ALL' ? undefined : itemFilter
+  const fareMinParam = fareMinFilter === 'ALL' ? undefined : fareMinFilter
+  const distanceMaxParam = distanceMaxFilter === 'ALL' ? undefined : distanceMaxFilter
+
+  // 반경·좌표·물품 종류·정렬 기준·요금·배송거리 필터가 바뀌면 이전 목록은 그 조건 기준이
+  // 아니므로 커서·누적 목록을 버리고 첫 페이지부터 다시 쌓는다(#509/#522/#510).
+  useEffect(() => {
+    setCursor(undefined)
+    setItems([])
+    setHasNext(false)
+    setHasLoadedOnce(false)
+    setLoadMoreError(null)
+  }, [radiusMeters, latitude, longitude, itemTypeParam, sortOption, fareMinParam, distanceMaxParam])
+
   function retryPosition() {
     setPosition({ status: 'loading' })
     setShowPositionDetail(false)
@@ -66,20 +102,81 @@ function RiderRequests() {
 
   const requestsQuery = useGetRiderDeliveryRequests(
     {
-      latitude: position.status === 'resolved' ? position.latitude : undefined,
-      longitude: position.status === 'resolved' ? position.longitude : undefined,
+      latitude,
+      longitude,
       radiusMeters,
-      sort: 'DISTANCE',
+      sort: sortOption,
+      itemType: itemTypeParam,
+      fareMin: fareMinParam,
+      distanceMax: distanceMaxParam,
+      ...cursor,
     },
     { query: { retry: false, enabled: position.status === 'resolved' } },
   )
-  const isInitialLoading = position.status === 'loading' || requestsQuery.isLoading
+  const isInitialLoading = position.status === 'loading' || (!hasLoadedOnce && requestsQuery.isLoading)
   const operatingStatusMutation = useChangeRiderOperatingStatus()
 
-  // #60 에서 응답이 배열에서 {items, hasNext} 로 바뀌었다. 커서 페이지네이션 자체는 아직
-  // 붙이지 않았고(별도 프론트 이슈), 여기서는 첫 페이지만 그대로 그린다.
-  const requests = requestsQuery.data?.data?.items ?? []
-  const visibleRequests = filterRequestsByItem(requests, itemFilter)
+  // 응답 페이지를 로컬 state에 쌓는다(#509) — 커서가 없던(첫 페이지) 요청이면 통째로 교체하고,
+  // 커서가 있던(다음 페이지) 요청이면 이어붙인다. Orval이 useInfiniteQuery를 생성하지 않아
+  // (react-query 모드가 단일 useQuery) 페이지 병합은 화면에서 직접 관리해야 한다.
+  //
+  // 의존성을 requestsQuery.data가 아니라 dataUpdatedAt으로 두는 이유(#543): react-query는 기본으로
+  // structural sharing을 켜둬서, 새로 받은 응답이 이전 응답과 내용이 완전히 같으면(예: 새로고침해도
+  // 서버가 똑같은 목록을 돌려줄 때) data 참조 자체를 재사용한다. data를 의존성으로 쓰면 그럴 때
+  // 이펙트가 다시 안 돌아 setItems가 호출 안 되고, refreshList가 미리 비워 둔 배열이 그대로 남아
+  // "데이터가 있는데 0건으로 보이는" 버그가 났다(데모 부스에서 실측). dataUpdatedAt은 응답 내용이
+  // 같아도 fetch가 끝날 때마다 새 값으로 갱신되므로 이 문제가 없다.
+  useEffect(() => {
+    if (!requestsQuery.isSuccess || !requestsQuery.data) {
+      return
+    }
+    const page = requestsQuery.data.data ?? {}
+    const pageItems = page.items ?? []
+    setItems((prev) => (cursor === undefined ? pageItems : [...prev, ...pageItems]))
+    setHasNext(page.hasNext ?? false)
+    setHasLoadedOnce(true)
+    setLoadMoreError(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestsQuery.dataUpdatedAt, requestsQuery.isSuccess])
+
+  // 위와 같은 이유로 error가 아니라 errorUpdatedAt에 의존한다 — 같은 에러가 반복돼도 매번 갱신된다.
+  useEffect(() => {
+    if (requestsQuery.isError && cursor !== undefined) {
+      setLoadMoreError(getRequestListErrorMessage(requestsQuery.error))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestsQuery.isError, requestsQuery.errorUpdatedAt])
+
+  function refreshList() {
+    // 더보기 등 다른 요청이 이미 진행 중이면 무시한다 — 중복 요청 방지(CLAUDE.md 동시 요청 고려).
+    if (requestsQuery.isFetching) {
+      return
+    }
+    setItems([])
+    setHasNext(false)
+    setHasLoadedOnce(false)
+    setLoadMoreError(null)
+    if (cursor === undefined) {
+      void requestsQuery.refetch()
+    } else {
+      setCursor(undefined)
+    }
+  }
+
+  function loadMoreRequests() {
+    if (!hasNext || requestsQuery.isFetching) {
+      return
+    }
+    const nextCursor = buildNextRequestCursor(sortOption, hasPosition, items[items.length - 1])
+    if (!nextCursor) {
+      return
+    }
+    setLoadMoreError(null)
+    setCursor(nextCursor)
+  }
+
+  const isLoadingMore = requestsQuery.isFetching && cursor !== undefined
+  const isRefreshing = requestsQuery.isFetching && cursor === undefined && hasLoadedOnce
 
   function openRequest(deliveryId: number) {
     void router.navigate({
@@ -149,6 +246,28 @@ function RiderRequests() {
 
       <main aria-label="배송요청 목록" className="flex flex-1 flex-col">
         <section aria-label="콜 필터" className="border-b border-outline-variant bg-surface-container-lowest px-5 py-4">
+          <fieldset className="mb-3">
+            <legend className="mb-1.5 text-label-sm font-bold text-secondary">정렬 기준</legend>
+            <div role="radiogroup" aria-label="정렬 기준" className="grid grid-cols-3 gap-1.5">
+              {SORT_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={sortOption === option.value}
+                  onClick={() => setSortOption(option.value)}
+                  className={`h-11 rounded-xl px-1 text-label-sm font-bold transition-colors ${
+                    sortOption === option.value
+                      ? 'bg-primary-container text-on-primary-container'
+                      : 'border border-outline-variant bg-surface-container-lowest text-secondary hover:bg-surface-container-low'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-1.5 text-label-sm font-bold text-secondary">
               물품 크기
@@ -176,6 +295,44 @@ function RiderRequests() {
                 >
                   {RADIUS_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>{option.label} 이내</option>
+                  ))}
+                </select>
+                <span className="material-symbols-outlined pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xl text-outline">expand_more</span>
+              </span>
+            </label>
+
+            <label className="flex flex-col gap-1.5 text-label-sm font-bold text-secondary">
+              요금
+              <span className="relative">
+                <select
+                  value={fareMinFilter}
+                  onChange={(event) => {
+                    const raw = event.target.value
+                    setFareMinFilter(raw === 'ALL' ? 'ALL' : Number(raw))
+                  }}
+                  className="h-11 w-full appearance-none rounded-xl border border-outline-variant bg-surface-container-lowest px-3 pr-9 text-body-md font-semibold text-on-surface outline-none focus:border-tertiary focus:ring-2 focus:ring-tertiary-container"
+                >
+                  {FARE_MIN_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+                <span className="material-symbols-outlined pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xl text-outline">expand_more</span>
+              </span>
+            </label>
+
+            <label className="flex flex-col gap-1.5 text-label-sm font-bold text-secondary">
+              배송 거리
+              <span className="relative">
+                <select
+                  value={distanceMaxFilter}
+                  onChange={(event) => {
+                    const raw = event.target.value
+                    setDistanceMaxFilter(raw === 'ALL' ? 'ALL' : Number(raw))
+                  }}
+                  className="h-11 w-full appearance-none rounded-xl border border-outline-variant bg-surface-container-lowest px-3 pr-9 text-body-md font-semibold text-on-surface outline-none focus:border-tertiary focus:ring-2 focus:ring-tertiary-container"
+                >
+                  {DISTANCE_MAX_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
                 </select>
                 <span className="material-symbols-outlined pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xl text-outline">expand_more</span>
@@ -225,9 +382,9 @@ function RiderRequests() {
 
         <div className="flex items-center justify-between px-5 py-3 text-body-md">
           <p className="font-bold">
-            배차 가능 <span className="text-tertiary">{visibleRequests.length}건</span>
+            배차 가능 <span className="text-tertiary">{items.length}건</span>
           </p>
-          {requestsQuery.isFetching && !requestsQuery.isLoading && (
+          {isRefreshing && (
             <span aria-live="polite" className="text-label-sm text-secondary">업데이트 중…</span>
           )}
         </div>
@@ -239,7 +396,7 @@ function RiderRequests() {
           </div>
         )}
 
-        {requestsQuery.isError && (
+        {requestsQuery.isError && cursor === undefined && !hasLoadedOnce && (
           <div role="alert" className="mx-5 flex flex-1 flex-col items-center justify-center gap-4 rounded-2xl bg-error-container px-6 py-12 text-center text-on-error-container">
             <span className="material-symbols-outlined text-3xl">cloud_off</span>
             <p className="text-body-md font-semibold">{getRequestListErrorMessage(requestsQuery.error)}</p>
@@ -253,7 +410,7 @@ function RiderRequests() {
           </div>
         )}
 
-        {requestsQuery.isSuccess && visibleRequests.length === 0 && (
+        {hasLoadedOnce && items.length === 0 && (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-20 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-surface-container-high">
               <span className="material-symbols-outlined text-3xl text-outline">two_wheeler</span>
@@ -261,15 +418,15 @@ function RiderRequests() {
             <div>
               <p className="text-body-lg font-bold">현재 수행 가능한 콜이 없습니다.</p>
               <p className="mt-1 text-body-md text-secondary">
-                {requests.length > 0 ? '다른 물품 크기를 선택해 보세요.' : '잠시 후 새로 고침해 주세요.'}
+                {itemFilter !== 'ALL' ? '다른 물품 크기를 선택해 보세요.' : '잠시 후 새로 고침해 주세요.'}
               </p>
             </div>
           </div>
         )}
 
-        {requestsQuery.isSuccess && visibleRequests.length > 0 && (
+        {hasLoadedOnce && items.length > 0 && (
           <section aria-label="배차 가능한 콜" className="border-y border-outline-variant bg-surface-container-lowest">
-            {visibleRequests.map((request, index) => (
+            {items.map((request, index) => (
               <RequestCard
                 key={request.deliveryId ?? `${request.requestedAt ?? 'request'}-${index}`}
                 request={request}
@@ -278,17 +435,34 @@ function RiderRequests() {
             ))}
           </section>
         )}
+
+        {hasLoadedOnce && hasNext && (
+          <div className="px-5 py-4">
+            {loadMoreError && (
+              <p role="alert" className="mb-3 text-center text-body-md text-error">{loadMoreError}</p>
+            )}
+            <button
+              type="button"
+              onClick={loadMoreRequests}
+              disabled={isLoadingMore}
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-outline-variant bg-surface-container-lowest text-label-lg font-bold text-on-surface transition-colors hover:bg-surface-container-low disabled:opacity-60"
+            >
+              {isLoadingMore && <span className="material-symbols-outlined animate-spin text-xl">progress_activity</span>}
+              {isLoadingMore ? '불러오는 중…' : '더보기'}
+            </button>
+          </div>
+        )}
       </main>
 
       <nav aria-label="목록 동작" className="sticky bottom-0 z-30 flex h-20 w-full shrink-0 items-center border-t border-outline-variant bg-surface-container-lowest px-5">
         <button
           type="button"
-          onClick={() => void requestsQuery.refetch()}
-          disabled={requestsQuery.isFetching}
+          onClick={refreshList}
+          disabled={requestsQuery.isFetching || isInitialLoading}
           className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary-container text-label-lg font-bold text-on-primary-container transition-colors hover:bg-primary-fixed disabled:opacity-60"
         >
-          <span className={`material-symbols-outlined text-xl ${requestsQuery.isFetching ? 'animate-spin' : ''}`}>refresh</span>
-          {requestsQuery.isFetching ? '새로 고치는 중…' : '새로 고침'}
+          <span className={`material-symbols-outlined text-xl ${isRefreshing ? 'animate-spin' : ''}`}>refresh</span>
+          {isRefreshing ? '새로 고치는 중…' : '새로 고침'}
         </button>
       </nav>
     </div>

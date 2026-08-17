@@ -76,8 +76,7 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
 
     @AfterEach
     void cleanupCreatedTerms() {
-        // resolveAgreedTerms는 role별 "현재 활성인 모든 필수 약관"을 검사하므로, 테스트가 남긴
-        // Term이 다른 테스트의 필수 약관 체크에 새어 들어가지 않도록 매번 정리한다.
+        // 테스트가 만든 Term이 다른 테스트의 존재하지 않는 약관 ID 검증에 새어 들어가지 않도록 매번 정리한다.
         // member_term_agreement가 term을 FK로 참조하므로 자식부터 지운다.
         memberTermAgreementRepository.deleteAll();
         termRepository.deleteAll();
@@ -107,8 +106,8 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
 
         var signupRequest = Map.of(
                 "loginId", "e2e_user01",
-                "password", "aaa",
-                "passwordConfirm", "aaa",
+                "password", "p@ssw0rd",
+                "passwordConfirm", "p@ssw0rd",
                 "name", "테스터",
                 "phoneNumber", phoneNumber,
                 "phoneVerificationToken", token,
@@ -126,16 +125,16 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("필수 약관에 동의하지 않으면 400을 반환한다")
-    void shouldReturnBadRequestWithoutRequiredTermAgreement() {
-        Term required = saveRequiredTerm("SIGNUP_TERM_MISSING");
+    @DisplayName("필수 약관에 동의하지 않아도 가입된다(#546, 백엔드 필수 약관 검증 제거)")
+    void shouldCreateAccountWithoutRequiredTermAgreement() {
+        saveRequiredTerm("SIGNUP_TERM_MISSING");
         String phoneNumber = "01033334444";
         String token = issueVerifiedToken(phoneNumber);
 
         var signupRequest = Map.of(
                 "loginId", "e2e_user02",
-                "password", "aaa",
-                "passwordConfirm", "aaa",
+                "password", "p@ssw0rd",
+                "passwordConfirm", "p@ssw0rd",
                 "name", "테스터2",
                 "phoneNumber", phoneNumber,
                 "phoneVerificationToken", token,
@@ -143,8 +142,8 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
 
         var response = rest.postForEntity(SIGNUP_ENDPOINT, signupRequest, ApiResponse.class);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(memberRepository.existsByLoginId("e2e_user02")).isFalse();
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(memberRepository.existsByLoginId("e2e_user02")).isTrue();
     }
 
     @Test
@@ -156,8 +155,8 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
 
         var signupRequest = Map.of(
                 "loginId", "e2e_user03",
-                "password", "aaa",
-                "passwordConfirm", "aaa",
+                "password", "p@ssw0rd",
+                "passwordConfirm", "p@ssw0rd",
                 "name", "테스터3",
                 "phoneNumber", phoneNumber,
                 "phoneVerificationToken", token,
@@ -178,8 +177,8 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
 
         var signupRequest = Map.of(
                 "loginId", "taken_login",
-                "password", "aaa",
-                "passwordConfirm", "aaa",
+                "password", "p@ssw0rd",
+                "passwordConfirm", "p@ssw0rd",
                 "name", "테스터4",
                 "phoneNumber", phoneNumber,
                 "phoneVerificationToken", token,
@@ -195,8 +194,8 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
     void shouldReturnBadRequestWithoutPhoneVerification() {
         var signupRequest = Map.of(
                 "loginId", "e2e_user05",
-                "password", "aaa",
-                "passwordConfirm", "aaa",
+                "password", "p@ssw0rd",
+                "passwordConfirm", "p@ssw0rd",
                 "name", "테스터5",
                 "phoneNumber", "010-9999-0000",
                 "phoneVerificationToken", "not-a-real-token",
@@ -215,8 +214,8 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
 
         var signupRequest = Map.of(
                 "loginId", "e2e_user06",
-                "password", "aaa",
-                "passwordConfirm", "bbb",
+                "password", "p@ssw0rd",
+                "passwordConfirm", "different",
                 "name", "테스터6",
                 "phoneNumber", phoneNumber,
                 "phoneVerificationToken", token,
@@ -235,8 +234,8 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
 
         var signupRequest = Map.of(
                 "loginId", "a".repeat(51),
-                "password", "aaa",
-                "passwordConfirm", "aaa",
+                "password", "p@ssw0rd",
+                "passwordConfirm", "p@ssw0rd",
                 "name", "테스터7",
                 "phoneNumber", phoneNumber,
                 "phoneVerificationToken", token,
@@ -249,6 +248,27 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("비밀번호가 8자 미만이면 400을 반환한다")
+    void shouldReturnBadRequestWhenPasswordShorterThanEightCharacters() {
+        String phoneNumber = "01099990000";
+        String token = issueVerifiedToken(phoneNumber);
+
+        var signupRequest = Map.of(
+                "loginId", "e2e_user_short_pw",
+                "password", "short1",
+                "passwordConfirm", "short1",
+                "name", "테스터9",
+                "phoneNumber", phoneNumber,
+                "phoneVerificationToken", token,
+                "agreedTermIds", List.of());
+
+        var response = rest.postForEntity(SIGNUP_ENDPOINT, signupRequest, ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(memberRepository.existsByLoginId("e2e_user_short_pw")).isFalse();
+    }
+
+    @Test
     @DisplayName("약관 ID 목록에 null이 섞이면 500이 아니라 400을 반환한다")
     void shouldReturnBadRequestWhenTermIdListContainsNull() {
         String phoneNumber = "01022223333";
@@ -256,8 +276,8 @@ class CustomerSignupE2ETest extends IntegrationTestSupport {
 
         var signupRequest = new java.util.HashMap<String, Object>();
         signupRequest.put("loginId", "e2e_user08");
-        signupRequest.put("password", "aaa");
-        signupRequest.put("passwordConfirm", "aaa");
+        signupRequest.put("password", "p@ssw0rd");
+        signupRequest.put("passwordConfirm", "p@ssw0rd");
         signupRequest.put("name", "테스터8");
         signupRequest.put("phoneNumber", phoneNumber);
         signupRequest.put("phoneVerificationToken", token);

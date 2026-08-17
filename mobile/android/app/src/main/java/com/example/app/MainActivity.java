@@ -4,6 +4,8 @@ import android.os.Bundle;
 import android.net.Uri;
 import android.webkit.WebView;
 import androidx.activity.OnBackPressedCallback;
+import androidx.webkit.WebSettingsCompat;
+import androidx.webkit.WebViewFeature;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
@@ -11,7 +13,9 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(RiderLocationPlugin.class);
         super.onCreate(savedInstanceState);
-        getBridge().getWebView().setWebChromeClient(new NativeFileChooserWebChromeClient(getBridge()));
+        WebView webView = getBridge().getWebView();
+        webView.setWebChromeClient(new NativeFileChooserWebChromeClient(getBridge()));
+        disableAlgorithmicDarkening(webView);
 
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
@@ -57,5 +61,16 @@ public class MainActivity extends BridgeActivity {
                 || path.equals("/rider/")
                 || path.equals("/rider/delivery")
                 || path.equals("/rider/delivery/");
+    }
+
+    /**
+     * 화면은 아직 라이트 팔레트로만 디자인됐다(#531). 이 선언 없이 시스템이 다크모드면
+     * Android WebView가 알고리즘적으로 색을 반전·조정해 텍스트 대비가 무너진다 — 실제 다크
+     * 테마가 생기기 전까지는 끈다.
+     */
+    private void disableAlgorithmicDarkening(WebView webView) {
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+            WebSettingsCompat.setAlgorithmicDarkeningAllowed(webView.getSettings(), false);
+        }
     }
 }

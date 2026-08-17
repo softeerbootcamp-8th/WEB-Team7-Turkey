@@ -12,10 +12,14 @@ public record CustomerSessionResponse(
         String loginId,
 
         @Schema(description = "이름", example = "홍길동")
-        String name
+        String name,
+
+        @Schema(description = "휴대전화 번호. 배송요청 생성 화면이 보내는 분 정보를 자동입력하는 데 쓴다(#533).",
+                example = "010-1234-5678")
+        String phoneNumber
 ) {
 
     public static CustomerSessionResponse from(AuthenticatedCustomer customer) {
-        return new CustomerSessionResponse(customer.memberId(), customer.loginId(), customer.name());
+        return new CustomerSessionResponse(customer.memberId(), customer.loginId(), customer.name(), customer.phoneNumber());
     }
 }

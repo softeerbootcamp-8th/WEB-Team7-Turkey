@@ -1,6 +1,7 @@
 package com.turkey.quick.rider.controller;
 
 import com.turkey.quick.common.response.ApiResponse;
+import com.turkey.quick.order.domain.ItemType;
 import com.turkey.quick.order.service.DeliveryTimeoutService;
 import com.turkey.quick.rider.auth.AuthenticatedRider;
 import com.turkey.quick.rider.auth.RiderSessionInterceptor;
@@ -55,21 +56,23 @@ public class RiderDeliveryRequestController implements RiderDeliveryRequestApi {
             @RequestParam(required = false) BigDecimal longitude,
             @RequestParam(defaultValue = "3000") int radiusMeters,
             @RequestParam(defaultValue = "DISTANCE") String sort,
-            @RequestParam(required = false) String sortDirection,
             @RequestParam(required = false) Long fareMin,
             @RequestParam(required = false) Long fareMax,
             @RequestParam(required = false) Integer distanceMin,
             @RequestParam(required = false) Integer distanceMax,
+            @RequestParam(required = false) ItemType itemType,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) Integer afterDistanceMeters,
             @RequestParam(required = false) Long afterFare,
             @RequestParam(required = false) LocalDateTime afterRequestedAt,
+            @RequestParam(required = false) Integer afterDeliveryDistanceMeters,
             @RequestParam(required = false) Long afterId) {
         return ApiResponse.ok(riderDeliveryRequestService.getDeliveryRequests(
-                rider, latitude, longitude, radiusMeters, sort, sortDirection,
-                new RiderDeliveryRequestFilter(fareMin, fareMax, distanceMin, distanceMax),
+                rider, latitude, longitude, radiusMeters, sort,
+                new RiderDeliveryRequestFilter(fareMin, fareMax, distanceMin, distanceMax, itemType),
                 size,
-                new RiderDeliveryRequestCursor(afterDistanceMeters, afterFare, afterRequestedAt, afterId)));
+                new RiderDeliveryRequestCursor(
+                        afterDistanceMeters, afterFare, afterRequestedAt, afterDeliveryDistanceMeters, afterId)));
     }
 
     @Override

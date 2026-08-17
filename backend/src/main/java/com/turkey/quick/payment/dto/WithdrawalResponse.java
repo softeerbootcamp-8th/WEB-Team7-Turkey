@@ -1,5 +1,6 @@
 package com.turkey.quick.payment.dto;
 
+import com.turkey.quick.rider.domain.RiderWithdrawal;
 import com.turkey.quick.rider.domain.WithdrawalStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDateTime;
@@ -40,4 +41,18 @@ public record WithdrawalResponse(
         @Schema(description = "처리 완료 시각(COMPLETED·FAILED 만)", example = "2026-07-29T05:00:11")
         LocalDateTime processedAt
 ) {
+    /** 신청·조회 두 경로({@code RiderPaymentService}·{@code WithdrawalRequester})가 함께 쓴다. */
+    public static WithdrawalResponse from(RiderWithdrawal withdrawal) {
+        return new WithdrawalResponse(
+                withdrawal.getId(),
+                withdrawal.getStatus(),
+                withdrawal.getAmount(),
+                withdrawal.getBankCodeSnapshot(),
+                withdrawal.getMaskedAccountNumberSnapshot(),
+                withdrawal.getAccountHolderNameSnapshot(),
+                withdrawal.getFailureReason(),
+                withdrawal.getRequestedAt(),
+                withdrawal.getProcessedAt());
+    }
+
 }

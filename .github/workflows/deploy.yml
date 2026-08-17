@@ -33,9 +33,12 @@ jobs:
 
       - name: Configure JVM diagnostics (heap dump + GC logging)
         # myapp.service 원본 파일은 저장소 밖(EC2)에만 있어 내용을 알 수 없으므로,
-        # 원본을 건드리지 않는 systemd override로 얹는다(#374). -Xmx228m은 지금 ergonomic
-        # 기본값(총 메모리 906MiB의 25%, #259 실측)과 동일한 값으로 고정하는 것— 힙 자체를
-        # 늘리는 게 아니라서 "단독 증설은 스와핑 위험" 판단과 충돌하지 않는다.
+        # 원본을 건드리지 않는 systemd override로 얹는다(#374). -Xms512m -Xmx512m은
+        # #502 힙·GC·Hikari 튜닝 실험(docs/loadtest/2026-08-14-502-heap-gc-hikari-tuning-final-report.md)
+        # 결론을 반영해 ergonomic 기본값(228m)에서 올리고 로컬 부하테스트 환경(backend/docker-compose.yml
+        # JAVA_HEAP_OPTS 기본값)과 맞춘 값이다 — 실측에서 힙이 512MiB를 넘은 적이 없었다.
+        # t4g.micro는 총 메모리 906MiB라 512MiB 고정 힙은 예전보다 스와핑 여유가 줄어든다는
+        # 점은 배포 후 메모리 지표로 지켜봐야 한다.
         # HeapDumpPath에 %p(PID)를 넣는다 — 고정 파일명이면 JVM이 기존 파일을 안 덮어써서
         # 두 번째 OOM부터는 덤프가 안 남는다. systemd가 재기동마다 새 PID를 배정하므로 매번
         # 새 파일이 생긴다. %%p로 이스케이프해야 한다 — systemd의 Environment= 자체가
@@ -49,7 +52,7 @@ jobs:
           sudo mkdir -p /etc/systemd/system/myapp.service.d
           sudo tee /etc/systemd/system/myapp.service.d/jvm-diagnostics.conf > /dev/null <<'EOF'
           [Service]
-          Environment="JAVA_TOOL_OPTIONS=-Xmx228m -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/home/ubuntu/app/dumps/heapdump-%%p.hprof -Xlog:gc*,gc+heap=debug:file=/home/ubuntu/app/dumps/gc.log:time,uptime,level,tags:filecount=5,filesize=20m"
+          Environment="JAVA_TOOL_OPTIONS=-Xms512m -Xmx512m -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/home/ubuntu/app/dumps/heapdump-%%p.hprof -Xlog:gc*,gc+heap=debug:file=/home/ubuntu/app/dumps/gc.log:time,uptime,level,tags:filecount=5,filesize=20m"
           EOF
           sudo systemctl daemon-reload
 

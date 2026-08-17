@@ -69,6 +69,9 @@ public class CustomerPaymentService {
     /** 승인의 DB 트랜잭션 구간. 별도 빈이라야 {@code @Transactional} 프록시를 탄다. */
     private final PointChargeApprover pointChargeApprover;
 
+    /** 충전 준비의 DB 트랜잭션 구간. 별도 빈이라야 {@code @Transactional} 프록시를 탄다. */
+    private final PointChargePreparer pointChargePreparer;
+
     public PointBalanceResponse getPointBalance(Long customerId) {
         PointWallet pointWallet = pointWalletRepository.findByMemberId(customerId)
                 .orElseThrow(() -> new IllegalStateException("계좌 정보가 없습니다."));
@@ -233,48 +236,33 @@ public class CustomerPaymentService {
      * <p>MVP 는 모의 결제라 이 시점에 PG 호출이 없다. 실 PG 를 붙이면 {@link PaymentGateway#prepare}
      * 를 저장 전후에 끼워 넣고 그 결과(provider, 결제창 정보)를 응답에 더하게 된다.
      *
-     * <p><b>멱등성</b>: 같은 {@code chargeRequestKey} 로 다시 오면 새로 만들지 않고 기존 건을 그대로
-     * 돌려준다(순차 재전송). 반면 <b>동시</b> 재전송은 {@code uk_point_charge_customer_request} 위반을
-     * 409 로 바꿔 거부한다 — 여기서 굳이 다시 조회해 기존 건을 돌려주지 않는 이유는, 제약 위반이
-     * 발생한 트랜잭션은 이미 rollback-only 로 표시돼 있어 같은 트랜잭션에서 추가 조회를 하면
-     * 커밋 시점에 다시 터지기 때문이다. 따닥 클릭은 대개 완전 동시가 아니라 위의 조회 경로로
-     * 흡수되고, 진짜 동시 요청은 명확한 실패를 받는 편이 부분 성공보다 낫다.
+     * <p><b>멱등성</b>: 같은 {@code chargeRequestKey} 로 다시 오면 순차든 동시든 새로 만들지 않고
+     * 기존 건을 그대로 돌려준다. 순차 재전송은 {@link PointChargePreparer#createPending} 의 선조회가
+     * 흡수하고, 동시 재전송은 {@code uk_point_charge_customer_request} 위반 뒤 아래 재조회가 흡수한다.
+     *
+     * <p><b>이 메서드에는 {@code @Transactional} 이 없다.</b> {@link #confirmPointCharge} 와 같은
+     * 이유로 트랜잭션 구간을 별도 빈에 두고 여기는 파사드만 한다. 여기에 트랜잭션을 붙이면 재조회가
+     * <b>제약 위반으로 rollback-only 가 된 트랜잭션 안에서</b> 일어나 커밋 때 다시 터진다 — 두 호출이
+     * 각각 다른 트랜잭션이어야 한다는 것이 {@code PointChargePreparer} 가 존재하는 이유다.
+     *
+     * <p>재조회로도 못 찾은 제약 위반은 <b>멱등키 충돌이 아니다.</b> 이 시점의 point_charge 는
+     * {@code provider_payment_key}·{@code provider_refund_key} 가 NULL 이라 다른 유니크가 걸릴 수
+     * 없으므로, 그런 위반은 409 로 포장하지 않고 원인 예외를 그대로 올려 500 으로 드러낸다.
      *
      * @param request    충전 요청(멱등키·금액·결제수단)
      * @param customerId 세션에서 확인된 고객 식별자. 요청 바디로 받지 않는다.
      * @throws IllegalArgumentException 금액이 허용 범위·단위를 벗어남 (→ 400)
-     * @throws BusinessException        같은 멱등키의 충전 요청이 동시에 처리됨 (→ 409)
      */
-    @Transactional
     public PointChargeResponse chargePointRequest(PointChargeRequest request, Long customerId) {
         validateChargeAmount(request.amount());
 
-
-        // 멱등성 보장(클라이언트가 멱등키를 제공함, 클릭마다 키가 생성되지 않게 설정할 필요가 있음.)
-        Optional<PointCharge> alreadyRequested = pointChargeRepository
-                .findByCustomer_IdAndChargeRequestKey(customerId, request.chargeRequestKey());
-        if (alreadyRequested.isPresent()) {
-            return toResponse(alreadyRequested.get());
-        }
-
-        // 세션 인터셉터가 이미 회원 존재·역할·상태를 확인했으므로 여기서 다시 조회하지 않는다.
-        // FK 를 채우는 것이 목적이라 프록시 참조로 충분하고, 실제 존재 여부는 FK 제약이 보증한다.
-        Member customer = memberRepository.getReferenceById(customerId);
-
-        PointCharge pointCharge = PointCharge.request(
-                customer,
-                request.chargeRequestKey(),
-                request.paymentMethod(),
-                request.amount(),
-                MockPaymentGateway.PROVIDER);
-
         try {
-            // save 가 아니라 saveAndFlush 다: 지연 flush 로는 유니크 위반이 커밋 시점에 터져
-            // 아래 catch 가 잡지 못하고 500 으로 새어 나간다.
-            return toResponse(pointChargeRepository.saveAndFlush(pointCharge));
+            return pointChargePreparer.createPending(request, customerId);
         } catch (DataIntegrityViolationException e) {
-            throw new BusinessException(HttpStatus.CONFLICT,
-                    "이미 처리 중인 충전 요청입니다. 잠시 후 다시 시도해 주세요.");
+            // 여기 도달했다 = 위 트랜잭션이 롤백을 끝냈다. 그래서 새 트랜잭션으로 안전하게 재조회한다.
+            return pointChargePreparer
+                    .findByRequestKey(customerId, request.chargeRequestKey())
+                    .orElseThrow(() -> e);
         }
     }
 
@@ -520,11 +508,6 @@ public class CustomerPaymentService {
     }
 
     private PointChargeResponse toResponse(PointCharge pointCharge) {
-        return new PointChargeResponse(
-                pointCharge.getId(),
-                pointCharge.getStatus(),
-                pointCharge.getRequestedAmount(),
-                pointCharge.getPaymentMethod(),
-                pointCharge.getRequestedAt());
+        return PointChargeResponse.from(pointCharge);
     }
 }

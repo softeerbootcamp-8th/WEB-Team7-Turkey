@@ -6,6 +6,7 @@ import {
   getGetRiderOperatingStatusQueryOptions,
 } from '@/api/generated/rider-operating-status/rider-operating-status'
 import {
+  getGetRiderDeliveryRequestsQueryKey,
   useAcceptDeliveryRequest,
   useGetDeliveryRequest,
 } from '@/api/generated/rider-request/rider-request'
@@ -31,7 +32,7 @@ function RiderRequestDetail() {
   const router = useRouter()
   const queryClient = useQueryClient()
   const [acceptError, setAcceptError] = useState<string | null>(null)
-  const [competitionLost, setCompetitionLost] = useState(false)
+  const [declinedMessage, setDeclinedMessage] = useState<string | null>(null)
   const [checkingResult, setCheckingResult] = useState(false)
 
   // 손잡이를 드래그해 정보 시트를 내리고 지도를 넓게 볼 수 있게 한다. 놓으면 접힘/펼침 중
@@ -115,6 +116,9 @@ function RiderRequestDetail() {
   const isAccepting = acceptMutation.isPending || checkingResult
 
   function goToList() {
+    // 취소·배차된 콜이 캐시(staleTime 30초)로 남아 목록에 그대로 보이는 걸 막는다(#520).
+    // params 없는 prefix 키로 좌표·정렬이 다른 목록 캐시까지 한꺼번에 무효화한다.
+    void queryClient.invalidateQueries({ queryKey: getGetRiderDeliveryRequestsQueryKey() })
     void router.navigate({ to: '/rider/requests' })
   }
 
@@ -124,7 +128,7 @@ function RiderRequestDetail() {
   }
 
   function acceptRequest() {
-    if (!isValidDeliveryId || isAccepting || competitionLost) {
+    if (!isValidDeliveryId || isAccepting || declinedMessage !== null) {
       return
     }
 
@@ -136,8 +140,8 @@ function RiderRequestDetail() {
         onError: async (error) => {
           const failureKind = classifyAcceptFailure(error)
 
-          if (failureKind === 'competition') {
-            setCompetitionLost(true)
+          if (failureKind === 'declined') {
+            setDeclinedMessage(getAcceptErrorMessage(error))
             return
           }
           if (failureKind === 'failure') {
@@ -293,19 +297,11 @@ function RiderRequestDetail() {
           )}
         </div>
 
-        <nav aria-label="콜 상세 동작" className="sticky bottom-0 z-20 grid w-full grid-cols-3 border-t border-outline-variant bg-surface-container-lowest p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          <button
-            type="button"
-            onClick={goToList}
-            disabled={isAccepting}
-            className="h-14 rounded-l-xl bg-surface-container-high text-label-lg font-bold text-secondary disabled:opacity-50"
-          >
-            넘기기
-          </button>
+        <nav aria-label="콜 상세 동작" className="sticky bottom-0 z-20 w-full border-t border-outline-variant bg-surface-container-lowest p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <button
             type="button"
             onClick={acceptRequest}
-            disabled={isAccepting || competitionLost}
+            disabled={isAccepting || declinedMessage !== null}
             className="col-span-2 h-14 rounded-r-xl bg-primary-container text-label-lg font-bold text-on-primary-container transition-colors hover:bg-primary-fixed disabled:cursor-not-allowed disabled:opacity-60"
           >
             {checkingResult ? '배차 확인 중…' : acceptMutation.isPending ? '수락 처리 중…' : '수락하기'}
@@ -313,12 +309,12 @@ function RiderRequestDetail() {
         </nav>
       </section>
 
-      {competitionLost && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-5" role="dialog" aria-modal="true" aria-labelledby="competition-title">
+      {declinedMessage !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-5" role="dialog" aria-modal="true" aria-labelledby="accept-declined-title">
           <div className="w-full max-w-sm rounded-3xl bg-surface-container-lowest p-6 text-center shadow-xl">
-            <span className="material-symbols-outlined text-4xl text-secondary">person_check</span>
-            <h2 id="competition-title" className="mt-3 text-title-lg font-bold">이미 배차된 콜입니다.</h2>
-            <p className="mt-2 text-body-md text-secondary">다른 라이더가 먼저 수락했어요. 목록에서 새 콜을 확인해 주세요.</p>
+            <span className="material-symbols-outlined text-4xl text-secondary">info</span>
+            <h2 id="accept-declined-title" className="mt-3 text-title-lg font-bold">콜을 수락하지 못했어요</h2>
+            <p className="mt-2 text-body-md text-on-surface">{declinedMessage}</p>
             <button
               type="button"
               onClick={goToList}

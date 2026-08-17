@@ -270,3 +270,28 @@ B 는 가상 스레드가 없던 브랜치에서 잰 같은 조건이다 — 이
 **"커넥션 풀이 병목"이라는 첫 결론은 철회한다.** 네 측정 모두에서 처리량을 정한 것은 CPU 였다
 (제약 있는 런은 전부 CPU 100%, 한도 없는 런은 CPU 37% 에서 처리량 2배). 요청당 왕복 수
 (MySQL 13.00 / Redis 5.00)는 네 구성에서 모두 같았다.
+
+## local/mixed-realistic.js — 실사용 근사 혼합 부하 (#502 힙·GC·Hikari 튜닝)
+
+원본·상세 근거는 `docs/loadtest/2026-08-14-502-heap-gc-hikari-tuning-final-report.md`(콜드
+스타트 방법론 전환점, Hikari 10 vs 30, G1 vs SerialGC 결론)와
+`docs/loadtest/2026-08-15-mixed-callorder-fullscale-20260815-163946.md`(AVAILABLE 700명 3초
+새로고침 + 주문 생성 300건 + COMPLETED 이력 1만 건 확장). 여기는 누적 결론만 적는다.
+
+- **`-Xms=-Xmx=512m` + G1GC를 배포(`deploy.yml` systemd override)에도 반영**했다(2026-08-15,
+  기존 228m ergonomic 기본값에서 상향). 로컬 `docker-compose.yml`의 `JAVA_HEAP_OPTS` 기본값도
+  같은 값으로 맞췄다 — 배포와 로컬이 이제 같은 힙 설정으로 시작한다.
+  t4g.micro(906MiB) 스와핑 여유가 줄어든 채로 배포되므로 배포 후 메모리 지표를 지켜볼 것
+  (「알려진 결함」이 아니라 관찰 필요 항목).
+- 이 값은 700 VU 콜 목록(3초 간격) + 동시 주문 생성 300건 + `delivery_order` 15,000행 규모
+  에서도 힙 사용 최대 403MiB(상한의 79%), GC 정지 비율 0.1%로 전혀 압박받지 않았다 — 단
+  이 시나리오는 `#502` 최종 리포트의 무거운 시나리오(VU 2,100, 닫힌 루프 콜 목록 + 상태
+  전이)보다 훨씬 가벼워 **512m가 버티는 새 증거는 아니고, 부작용이 없다는 재확인**이다.
+- `mixed-realistic.js`가 `CUSTOMER_ORDER_COUNT`(주문 생성, 계정당 1회) ·
+  `AVAILABLE_POLL_INTERVAL_SEC`(콜 목록 재요청 간격, 기본 0=닫힌 모델) 파라미터로 확장됐다.
+  `seed-loadtest-mixed.sql`은 `lt_oc*`(주문 생성 고객) 및 `@completed_history_extra`(고정
+  이력 건수, ratio 계산과 무관하게 추가)를 지원한다.
+- **미규명 결함(영향 미미)**: 주문 생성 300건 중 1건이 `uk_delivery_active_customer` 위반으로
+  실패했다 — 서버 동시성 제어는 정확히 의도대로 거부했으나, k6 VU 인덱스 매핑이 왜 같은
+  세션을 두 번 골랐는지는 못 밝혔다(위 2026-08-15 리포트 참고). 43,600건 중 1건이라 이번
+  튜닝 결론에는 영향 없음.
