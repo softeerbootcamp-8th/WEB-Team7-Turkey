@@ -296,7 +296,7 @@ public class AcceptLoadSeeder implements ApplicationRunner {
     }
 
     private String outputPath(ApplicationArguments args) {
-        return arg(args, "seed.output", "loadtest/accept/seed/pairs.json");
+        return arg(args, "seed.output", "loadtest/local/accept/seed/pairs.json");
     }
 
     private String arg(ApplicationArguments args, String name, String def) {

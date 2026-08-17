@@ -33,8 +33,8 @@ cd backend
   --seed.mode=contention --seed.orders=500 --seed.ridersPerOrder=20'
 
 # 2) 부하 (앱이 떠 있는 상태)
-BASE_URL=http://localhost:8080 k6 run loadtest/accept/accept-contention.js
-#   피해자-under-폭주: STORM_RATE=300 STORM_DUR=30s k6 run loadtest/accept/victim-under-storm.js
+BASE_URL=http://localhost:8080 k6 run loadtest/local/accept/accept-contention.js
+#   피해자-under-폭주: STORM_RATE=300 STORM_DUR=30s k6 run loadtest/local/accept/victim-under-storm.js
 
 # 3) 반복 측정 리셋 / 데이터 정리
 ./gradlew bootRun --args='--spring.profiles.active=local,loadtest-seed --server.port=0 --management.server.port=0 --seed.mode=reset'

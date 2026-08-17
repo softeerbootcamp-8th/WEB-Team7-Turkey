@@ -60,6 +60,6 @@ export function handleSummary(summary) {
     : `❌ 정합성 위반 — 승자 ${wonCount} (기대 K=${EXPECTED_WINS}), 패자 ${lostCount}, 오류 ${errCount}`;
   return {
     stdout: `\n${line}\n`,
-    'loadtest/accept/contention-summary.json': JSON.stringify(summary, null, 2),
+    'loadtest/local/accept/contention-summary.json': JSON.stringify(summary, null, 2),
   };
 }
