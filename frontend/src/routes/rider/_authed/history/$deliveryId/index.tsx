@@ -70,17 +70,17 @@ function RiderHistoryDetail() {
   return (
     <div className="bg-background text-on-background font-body-md min-h-screen pb-xl">
       {/* TopAppBar */}
-      <header className="bg-surface dark:bg-surface-dim docked full-width top-0 sticky z-50 transition-all duration-200">
+      <header className="bg-surface docked full-width top-0 sticky z-50 transition-all duration-200">
         <div className="flex justify-between items-center w-full px-container-margin h-14 border-b border-surface-variant">
           <button
             type="button"
             aria-label="운행 기록 목록으로 돌아가기"
             onClick={goToList}
-            className="text-primary dark:text-primary-fixed hover:bg-surface-container-high dark:hover:bg-surface-container-highest p-2 rounded-full transition-all duration-200 active:scale-95 flex items-center justify-center"
+            className="text-primary hover:bg-surface-container-high p-2 rounded-full transition-all duration-200 active:scale-95 flex items-center justify-center"
           >
             <span className="material-symbols-outlined">arrow_back</span>
           </button>
-          <h1 className="font-headline-md text-headline-md font-bold text-on-surface dark:text-on-surface-variant">운행 상세 정보</h1>
+          <h1 className="font-headline-md text-headline-md font-bold text-on-surface">운행 상세 정보</h1>
           <div className="w-10"></div> {/* Spacer for centering */}
         </div>
       </header>

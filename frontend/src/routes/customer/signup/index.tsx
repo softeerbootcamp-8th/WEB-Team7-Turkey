@@ -340,8 +340,8 @@ function CustomerSignup() {
           onClose={() => setDebugCodeToast(null)}
         />
       )}
-      <header className="bg-surface dark:bg-surface-container-lowest text-on-surface dark:text-on-secondary-container docked full-width top-0 border-b border-surface-container dark:border-outline-variant flat no shadows flex justify-between items-center w-full px-container-margin h-14 sticky z-20">
-        <Link to="/customer/login" className="text-on-surface-variant dark:text-on-secondary-container hover:bg-surface-container-low dark:hover:bg-surface-variant rounded-full w-10 h-10 flex items-center justify-center transition-colors" aria-label="고객 로그인으로 돌아가기">
+      <header className="bg-surface text-on-surface docked full-width top-0 border-b border-surface-container flat no shadows flex justify-between items-center w-full px-container-margin h-14 sticky z-20">
+        <Link to="/customer/login" className="text-on-surface-variant hover:bg-surface-container-low rounded-full w-10 h-10 flex items-center justify-center transition-colors" aria-label="고객 로그인으로 돌아가기">
           <span className="material-symbols-outlined">arrow_back</span>
         </Link>
         <h1 className="flex-1 text-center text-headline-sm font-bold text-on-surface">회원가입</h1>

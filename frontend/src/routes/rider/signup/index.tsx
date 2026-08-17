@@ -343,7 +343,7 @@ function RiderSignup() {
           onClose={() => setDebugCodeToast(null)}
         />
       )}
-      <header className="bg-surface dark:bg-surface-container-lowest text-on-surface docked full-width top-0 border-b border-surface-container dark:border-outline-variant flex justify-between items-center w-full px-container-margin h-14 sticky z-20">
+      <header className="bg-surface text-on-surface docked full-width top-0 border-b border-surface-container flex justify-between items-center w-full px-container-margin h-14 sticky z-20">
         <Link to="/rider/login" className="text-on-surface-variant hover:bg-surface-container-low rounded-full w-10 h-10 flex items-center justify-center transition-colors" aria-label="라이더 로그인으로 돌아가기">
           <span className="material-symbols-outlined">arrow_back</span>
         </Link>
