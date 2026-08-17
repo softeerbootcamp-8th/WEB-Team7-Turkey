@@ -37,7 +37,7 @@ public record CustomerSignupRequest(
         @NotBlank(message = "휴대전화 인증이 필요합니다.")
         String phoneVerificationToken,
 
-        @Schema(description = "동의한 약관 ID 목록(필수 약관을 모두 포함해야 한다)", example = "[1, 2]")
+        @Schema(description = "동의한 약관 ID 목록(존재하는 약관 ID만 포함해야 한다)", example = "[1, 2]")
         @NotNull(message = "약관 동의 정보는 필수입니다.")
         List<@NotNull(message = "약관 ID에는 null을 포함할 수 없습니다.") Long> agreedTermIds
 ) {
