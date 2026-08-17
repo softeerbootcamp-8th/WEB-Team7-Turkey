@@ -1,6 +1,7 @@
 package com.turkey.quick.payment.dto;
 
 import com.turkey.quick.payment.domain.PaymentMethod;
+import com.turkey.quick.payment.domain.PointCharge;
 import com.turkey.quick.payment.domain.PointChargeStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDateTime;
@@ -29,4 +30,13 @@ public record PointChargeResponse(
         @Schema(description = "요청 시각", example = "2026-07-29T04:12:33")
         LocalDateTime requestedAt
 ) {
+    /** 준비 단계의 두 경로({@code CustomerPaymentService}·{@code PointChargePreparer})가 함께 쓴다. */
+    public static PointChargeResponse from(PointCharge pointCharge) {
+        return new PointChargeResponse(
+                pointCharge.getId(),
+                pointCharge.getStatus(),
+                pointCharge.getRequestedAmount(),
+                pointCharge.getPaymentMethod(),
+                pointCharge.getRequestedAt());
+    }
 }

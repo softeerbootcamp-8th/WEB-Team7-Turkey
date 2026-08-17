@@ -23,6 +23,8 @@ import com.turkey.quick.payment.repository.PointTransactionRepository;
 import com.turkey.quick.payment.repository.PointWalletRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -152,16 +154,24 @@ class CustomerPaymentServiceIntegrationTest extends IntegrationTestSupport {
         assertThat(pointChargeRepository.findAll()).hasSize(1);
     }
 
+    /**
+     * 멱등키의 계약은 "몇 번을 보내든 같은 결과"다. 순차 재전송({@link #sequentialRetryReturnsSameCharge})
+     * 과 <b>동시</b> 재전송이 같은 응답이어야 그 계약이 성립한다.
+     *
+     * <p>예전에는 진 요청이 409 를 받았다 — 행은 하나만 남으니 이중 충전은 없었지만, 같은 멱등키에
+     * 대한 응답이 타이밍에 따라 200/409 로 갈렸다. {@code IdempotentWrite} 가 유니크 위반 후 롤백된
+     * 다음 <b>새 트랜잭션에서</b> 이긴 건을 재조회하면서 그 갈림이 없어졌다.
+     */
     @Test
-    @DisplayName("같은 멱등키로 동시에 요청하면 한 건만 저장되고 나머지는 명확히 실패한다")
-    void concurrentSameKeyLeavesExactlyOneCharge() throws InterruptedException {
+    @DisplayName("같은 멱등키로 동시에 요청하면 전부 같은 충전 건을 돌려받고 행은 하나만 남는다")
+    void concurrentSameKeyReturnsOneChargeToEveryone() throws InterruptedException {
         Long customerId = saveCustomer();
 
         int threads = 8;
         ExecutorService pool = Executors.newFixedThreadPool(threads);
         CountDownLatch startTogether = new CountDownLatch(1);
         CountDownLatch finished = new CountDownLatch(threads);
-        AtomicInteger successCount = new AtomicInteger();
+        Set<Long> returnedChargeIds = ConcurrentHashMap.newKeySet();
         AtomicInteger failureCount = new AtomicInteger();
         AtomicReference<Throwable> unexpected = new AtomicReference<>();
 
@@ -170,8 +180,9 @@ class CustomerPaymentServiceIntegrationTest extends IntegrationTestSupport {
                 try {
                     // 조회 시점을 최대한 겹치게 해서 "둘 다 없다고 판단하는" 창을 만든다.
                     startTogether.await();
-                    customerPaymentService.chargePointRequest(request(), customerId);
-                    successCount.incrementAndGet();
+                    returnedChargeIds.add(
+                            customerPaymentService.chargePointRequest(request(), customerId)
+                                    .pointChargeId());
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 } catch (RuntimeException e) {
@@ -187,17 +198,17 @@ class CustomerPaymentServiceIntegrationTest extends IntegrationTestSupport {
         assertThat(finished.await(30, TimeUnit.SECONDS)).isTrue();
         pool.shutdownNow();
 
-        // 핵심: 몇 개가 성공했느냐가 아니라 행이 하나만 남았느냐다.
-        // 경쟁에서 이긴 요청은 성공하고, 나머지는 성공(선조회로 흡수) 또는 명확한 실패로 갈린다.
-        // 부분 성공(행이 2개 이상 남거나, 전부 실패)이 없어야 한다.
-        assertThat(pointChargeRepository.findAll())
-                .as("동시 요청 %d건 중 남은 충전 행 (성공 %d / 실패 %d, 첫 실패=%s)",
-                        threads, successCount.get(), failureCount.get(),
-                        unexpected.get() == null ? "없음" : unexpected.get().toString())
-                .hasSize(1);
-        assertThat(successCount.get())
-                .as("적어도 한 요청은 성공해야 한다")
-                .isGreaterThanOrEqualTo(1);
+        String context = "동시 요청 %d건 (실패 %d, 첫 실패=%s)".formatted(
+                threads, failureCount.get(),
+                unexpected.get() == null ? "없음" : unexpected.get().toString());
+
+        // ① 아무도 실패하지 않는다 — 멱등키를 붙인 목적이 이것이다.
+        assertThat(failureCount.get()).as(context).isZero();
+        // ② 8건이 전부 같은 식별자를 돌려받는다.
+        assertThat(returnedChargeIds).as(context).hasSize(1);
+        // ③ 그리고 이중 충전이 아니다 — 행은 여전히 하나뿐이다.
+        assertThat(pointChargeRepository.findAll()).as(context).hasSize(1);
+        assertThat(returnedChargeIds).containsExactly(pointChargeRepository.findAll().get(0).getId());
     }
 
     @Test

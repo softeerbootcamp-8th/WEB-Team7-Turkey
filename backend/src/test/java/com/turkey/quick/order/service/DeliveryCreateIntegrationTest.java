@@ -72,6 +72,14 @@ class DeliveryCreateIntegrationTest extends IntegrationTestSupport {
     @Autowired
     private DeliveryService deliveryService;
 
+    /**
+     * 생성은 이 파사드를 거친다 — 컨트롤러와 같은 진입점이다. {@code DeliveryService.createDelivery}
+     * 를 직접 부르면 유니크 위반이 {@code DataIntegrityViolationException} 그대로 올라온다(409 로
+     * 바꾸는 것도, 동시 재전송을 복구하는 것도 이 파사드의 몫이다).
+     */
+    @Autowired
+    private DeliveryOrderCreator deliveryOrderCreator;
+
     @Autowired
     private MemberRepository memberRepository;
 
@@ -146,7 +154,7 @@ class DeliveryCreateIntegrationTest extends IntegrationTestSupport {
         String requestKey = UUID.randomUUID().toString();
 
         DeliveryCreateResponse response =
-                deliveryService.createDelivery(request(requestKey, fare), customerId);
+                deliveryOrderCreator.create(request(requestKey, fare), customerId);
 
         assertThat(response.status()).isEqualTo(OrderStatus.WAITING);
         assertThat(response.deliveryId()).isNotNull();
@@ -180,7 +188,7 @@ class DeliveryCreateIntegrationTest extends IntegrationTestSupport {
         String requestKey = UUID.randomUUID().toString();
 
         Throwable thrown = catchThrowable(
-                () -> deliveryService.createDelivery(request(requestKey, fare), customerId));
+                () -> deliveryOrderCreator.create(request(requestKey, fare), customerId));
 
         assertThat(thrown).isInstanceOf(BusinessException.class);
         assertThat(((BusinessException) thrown).getStatus()).isEqualTo(HttpStatus.PAYMENT_REQUIRED);
@@ -196,10 +204,10 @@ class DeliveryCreateIntegrationTest extends IntegrationTestSupport {
     void rejectsSecondOrderWhileOneIsInProgress() {
         long fare = serverFare();
         customerId = saveCustomerWithBalance(50_000L);
-        deliveryService.createDelivery(request(UUID.randomUUID().toString(), fare), customerId);
+        deliveryOrderCreator.create(request(UUID.randomUUID().toString(), fare), customerId);
         long balanceAfterFirst = balanceOf(customerId);
 
-        Throwable thrown = catchThrowable(() -> deliveryService.createDelivery(
+        Throwable thrown = catchThrowable(() -> deliveryOrderCreator.create(
                 request(UUID.randomUUID().toString(), fare), customerId));
 
         // uk_delivery_active_customer(생성 컬럼 UNIQUE)가 판정한다 — 앱에서 세지 않는다
@@ -217,9 +225,9 @@ class DeliveryCreateIntegrationTest extends IntegrationTestSupport {
         String requestKey = UUID.randomUUID().toString();
 
         DeliveryCreateResponse first =
-                deliveryService.createDelivery(request(requestKey, fare), customerId);
+                deliveryOrderCreator.create(request(requestKey, fare), customerId);
         DeliveryCreateResponse second =
-                deliveryService.createDelivery(request(requestKey, fare), customerId);
+                deliveryOrderCreator.create(request(requestKey, fare), customerId);
 
         assertThat(second.deliveryId()).isEqualTo(first.deliveryId());
         assertThat(deliveryOrderRepository.findAll()).hasSize(1);
@@ -233,7 +241,7 @@ class DeliveryCreateIntegrationTest extends IntegrationTestSupport {
         long fare = serverFare();
         customerId = saveCustomerWithBalance(50_000L);
         String requestKey = UUID.randomUUID().toString();
-        deliveryService.createDelivery(request(requestKey, fare), customerId);
+        deliveryOrderCreator.create(request(requestKey, fare), customerId);
 
         // 요금 정책을 갈아엎는다: 이후 재계산하면 다른 금액이 나온다.
         //
@@ -252,7 +260,7 @@ class DeliveryCreateIntegrationTest extends IntegrationTestSupport {
         });
 
         DeliveryCreateResponse resent =
-                deliveryService.createDelivery(request(requestKey, fare), customerId);
+                deliveryOrderCreator.create(request(requestKey, fare), customerId);
 
         // 실제 청구된 금액과 다른 값을 돌려주면 화면이 사용자에게 거짓말을 하게 된다
         assertThat(resent.estimatedFare().totalFare()).isEqualTo(fare);

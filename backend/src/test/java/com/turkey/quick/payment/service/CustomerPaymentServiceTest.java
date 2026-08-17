@@ -69,7 +69,10 @@ class CustomerPaymentServiceTest {
         pointTransactionRepository = mock(PointTransactionRepository.class);
         customerPaymentService = new CustomerPaymentService(
                 pointWalletRepository, pointChargeRepository, memberRepository,
-                pointTransactionRepository, paymentGateway, pointChargeApprover);
+                pointTransactionRepository, paymentGateway, pointChargeApprover,
+                // 목이 아니라 실물이다 — 목이면 준비 로직이 통째로 안 돈다. 트랜잭션 경계는
+                // 프록시가 만드는 것이라 단위 테스트에서는 어차피 없다(그건 통합 테스트 몫).
+                new PointChargePreparer(pointChargeRepository, memberRepository));
     }
 
     private Member member() {
@@ -212,19 +215,50 @@ class CustomerPaymentServiceTest {
             verify(pointChargeRepository, times(2)).saveAndFlush(any(PointCharge.class));
         }
 
+        /**
+         * 동시 재전송에서 <b>진</b> 요청의 경로다. 선조회는 아직 비어 있어 INSERT 로 진행했는데, 그
+         * 사이 경쟁 요청이 커밋해 유니크 위반을 맞는다. 예전에는 여기서 409 로 끝났지만 — 같은
+         * 멱등키인데 순차 재전송은 200 이고 동시 재전송만 409 인 <b>타이밍 의존 응답</b>이었다 —
+         * 지금은 롤백 후 재조회로 이긴 건을 돌려준다.
+         */
         @Test
-        @DisplayName("동시에 같은 멱등키로 저장되면 유니크 위반을 409 로 바꿔 거부한다")
-        void rejectsConcurrentDuplicate() {
-            // given: 경쟁 요청이 먼저 커밋해 유니크 제약을 위반하는 상황
+        @DisplayName("동시에 같은 멱등키로 저장되면 유니크 위반 후 재조회로 이긴 충전 건을 돌려준다")
+        void concurrentDuplicateReturnsWinner() {
+            PointChargeRequest concurrent = request(30_000L);
+            PointCharge winner = PointCharge.request(member(), concurrent.chargeRequestKey(),
+                    PaymentMethod.CARD, 30_000L, MockPaymentGateway.PROVIDER);
+
+            // given: 선조회 시점엔 아직 안 보이다가, INSERT 가 유니크 위반으로 실패한 뒤(=경쟁
+            //        요청이 그 사이 커밋했다는 뜻) 재조회에서는 보이는 순서를 재현한다.
+            when(pointChargeRepository.findByCustomer_IdAndChargeRequestKey(
+                    CUSTOMER_ID, concurrent.chargeRequestKey()))
+                    .thenReturn(Optional.empty())
+                    .thenReturn(Optional.of(winner));
             when(pointChargeRepository.saveAndFlush(any(PointCharge.class)))
                     .thenThrow(new DataIntegrityViolationException("uk_point_charge_customer_request"));
 
-            // when & then: 부분 성공 없이 409 로 실패한다
+            PointChargeResponse response =
+                    customerPaymentService.chargePointRequest(concurrent, CUSTOMER_ID);
+
+            // then: 실패가 아니라 이긴 건의 결과다 — 순차 재전송과 같은 응답이 된다.
+            assertThat(response.status()).isEqualTo(PointChargeStatus.PENDING);
+            assertThat(response.requestedAmount()).isEqualTo(30_000L);
+        }
+
+        /**
+         * 재조회로도 못 찾은 제약 위반은 멱등키 충돌이 아니다(준비 단계의 point_charge 는 다른 유니크
+         * 컬럼이 전부 NULL 이라 원래 걸릴 수 없다). 409 로 포장해 정상 경쟁처럼 보이게 하지 않는다.
+         */
+        @Test
+        @DisplayName("멱등키 충돌이 아닌 제약 위반은 409 로 포장하지 않고 그대로 드러낸다")
+        void doesNotDisguiseUnrelatedViolation() {
+            when(pointChargeRepository.saveAndFlush(any(PointCharge.class)))
+                    .thenThrow(new DataIntegrityViolationException("uk_point_charge_provider_payment"));
+
             Throwable thrown = catchThrowable(() ->
                     customerPaymentService.chargePointRequest(request(30_000L), CUSTOMER_ID));
 
-            assertThat(thrown).isInstanceOf(BusinessException.class);
-            assertThat(((BusinessException) thrown).getStatus()).isEqualTo(HttpStatus.CONFLICT);
+            assertThat(thrown).isInstanceOf(DataIntegrityViolationException.class);
         }
 
         @Test
