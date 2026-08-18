@@ -107,9 +107,9 @@ class RiderSignupE2ETest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("필수 약관에 동의하지 않으면 400을 반환하고 라이더 프로필도 생성되지 않는다")
-    void shouldReturnBadRequestAndNotCreateProfileWithoutRequiredAgreement() {
-        Term required = termRepository.save(Term.create("RIDER_TERM", TermTargetRole.RIDER, "필수 약관", "본문", "1.0",
+    @DisplayName("필수 약관에 동의하지 않아도 가입되고 라이더 프로필도 생성된다(#546, 백엔드 필수 약관 검증 제거)")
+    void shouldCreateProfileWithoutRequiredAgreement() {
+        termRepository.save(Term.create("RIDER_TERM", TermTargetRole.RIDER, "필수 약관", "본문", "1.0",
                 true, LocalDateTime.of(2026, 1, 1, 0, 0), null));
         String phoneNumber = "01033334444";
         String token = issueVerifiedToken(phoneNumber);
@@ -125,8 +125,9 @@ class RiderSignupE2ETest extends IntegrationTestSupport {
 
         var response = rest.postForEntity(SIGNUP_ENDPOINT, signupRequest, ApiResponse.class);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(memberRepository.existsByLoginId("e2e_rider02")).isFalse();
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Member member = memberRepository.findByLoginId("e2e_rider02").orElseThrow();
+        assertThat(riderProfileRepository.findById(member.getId())).isPresent();
     }
 
     @Test

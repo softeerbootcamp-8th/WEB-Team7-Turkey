@@ -14,6 +14,7 @@ import { useTrackingStream, type TrackingConnectionStatus } from '@/shared/hooks
 import { useWaitingExpiryTimer } from '@/shared/hooks/useWaitingExpiryTimer'
 import { DeliveryEta } from './-components/DeliveryEta'
 import { TrackingMap } from './-components/TrackingMap'
+import { WaitingCountdown } from './-components/WaitingCountdown'
 
 export const Route = createFileRoute('/customer/_authed/deliveries/$deliveryId/tracking')({
   component: DeliveryTracking,
@@ -179,8 +180,15 @@ function DeliveryTracking() {
             <h1 className="text-[26px] font-bold leading-tight text-gray-900 mb-1">
               {HEADLINE_BY_STATUS[detail.status ?? 'WAITING']}
             </h1>
-            {/* ETA 는 전용 폴링 API 가 담당한다(#447) — 상세 조회 응답에는 없다. */}
-            <DeliveryEta deliveryId={deliveryId} enabled={isTrackable} />
+            {/* ETA 는 전용 폴링 API 가 담당한다(#447) — 상세 조회 응답에는 없다.
+                status 를 넘겨 상태 전이(SSE) 시 60초 폴링을 기다리지 않고 즉시 재조회하게 한다. */}
+            <DeliveryEta deliveryId={deliveryId} enabled={isTrackable} status={detail.status} />
+            {/* 배차 대기 중에는 자동 취소까지 남은 시간을 보여 준다(#42/#444). */}
+            <WaitingCountdown
+              requestedAt={detail.requestedAt}
+              enabled={detail.status === 'WAITING'}
+              className="mt-1 text-sm text-gray-500"
+            />
           </section>
 
           {/* BEGIN: Progress Tracker */}

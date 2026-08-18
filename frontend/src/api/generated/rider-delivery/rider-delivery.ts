@@ -26,9 +26,12 @@ import type {
 
 import type {
   ApiResponseRiderDeliveryCompleteResponse,
+  ApiResponseRiderDeliveryProofUploadUrlResponse,
   ApiResponseRiderDeliveryResponse,
   CompleteRiderDeliveryBody,
   CompleteRiderDeliveryParams,
+  RiderDeliveryCompleteRequest,
+  RiderDeliveryProofUploadUrlRequest,
   RiderDeliveryTransitionRequest
 } from '../turkeyQuickDeliveryAPI.schemas';
 
@@ -134,8 +137,8 @@ export function useGetCurrentRiderDelivery<TData = Awaited<ReturnType<typeof get
 
 
 /**
- * DELIVERING→COMPLETED + 라이더 BUSY→AVAILABLE + 정산 생성을 한 트랜잭션으로 처리하고 배송 완료 인증을 남긴다. proofType=PHOTO 면 file 을 받아 서버가 직접 S3 에 올린다 — 의도적으로 가장 단순하게 구현했다(#61 후속, docs/worklog/2026-08-04-61-delivery-completion-proof.md 참고). 그 외 인증 방식은 file 없이 proofValue 로 참조값을 직접 받는다. 완료 인증 등록(RIDE-QUICK-008, #61)을 별도 API로 분리하지 않고 이 완료 트랜잭션 안에 통합했다 — 배정 라이더·상태 검증, 인증 형식 검증, 중복 등록 차단을 이 한 요청이 전부 수행한다(사람 확인, #61 검토).
- * @summary 배송 완료
+ * DELIVERING→COMPLETED + 라이더 BUSY→AVAILABLE + 정산 생성을 한 트랜잭션으로 처리하고 배송 완료 인증을 남긴다. 기존 프론트가 이미 이 URL로 붙어 있어 경로를 유지한다 (원래 #61 후속 구현). proofType=PHOTO 면 file 을 함께 받아 서버가 그 자리에서 S3에 올린다. presigned URL로 미리 올린 키로 완료하는 신규 경로는 별도 URL {@link #completeDeliveryWithProofKey}다(사람 확인, 두 경로 병행 — presign 쪽 사후검증·고아 객체 정리가 아직 확정되지 않아 부하가 실측되기 전까지 이 경로를 유지한다). 그 외 인증 방식은 file 없이 proofValue 로 참조값을 직접 받는다. 완료 인증 등록(RIDE-QUICK-008, #61)을 별도 API로 분리하지 않고 이 완료 트랜잭션 안에 통합했다 — 배정 라이더·상태 검증, 인증 형식 검증, 중복 등록 차단을 이 한 요청이 전부 수행한다(사람 확인, #61 검토).
+ * @summary 배송 완료(멀티파트, 서버 직접 업로드 경로)
  */
 export const completeRiderDelivery = (
     deliveryId: number,
@@ -190,7 +193,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type CompleteRiderDeliveryMutationError = ErrorType<ApiResponseRiderDeliveryCompleteResponse>
 
     /**
- * @summary 배송 완료
+ * @summary 배송 완료(멀티파트, 서버 직접 업로드 경로)
  */
 export const useCompleteRiderDelivery = <TError = ErrorType<ApiResponseRiderDeliveryCompleteResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeRiderDelivery>>, TError,{deliveryId: number;data: BodyType<CompleteRiderDeliveryBody>;params: CompleteRiderDeliveryParams}, TContext>, request?: SecondParameter<typeof customInstance>}
@@ -202,6 +205,138 @@ export const useCompleteRiderDelivery = <TError = ErrorType<ApiResponseRiderDeli
       > => {
 
       const mutationOptions = getCompleteRiderDeliveryMutationOptions(options);
+
+      return useMutation(mutationOptions, queryClient);
+    }
+    /**
+ * 완료 처리 자체는 {@link #completeDelivery}와 동일한 트랜잭션·검증을 공유한다. 신규 URL(POST .../complete/proof-key)이다 — 기존 멀티파트 URL을 프론트 연동 때문에 그대로 유지해야 해서 별도로 뺐다. proofType=PHOTO 면 proofValue 는 업로드 URL 발급 API로 미리 받은 저장소 키다 — 서버는 그 키를 HeadObject 로 재검증(존재· 크기 상한)하고, 초과하면 객체를 삭제한 뒤 400으로 거부한다(#61 후속, PUT presign 전환). 그 외 인증 방식은 proofValue 로 참조값을 직접 받는다.
+ * @summary 배송 완료(JSON, presigned URL 경로)
+ */
+export const completeRiderDeliveryWithProofKey = (
+    deliveryId: number,
+    riderDeliveryCompleteRequest: BodyType<RiderDeliveryCompleteRequest>,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+      
+      
+      return customInstance<ApiResponseRiderDeliveryCompleteResponse>(
+      {url: `/api/rider/deliveries/${deliveryId}/complete/proof-key`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: riderDeliveryCompleteRequest, signal
+    },
+      options);
+    }
+  
+
+
+export const getCompleteRiderDeliveryWithProofKeyMutationOptions = <TError = ErrorType<ApiResponseRiderDeliveryCompleteResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeRiderDeliveryWithProofKey>>, TError,{deliveryId: number;data: BodyType<RiderDeliveryCompleteRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof completeRiderDeliveryWithProofKey>>, TError,{deliveryId: number;data: BodyType<RiderDeliveryCompleteRequest>}, TContext> => {
+
+const mutationKey = ['completeRiderDeliveryWithProofKey'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof completeRiderDeliveryWithProofKey>>, {deliveryId: number;data: BodyType<RiderDeliveryCompleteRequest>}> = (props) => {
+          const {deliveryId,data} = props ?? {};
+
+          return  completeRiderDeliveryWithProofKey(deliveryId,data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CompleteRiderDeliveryWithProofKeyMutationResult = NonNullable<Awaited<ReturnType<typeof completeRiderDeliveryWithProofKey>>>
+    export type CompleteRiderDeliveryWithProofKeyMutationBody = BodyType<RiderDeliveryCompleteRequest>
+    export type CompleteRiderDeliveryWithProofKeyMutationError = ErrorType<ApiResponseRiderDeliveryCompleteResponse>
+
+    /**
+ * @summary 배송 완료(JSON, presigned URL 경로)
+ */
+export const useCompleteRiderDeliveryWithProofKey = <TError = ErrorType<ApiResponseRiderDeliveryCompleteResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeRiderDeliveryWithProofKey>>, TError,{deliveryId: number;data: BodyType<RiderDeliveryCompleteRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof completeRiderDeliveryWithProofKey>>,
+        TError,
+        {deliveryId: number;data: BodyType<RiderDeliveryCompleteRequest>},
+        TContext
+      > => {
+
+      const mutationOptions = getCompleteRiderDeliveryWithProofKeyMutationOptions(options);
+
+      return useMutation(mutationOptions, queryClient);
+    }
+    /**
+ * proofType=PHOTO 로 완료하기 전, 라이더가 사진을 직접 S3 에 올릴 수 있는 presigned PUT URL을 발급한다(#61 후속, 서버가 멀티파트로 직접 받던 방식에서 전환). 배정 라이더·상태(DELIVERING) 검증은 완료 API와 동일하다. 발급된 key를 그대로 완료 요청(proofValue)에 실어 보내면, 서버가 그 자리에서 HeadObject 로 실제 업로드 여부와 크기를 재검증한다 — presigned URL 자체는 크기를 강제하지 않는다.
+ * @summary 완료 인증 사진 업로드 URL 발급
+ */
+export const issueRiderDeliveryProofPhotoUploadUrl = (
+    deliveryId: number,
+    riderDeliveryProofUploadUrlRequest: BodyType<RiderDeliveryProofUploadUrlRequest>,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+      
+      
+      return customInstance<ApiResponseRiderDeliveryProofUploadUrlResponse>(
+      {url: `/api/rider/deliveries/${deliveryId}/proof-photo-upload-url`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: riderDeliveryProofUploadUrlRequest, signal
+    },
+      options);
+    }
+  
+
+
+export const getIssueRiderDeliveryProofPhotoUploadUrlMutationOptions = <TError = ErrorType<ApiResponseRiderDeliveryProofUploadUrlResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof issueRiderDeliveryProofPhotoUploadUrl>>, TError,{deliveryId: number;data: BodyType<RiderDeliveryProofUploadUrlRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof issueRiderDeliveryProofPhotoUploadUrl>>, TError,{deliveryId: number;data: BodyType<RiderDeliveryProofUploadUrlRequest>}, TContext> => {
+
+const mutationKey = ['issueRiderDeliveryProofPhotoUploadUrl'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof issueRiderDeliveryProofPhotoUploadUrl>>, {deliveryId: number;data: BodyType<RiderDeliveryProofUploadUrlRequest>}> = (props) => {
+          const {deliveryId,data} = props ?? {};
+
+          return  issueRiderDeliveryProofPhotoUploadUrl(deliveryId,data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type IssueRiderDeliveryProofPhotoUploadUrlMutationResult = NonNullable<Awaited<ReturnType<typeof issueRiderDeliveryProofPhotoUploadUrl>>>
+    export type IssueRiderDeliveryProofPhotoUploadUrlMutationBody = BodyType<RiderDeliveryProofUploadUrlRequest>
+    export type IssueRiderDeliveryProofPhotoUploadUrlMutationError = ErrorType<ApiResponseRiderDeliveryProofUploadUrlResponse>
+
+    /**
+ * @summary 완료 인증 사진 업로드 URL 발급
+ */
+export const useIssueRiderDeliveryProofPhotoUploadUrl = <TError = ErrorType<ApiResponseRiderDeliveryProofUploadUrlResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof issueRiderDeliveryProofPhotoUploadUrl>>, TError,{deliveryId: number;data: BodyType<RiderDeliveryProofUploadUrlRequest>}, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof issueRiderDeliveryProofPhotoUploadUrl>>,
+        TError,
+        {deliveryId: number;data: BodyType<RiderDeliveryProofUploadUrlRequest>},
+        TContext
+      > => {
+
+      const mutationOptions = getIssueRiderDeliveryProofPhotoUploadUrlMutationOptions(options);
 
       return useMutation(mutationOptions, queryClient);
     }

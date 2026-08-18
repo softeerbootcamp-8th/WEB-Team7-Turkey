@@ -6,7 +6,6 @@ import type { Config } from 'tailwindcss'
  * 시안 HTML 안에 인라인으로 들어 있던 tailwind.config 를 프로젝트 레벨로 승격한 것.
  */
 export default {
-  darkMode: 'class',
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {

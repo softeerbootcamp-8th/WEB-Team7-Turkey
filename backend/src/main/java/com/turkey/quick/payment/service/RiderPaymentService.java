@@ -69,6 +69,9 @@ public class RiderPaymentService {
 
     private final WithdrawalProcessor withdrawalProcessor;
 
+    /** 출금 신청의 DB 트랜잭션 구간. 별도 빈이라야 {@code @Transactional} 프록시를 탄다. */
+    private final WithdrawalRequester withdrawalRequester;
+
     /**
      * 출금 가능 포인트 잔액 조회(이슈 처리 흐름 ②③).
      *
@@ -175,19 +178,26 @@ public class RiderPaymentService {
      * <p><b>잠금은 지갑 한 곳뿐이다.</b> 이 트랜잭션은 point_charge 를 건드리지 않으므로
      * {@code point_charge → point_wallet} 잠금 순서 규칙과 무관하다.
      *
-     * <p><b>멱등성</b>: 순차 재전송은 {@code (rider_id, request_key)} 로 기존 요청을 찾아 그대로
-     * 돌려준다. 동시 재전송은 두 트랜잭션이 모두 조회에서 기존 요청을 못 찾고 진행하다가,
-     * {@code uk_rider_withdrawal_request} 위반으로 늦은 쪽이 걸린다 — {@code saveAndFlush} 로 즉시
-     * 플러시해야 이 시점에 예외를 잡을 수 있다({@code CustomerPaymentService#chargePointRequest} 와
-     * 같은 이유). 잡은 뒤에는 그대로 던져 트랜잭션을 롤백시킨다 — 그래야 방금 debit 한 잔액도 함께
-     * 되돌아간다.
+     * <p><b>멱등성</b>: 같은 {@code requestKey} 는 순차든 동시든 같은 출금 건을 돌려주고, 잔액은 한
+     * 번만 줄어든다. 순차 재전송은 {@link WithdrawalRequester#save} 의 선조회가 흡수한다. 동시
+     * 재전송은 두 트랜잭션이 모두 조회에서 기존 요청을 못 찾고 진행하다가
+     * {@code uk_rider_withdrawal_request} 위반으로 늦은 쪽이 걸리는데, 그 예외를 여기서 받아
+     * <b>롤백이 끝난 뒤</b> 새 트랜잭션으로 이긴 건을 재조회해 돌려준다. 진 요청이 방금 debit 한
+     * 잔액은 그 롤백과 함께 되돌아가 있다.
+     *
+     * <p><b>이 메서드에는 {@code @Transactional} 이 없다.</b> 트랜잭션 구간은
+     * {@code WithdrawalRequester} 가 연다({@code PointChargeApprover} 와 같은 이유로 별도 빈이다).
+     * 여기에 붙이면 재조회가 rollback-only 로 표시된 트랜잭션 안에서 일어나 커밋 때 다시 터진다.
+     *
+     * <p>재조회로도 못 찾은 제약 위반은 멱등키 충돌이 아니므로(이 시점의 rider_withdrawal 은
+     * {@code provider_transfer_key} 가 NULL 이라 다른 유니크가 걸릴 수 없다) 409 로 포장하지 않고
+     * 원인 예외를 그대로 올린다.
      *
      * @param riderId 세션에서 확인된 라이더 식별자
      * @param request 출금 요청(멱등키·금액·계좌 정보)
      * @throws IllegalArgumentException 최소 출금 금액 미달 (→ 400)
-     * @throws BusinessException        잔액 부족 (→ 409), 동시 재전송 (→ 409)
+     * @throws BusinessException        잔액 부족 (→ 409)
      */
-    @Transactional
     public WithdrawalResponse requestWithdrawal(Long riderId, WithdrawalRequest request) {
         if (request.amount() < MIN_WITHDRAWAL_AMOUNT) {
             throw new IllegalArgumentException(
@@ -195,48 +205,13 @@ public class RiderPaymentService {
                             .formatted(MIN_WITHDRAWAL_AMOUNT, request.amount()));
         }
 
-        Optional<RiderWithdrawal> alreadyRequested = riderWithdrawalRepository
-                .findByRider_MemberIdAndRequestKey(riderId, request.requestKey());
-        if (alreadyRequested.isPresent()) {
-            return toResponse(alreadyRequested.get());
-        }
-
-        PointWallet wallet = pointWalletRepository.findByMemberIdForUpdate(riderId)
-                .orElseThrow(() -> new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR,
-                        "포인트 지갑을 찾을 수 없습니다. riderId=" + riderId));
-
-        long balanceBefore = wallet.getBalance();
-        if (balanceBefore < request.amount()) {
-            throw new BusinessException(HttpStatus.CONFLICT,
-                    "포인트 잔액이 부족합니다. balance=%d, amount=%d"
-                            .formatted(balanceBefore, request.amount()));
-        }
-
-        wallet.debit(request.amount());
-        RiderProfile rider = riderProfileRepository.getReferenceById(riderId);
-        RiderWithdrawal withdrawal = RiderWithdrawal.request(rider, request.requestKey(),
-                request.amount(), request.bankCode(), maskAccountNumber(request.accountNumber()),
-                request.accountHolderName());
-
         try {
-            riderWithdrawalRepository.saveAndFlush(withdrawal);
+            return withdrawalRequester.save(riderId, request);
         } catch (DataIntegrityViolationException e) {
-            throw new BusinessException(HttpStatus.CONFLICT,
-                    "이미 처리 중인 출금 요청입니다. 잠시 후 다시 시도해 주세요.");
+            // 여기 도달했다 = 위 트랜잭션이 롤백을 끝냈다(선차감도 되돌아갔다).
+            return withdrawalRequester.findByRequestKey(riderId, request.requestKey())
+                    .orElseThrow(() -> e);
         }
-
-        pointTransactionRepository.save(PointTransaction.forWithdrawal(
-                wallet, PointTransactionType.WITHDRAWAL, request.amount(), balanceBefore,
-                request.requestKey(), withdrawal));
-
-        return toResponse(withdrawal);
-    }
-
-    /** 뒤 4자리만 남기고 나머지는 마스킹한다. 원본은 이 메서드 호출 이후 유지하지 않는다. */
-    private String maskAccountNumber(String accountNumber) {
-        int visibleLength = Math.min(4, accountNumber.length());
-        String visible = accountNumber.substring(accountNumber.length() - visibleLength);
-        return "*".repeat(accountNumber.length() - visibleLength) + visible;
     }
 
     /**
@@ -314,15 +289,6 @@ public class RiderPaymentService {
     }
 
     private WithdrawalResponse toResponse(RiderWithdrawal withdrawal) {
-        return new WithdrawalResponse(
-                withdrawal.getId(),
-                withdrawal.getStatus(),
-                withdrawal.getAmount(),
-                withdrawal.getBankCodeSnapshot(),
-                withdrawal.getMaskedAccountNumberSnapshot(),
-                withdrawal.getAccountHolderNameSnapshot(),
-                withdrawal.getFailureReason(),
-                withdrawal.getRequestedAt(),
-                withdrawal.getProcessedAt());
+        return WithdrawalResponse.from(withdrawal);
     }
 }

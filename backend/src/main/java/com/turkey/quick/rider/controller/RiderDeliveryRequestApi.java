@@ -1,6 +1,7 @@
 package com.turkey.quick.rider.controller;
 
 import com.turkey.quick.common.response.ApiResponse;
+import com.turkey.quick.order.domain.ItemType;
 import com.turkey.quick.rider.auth.AuthenticatedRider;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestAcceptResponse;
 import com.turkey.quick.rider.dto.RiderDeliveryRequestDetailResponse;
@@ -40,7 +41,11 @@ public interface RiderDeliveryRequestApi {
                     + "bounding box 인덱스로 거른다(#367). 좌표를 안 보내면 위치 필터 없이 전체를 "
                     + "반환하고, 거리 필드는 null, DISTANCE 정렬은 REQUESTED_AT 으로 대체한다 "
                     + "(#55 계약 확정 — 위치 없음은 에러가 아니다). "
-                    + "운임·배송거리 범위 필터와 keyset(커서) 페이지네이션이 추가됐다(#60). "
+                    + "운임·배송거리 범위 필터와 물품 종류 필터, keyset(커서) 페이지네이션이 "
+                    + "추가됐다(#60/#522). 정렬 기준에 DELIVERY_DISTANCE(픽업→도착지 배송거리, "
+                    + "좌표 무관하게 항상 계산 가능)가 추가됐고, 정렬 방향은 기준별 고정값(FARE만 "
+                    + "내림차순, 나머지는 오름차순)이라 요청 파라미터로 따로 안 받는다(#522 — "
+                    + "실제로 쓰는 조합이 고정 방향 하나뿐으로 확정돼 파라미터를 없앴다). "
                     + "커서는 이전 페이지 마지막 항목의 정렬값(sort에 해당하는 after* 필드 하나)과 "
                     + "afterId를 그대로 돌려보내면 된다 — 첫 페이지는 전부 생략한다. "
                     + "(#55) 라이더 식별을 위한 인증 파라미터가 이 계약에 빠져 있었어 추가함 — "
@@ -58,15 +63,11 @@ public interface RiderDeliveryRequestApi {
             @Parameter(description = "검색 반경(m)", example = "3000")
             int radiusMeters,
 
-            @Parameter(description = "정렬 기준", example = "DISTANCE",
+            @Parameter(description = "정렬 기준. 방향은 기준별로 고정(FARE=내림차순, 나머지=오름차순)이라 "
+                    + "별도 파라미터로 받지 않는다", example = "DISTANCE",
                     schema = @io.swagger.v3.oas.annotations.media.Schema(
-                            allowableValues = {"DISTANCE", "FARE", "REQUESTED_AT"}))
+                            allowableValues = {"DISTANCE", "FARE", "REQUESTED_AT", "DELIVERY_DISTANCE"}))
             String sort,
-
-            @Parameter(description = "정렬 방향(선택, 생략하면 기준별 기본값 — FARE는 내림차순, "
-                    + "나머지는 오름차순)", example = "ASC",
-                    schema = @io.swagger.v3.oas.annotations.media.Schema(allowableValues = {"ASC", "DESC"}))
-            String sortDirection,
 
             @Parameter(description = "예상 정산액(운임) 최소값, 원(선택)", example = "3000")
             Long fareMin,
@@ -79,6 +80,9 @@ public interface RiderDeliveryRequestApi {
 
             @Parameter(description = "배송거리(픽업→도착지) 최대값, m(선택)", example = "5000")
             Integer distanceMax,
+
+            @Parameter(description = "물품 종류 필터(선택, 생략하면 전체)")
+            ItemType itemType,
 
             @Parameter(description = "페이지 크기(1~100)", example = "20")
             int size,
@@ -94,6 +98,10 @@ public interface RiderDeliveryRequestApi {
             @Parameter(description = "커서: 이전 페이지 마지막 항목의 요청 시각. sort=REQUESTED_AT일 때만 채운다",
                     example = "2026-07-28T02:10:00")
             LocalDateTime afterRequestedAt,
+
+            @Parameter(description = "커서: 이전 페이지 마지막 항목의 배송거리(픽업→도착지, m). "
+                    + "sort=DELIVERY_DISTANCE일 때만 채운다", example = "3200")
+            Integer afterDeliveryDistanceMeters,
 
             @Parameter(description = "커서: 이전 페이지 마지막 항목의 배송요청 식별자(정렬값이 같을 때 "
                     + "tiebreaker). 첫 페이지면 생략", example = "1024")
