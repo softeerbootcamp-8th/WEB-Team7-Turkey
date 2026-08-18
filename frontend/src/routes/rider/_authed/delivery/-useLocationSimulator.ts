@@ -20,30 +20,16 @@ interface LocationSimulator {
   toggle: () => void
 }
 
-function readCurrentPosition(): Promise<SimulationCoordinate> {
-  if (!navigator.geolocation) {
-    return Promise.reject(new Error('이 기기에서는 현재 위치를 확인할 수 없습니다.'))
-  }
-
-  return new Promise((resolve, reject) => {
-    navigator.geolocation.getCurrentPosition(
-      (position) => resolve({
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-      }),
-      () => reject(new Error('현재 위치를 확인하지 못했습니다. 위치 권한과 GPS 상태를 확인해 주세요.')),
-      { enableHighAccuracy: true, maximumAge: 10_000, timeout: 10_000 },
-    )
-  })
-}
-
 function errorMessage(error: unknown): string {
   return error instanceof Error
     ? error.message
     : '위치 시뮬레이션을 실행하지 못했습니다.'
 }
 
-export function useLocationSimulator(target: SimulationCoordinate | null): LocationSimulator {
+export function useLocationSimulator(
+  start: SimulationCoordinate | null,
+  target: SimulationCoordinate | null,
+): LocationSimulator {
   const [enabled, setEnabled] = useState(false)
   const [starting, setStarting] = useState(false)
   const [speedMultiplier, setSpeedMultiplierState] = useState(MIN_SIMULATION_SPEED)
@@ -53,10 +39,12 @@ export function useLocationSimulator(target: SimulationCoordinate | null): Locat
   const nativePausedRef = useRef(false)
   const sendingRef = useRef(false)
   const positionRef = useRef<SimulationCoordinate | null>(null)
+  const startRef = useRef(start)
   const targetRef = useRef(target)
   const speedRef = useRef(speedMultiplier)
   const lastTickRef = useRef(0)
 
+  startRef.current = start
   targetRef.current = target
   speedRef.current = speedMultiplier
 
@@ -98,26 +86,26 @@ export function useLocationSimulator(target: SimulationCoordinate | null): Locat
     if (enabledRef.current || starting) {
       return
     }
-    if (!targetRef.current) {
-      setError('현재 배송 단계의 목표 좌표가 없습니다.')
+    const startPosition = startRef.current
+    if (!startPosition || !targetRef.current) {
+      setError('배송 경로의 출발 또는 목표 좌표가 없습니다.')
       return
     }
 
     setStarting(true)
     setError(null)
     try {
-      const currentPosition = await readCurrentPosition()
       if (Capacitor.getPlatform() === 'android') {
         await stopRiderLocationSender()
         nativePausedRef.current = true
       }
-      await sendPosition(currentPosition)
+      await sendPosition(startPosition)
       if (!mountedRef.current) {
         await resumeNativeSender()
         return
       }
 
-      positionRef.current = currentPosition
+      positionRef.current = startPosition
       lastTickRef.current = Date.now()
       enabledRef.current = true
       setEnabled(true)

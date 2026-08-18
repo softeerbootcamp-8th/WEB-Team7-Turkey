@@ -6,10 +6,16 @@ import {
 } from '../-locationSimulation'
 import { useLocationSimulator } from '../-useLocationSimulator'
 
-export function LocationSimulationControl({ target }: { target: SimulationCoordinate | null }) {
+export function LocationSimulationControl({
+  start,
+  target,
+}: {
+  start: SimulationCoordinate | null
+  target: SimulationCoordinate | null
+}) {
   const [expanded, setExpanded] = useState(false)
-  const simulator = useLocationSimulator(target)
-  const unavailable = !target
+  const simulator = useLocationSimulator(start, target)
+  const unavailable = !start || !target
 
   if (!expanded) {
     return (
@@ -67,7 +73,7 @@ export function LocationSimulationControl({ target }: { target: SimulationCoordi
           {simulator.speedMultiplier}×
         </output>
       </div>
-      {simulator.starting && <span className="text-[10px] leading-none text-secondary">GPS 확인 중…</span>}
+      {simulator.starting && <span className="text-[10px] leading-none text-secondary">시뮬레이션 준비 중…</span>}
       {simulator.error && <span role="alert" className="max-w-40 text-right text-[10px] leading-tight text-error">{simulator.error}</span>}
     </div>
   )
