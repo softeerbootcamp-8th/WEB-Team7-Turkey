@@ -302,7 +302,7 @@ function RiderRequestDetail() {
             type="button"
             onClick={acceptRequest}
             disabled={isAccepting || declinedMessage !== null}
-            className="col-span-2 h-14 rounded-r-xl bg-primary-container text-label-lg font-bold text-on-primary-container transition-colors hover:bg-primary-fixed disabled:cursor-not-allowed disabled:opacity-60"
+            className="h-14 w-full rounded-xl bg-primary-container text-label-lg font-bold text-on-primary-container transition-colors hover:bg-primary-fixed disabled:cursor-not-allowed disabled:opacity-60"
           >
             {checkingResult ? '배차 확인 중…' : acceptMutation.isPending ? '수락 처리 중…' : '수락하기'}
           </button>
