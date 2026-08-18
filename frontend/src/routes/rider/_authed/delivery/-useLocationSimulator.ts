@@ -54,7 +54,7 @@ export function useLocationSimulator(
     }
     nativePausedRef.current = false
     try {
-      await startRiderLocationSender('BUSY')
+      await startRiderLocationSender()
     } catch (resumeError) {
       console.error('Android 위치 서비스를 다시 시작하지 못했습니다.', resumeError)
       if (mountedRef.current) {

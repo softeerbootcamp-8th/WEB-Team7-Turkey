@@ -4,15 +4,32 @@ import { useEffect } from 'react'
 type RiderOperatingStatus = 'UNAVAILABLE' | 'AVAILABLE' | 'BUSY'
 
 interface RiderLocationNativePlugin {
-  start(options: { operatingStatus: 'AVAILABLE' | 'BUSY'; apiBaseUrl: string }): Promise<void>
+  ensurePermission(): Promise<void>
+  start(options: { operatingStatus: 'BUSY'; apiBaseUrl: string }): Promise<void>
   stop(): Promise<void>
 }
 
 const RiderLocation = registerPlugin<RiderLocationNativePlugin>('RiderLocation')
 
-export async function startRiderLocationSender(
-  operatingStatus: 'AVAILABLE' | 'BUSY' = 'AVAILABLE',
-): Promise<void> {
+/**
+ * 위치 권한만 확보한다 — 포그라운드 서비스는 시작하지 않는다.
+ *
+ * 온라인(AVAILABLE) 전환 시 미리 호출해 권한을 받아두고, 실제 위치 전송(BUSY)은
+ * startRiderLocationSender가 담당한다. 권한 확보와 서비스 시작을 분리해, "권한 거부"와
+ * "아직 BUSY가 아님"이 한 Promise로 뒤섞여 화면을 잘못 막던 문제(#557)를 없앤다.
+ */
+export async function ensureRiderLocationPermission(): Promise<void> {
+  if (Capacitor.getPlatform() !== 'android') {
+    return
+  }
+  await RiderLocation.ensurePermission()
+}
+
+/**
+ * 실시간 위치 전송(Android 포그라운드 서비스)을 시작한다. BUSY(배송 진행 중)에서만 호출한다 —
+ * 네이티브도 BUSY만 허용한다. 권한이 아직 없으면 네이티브가 이 시점에 다시 요청한다.
+ */
+export async function startRiderLocationSender(): Promise<void> {
   if (Capacitor.getPlatform() !== 'android') {
     throw new Error('Android 앱에서만 위치 송신을 시작할 수 있습니다.')
   }
@@ -22,7 +39,7 @@ export async function startRiderLocationSender(
     throw new Error('Android 위치 서비스를 시작하려면 VITE_API_BASE_URL이 필요합니다.')
   }
 
-  await RiderLocation.start({ operatingStatus, apiBaseUrl })
+  await RiderLocation.start({ operatingStatus: 'BUSY', apiBaseUrl })
 }
 
 export async function stopRiderLocationSender(): Promise<void> {
@@ -38,10 +55,14 @@ export async function stopRiderLocationSender(): Promise<void> {
  * 위치 수집·주기 제어·HTTP 전송은 모두 Android Foreground Service가 담당한다. WebView는 서비스에
  * 시작·상태 변경·중지 명령만 전달하므로 앱이 백그라운드로 내려가도 위치 전송이 계속된다.
  *
- * `onLocationError` — 위치 권한 거부 등으로 네이티브 서비스 시작이 실패했을 때 호출된다.
- * 이전에는 console.error로만 남기고 라이더에게 알리지 않아(#496) 위치 전송 없이 배송이 진행될 수
- * 있었다 — 위치 권한을 서비스 이용 필수 조건으로 만들려면(#535) 호출자가 이 실패를 화면에서
- * 반드시 처리해야 한다.
+ * 상태별 동작(#557):
+ *  - AVAILABLE: 위치 권한만 미리 확보(ensurePermission). 서비스는 시작하지 않는다.
+ *  - BUSY: 실제 위치 전송 서비스(start)를 시작한다.
+ *  - UNAVAILABLE: 서비스를 중지한다.
+ *
+ * `onLocationError` — 위치 권한이 실제로 거부돼 위 확보/시작이 실패했을 때 호출된다. 이전에는
+ * console.error로만 남겨 위치 없이 배송이 진행될 수 있었고(#496), 권한을 필수 조건으로 만들며(#535)
+ * 호출자가 이 실패를 화면에서 처리하게 했다.
  */
 export function useLocationSender(
   operatingStatus: RiderOperatingStatus,
@@ -57,7 +78,17 @@ export function useLocationSender(
       return
     }
 
-    void startRiderLocationSender(operatingStatus).catch((error: unknown) => {
+    if (operatingStatus === 'AVAILABLE') {
+      // 온라인 전환 시 권한만 미리 확보한다(서비스 시작 없음). 실제 거부일 때만 게이트가 뜬다.
+      void ensureRiderLocationPermission().catch((error: unknown) => {
+        console.error('위치 권한을 확보하지 못했습니다.', error)
+        onLocationError?.(error)
+      })
+      return
+    }
+
+    // BUSY — 실제 위치 전송 서비스 시작
+    void startRiderLocationSender().catch((error: unknown) => {
       console.error('Android 위치 서비스를 시작하지 못했습니다.', error)
       onLocationError?.(error)
     })
