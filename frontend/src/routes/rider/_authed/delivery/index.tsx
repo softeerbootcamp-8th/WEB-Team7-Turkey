@@ -83,6 +83,10 @@ function RiderDelivery() {
 
   const navigationAddress = stage.navigationTarget === 'pickup' ? delivery.pickup : delivery.destination
   const navigationUrl = getKakaoNavigationUrl(navigationAddress)
+  const simulationStart = typeof delivery.pickup?.latitude === 'number'
+    && typeof delivery.pickup.longitude === 'number'
+    ? { latitude: delivery.pickup.latitude, longitude: delivery.pickup.longitude }
+    : null
   const simulationTarget = typeof navigationAddress?.latitude === 'number'
     && typeof navigationAddress.longitude === 'number'
     ? { latitude: navigationAddress.latitude, longitude: navigationAddress.longitude }
@@ -102,7 +106,7 @@ function RiderDelivery() {
         </span>
       </header>
 
-      <LocationSimulationControl target={simulationTarget} />
+      <LocationSimulationControl start={simulationStart} target={simulationTarget} />
 
       <section aria-label="배송 경로 지도" className="h-64 shrink-0 bg-surface-container-high">
         <RequestRouteMap pickup={delivery.pickup} destination={delivery.destination} />
