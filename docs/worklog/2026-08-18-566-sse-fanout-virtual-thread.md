@@ -166,3 +166,38 @@ baseline을 유지하는지"가 실패했다** — 위에서 "지금 트래픽 �
   이 새 기준으로 재산정할지는 아직 판단하지 않았다.
 - `sse.fanout.dropped`/`sse.fanout.coalesced`에 대한 알림·대시보드 연동 여부는 여전히
   별도 판단 필요.
+
+## 후속 2: deliveryId 단위 게이트가 놓친 것 — 같은 배송의 다른 연결(멀티탭)까지 같이 굶김
+
+바로 위 수정(`TrackingSubscriber`에서 deliveryId 단위로 동시 전송 1개 제한)을 사람에게
+설명하던 중, `SseRegistry`가 배송 하나당 **연결을 여러 개**(`Set<SseEmitter>`) 들고 있을 수
+있다는 사실을 놓쳤다는 게 드러났다 — 같은 고객이 같은 배송 추적 화면을 탭 2개로 열면 이런
+상태가 된다. deliveryId 단위로 막으면, 그 배송의 느린 탭 하나 때문에 **같은 배송의 멀쩡한
+다른 탭까지** 같이 굶는다(코드에는 있었지만 실측·재현 없이 발견된 설계 결함).
+
+### 고른 것: 게이트를 `TrackingSubscriber`(deliveryId 키)에서 `SseRelay`(개별 `SseEmitter`
+키)로 옮김
+
+- **선택지**: (A) `TrackingSubscriber`에 그대로 두고 키를 `(deliveryId, emitter)` 쌍으로
+  바꿈 / (B) 게이트 자체를 `SseRelay.publish()`로 옮기고 emitter 객체를 키로 씀.
+- **고른 것**: (B). `SseRelay`가 실제로 emitter 하나하나를 순회하며 보내는 곳이라 "이 연결에
+  지금 보내는 중인가"를 알기에 가장 자연스러운 위치였고, `TrackingSubscriber`는 채널 파싱
+  책임만 남아 원래 형태로 돌아갔다.
+- **효과**: 단일 탭(배송당 연결 1개) 시나리오에서는 이전과 동일하게 동작하므로(가장 흔한
+  경우라 회귀 없음), 멀티탭 케이스만 추가로 고쳐진다.
+
+### 재검증
+
+같은 조건(느린 클라이언트 5개, 6채널 트래픽)으로 다시 돌려 회귀가 없는지 확인했다 — control이
+여전히 60초 인시던트 내내 baseline 수준(3초당 2,200~2,760건, 1~14ms)을 유지했고,
+`sse_fanout_dropped_total`은 0이었다. 상세:
+`docs/loadtest/2026-08-18-sse-fanout-per-emitter-cap-fix-verification.md`.
+
+### 테스트(추가)
+
+| 층 | 파일 | 검증한 것 |
+|---|---|---|
+| 단위 | `SseRelayTest.coalescesMessagesForSameInFlightEmitter` | 같은 emitter의 이전 전송이 안 끝났으면 새 메시지가 버려지는지(이전 회귀 테스트를 emitter 단위로 옮김) |
+| 단위(신규) | `SseRelayTest.doesNotStarveOtherEmitterOfSameDeliveryWhileOneIsInFlight` | 같은 배송의 다른 연결이 하나가 정체돼도 굶지 않는지 — deliveryId 단위 게이트였다면 실패했을 테스트 |
+| E2E(기존, 회귀) | `TrackingFanoutMultiInstanceE2ETest` | 게이트 위치를 옮긴 후에도 2인스턴스 팬아웃 정상 동작 |
+| 재현(수동) | `backend/loadtest/local/slow-sse-client.py` | 단일 탭 시나리오에서 여전히 baseline 유지(회귀 없음) |
