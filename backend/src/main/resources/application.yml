@@ -91,6 +91,8 @@ aws:
 server:
   port: 8080
   tomcat:
+    max-connections: 1000
+    accept-count: 320
     mbeanregistry:
       # 켜면 tomcat_connections_*(현재/최대 연결), tomcat_global_*(요청 수·에러·바이트),
       # tomcat_threads_* 가 나온다. 끄면 tomcat_sessions_* 만 남아 동시 연결이 얼마나 쌓였는지
