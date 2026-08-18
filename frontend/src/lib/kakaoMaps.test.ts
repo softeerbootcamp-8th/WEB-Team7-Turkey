@@ -2,11 +2,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 describe('loadKakaoMaps', () => {
   afterEach(() => {
+    vi.unstubAllEnvs()
     vi.unstubAllGlobals()
     vi.resetModules()
   })
 
   it('기존 SDK script 실행이 늦어도 maps.load 준비 후 초기화한다', async () => {
+    vi.stubEnv('VITE_KAKAO_MAP_KEY', 'test-key')
     const geocoder = class Geocoder {}
     const maps: Record<string, unknown> = { services: {} }
     let timeoutCount = 0

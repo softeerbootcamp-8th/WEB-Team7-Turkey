@@ -26,12 +26,12 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v4.4.0
         with:
           version: 10
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
@@ -45,8 +45,16 @@ jobs:
         working-directory: ./frontend
         run: pnpm test
 
+      - name: Validate frontend build configuration
+        env:
+          VITE_KAKAO_MAP_KEY: ${{ vars.VITE_KAKAO_MAP_KEY }}
+        run: |
+          test -n "$VITE_KAKAO_MAP_KEY" || { echo "VITE_KAKAO_MAP_KEY repository variable is required"; exit 1; }
+
       - name: Build frontend
         working-directory: ./frontend
+        env:
+          VITE_KAKAO_MAP_KEY: ${{ vars.VITE_KAKAO_MAP_KEY }}
         run: pnpm build
 
       - name: Upload frontend artifact
