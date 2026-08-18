@@ -18,11 +18,22 @@ const RiderLocation = registerPlugin<RiderLocationNativePlugin>('RiderLocation')
  * startRiderLocationSender가 담당한다. 권한 확보와 서비스 시작을 분리해, "권한 거부"와
  * "아직 BUSY가 아님"이 한 Promise로 뒤섞여 화면을 잘못 막던 문제(#557)를 없앤다.
  */
+// 동시 중복 호출 가드(#557): 온라인 전환 시 세션 리페치로 operatingStatus가 재도출되며 이 함수가
+// 짧은 간격에 두 번 호출될 수 있는데, 네이티브 권한 요청(requestPermissionForAlias)이 겹치면 한쪽
+// 호출이 거부돼 위치 권한 게이트가 잘못 뜬다(권한은 이미 허용됐는데도). 진행 중인 요청이 있으면 그
+// Promise를 재사용해 네이티브 요청은 한 번만 나가고 두 호출이 같은 결과를 공유하게 한다.
+let permissionRequestInFlight: Promise<void> | null = null
+
 export async function ensureRiderLocationPermission(): Promise<void> {
   if (Capacitor.getPlatform() !== 'android') {
     return
   }
-  await RiderLocation.ensurePermission()
+  if (!permissionRequestInFlight) {
+    permissionRequestInFlight = RiderLocation.ensurePermission().finally(() => {
+      permissionRequestInFlight = null
+    })
+  }
+  await permissionRequestInFlight
 }
 
 /**
