@@ -2,6 +2,7 @@ package com.turkey.quick.rider.auth;
 
 import com.turkey.quick.common.auth.SessionCookie;
 import com.turkey.quick.common.auth.SessionStore;
+import com.turkey.quick.common.auth.SessionStore.SessionInfo;
 import com.turkey.quick.common.exception.BusinessException;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
@@ -9,6 +10,8 @@ import com.turkey.quick.rider.domain.RiderProfile;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.time.Duration;
+import java.time.Instant;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -44,12 +47,17 @@ public class RiderSessionInterceptor implements HandlerInterceptor {
             throw authFailure(response);
         }
 
-        Long memberId = sessionStore.findMemberId(sessionId).orElse(null);
-        if (memberId == null) {
+        SessionInfo session = sessionStore.find(sessionId).orElse(null);
+        if (session == null) {
             throw authFailure(response);
         }
 
-        RiderProfile profile = riderProfileRepository.findWithMemberById(memberId).orElse(null);
+        if (Duration.between(session.createdAt(), Instant.now()).compareTo(SessionStore.ABSOLUTE_TTL) > 0) {
+            sessionStore.delete(sessionId);
+            throw authFailure(response);
+        }
+
+        RiderProfile profile = riderProfileRepository.findWithMemberById(session.memberId()).orElse(null);
         if (profile == null) {
             throw authFailure(response);
         }

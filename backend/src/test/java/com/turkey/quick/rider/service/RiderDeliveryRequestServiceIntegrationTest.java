@@ -2,6 +2,7 @@ package com.turkey.quick.rider.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 
 import com.turkey.quick.common.exception.BusinessException;
 import com.turkey.quick.member.domain.Member;
@@ -31,6 +32,7 @@ import com.turkey.quick.rider.repository.RiderProfileRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -243,6 +245,63 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         RiderDeliveryRequestSummaryResponse summary = result.stream()
                 .filter(r -> r.deliveryId().equals(order.getId())).findFirst().orElseThrow();
         assertThat(summary.expectedSettlementAmount()).isEqualTo(3130L);
+    }
+
+    /**
+     * #559: {@code DeliveryOrderRepository.findByStatus} 가 엔터티 대신 {@code
+     * WaitingDeliverySummary} 투영을 반환하도록 바뀌었다. 이 메서드는 파생 쿼리라 컬럼 별칭을
+     * 직접 쓰지 않으므로, {@code pickup}/{@code destination}(둘 다 {@code @Embeddable Address})
+     * 평탄화 getter({@code getPickupRoadAddress()} 등)를 스프링 데이터가 실제로 매핑해주는지가
+     * 이 이슈의 핵심 리스크였다 — 불일치하면 해당 필드가 예외 없이 조용히 null이 된다. 목(mock)이
+     * 아니라 실제 MySQL로 확인해야 하는 이유가 이것이다.
+     */
+    @Test
+    @DisplayName("좌표 없이 조회해도(findByStatus 경로) 프로젝션이 모든 필드를 채운다 — 임베더블 평탄화 검증(#559)")
+    void shouldPopulateAllSummaryFieldsViaFindByStatusProjection() {
+        DeliveryOrder order = saveWaitingOrder(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"));
+
+        List<RiderDeliveryRequestSummaryResponse> result = callDefault(
+                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "REQUESTED_AT");
+
+        RiderDeliveryRequestSummaryResponse summary = result.stream()
+                .filter(r -> r.deliveryId().equals(order.getId())).findFirst().orElseThrow();
+        assertThat(summary.itemType()).isEqualTo(ItemType.SMALL_PARCEL);
+        assertThat(summary.pickupRoadAddress()).isEqualTo("픽업지 도로명");
+        assertThat(summary.destinationRoadAddress()).isEqualTo("도착지 도로명");
+        assertThat(summary.straightDistanceMeters()).isEqualTo(1000);
+        // MySQL DATETIME 컬럼의 소수 자릿수(밀리초)가 자바 LocalDateTime.now()의 마이크로초
+        // 정밀도보다 낮아, 저장 전 메모리 값과 라운드트립한 값이 마지막 자릿수에서 갈린다 —
+        // 프로젝션과 무관하게 어떤 LocalDateTime 컬럼이든 겪는 문제라 근사 비교로 검증한다.
+        assertThat(summary.requestedAt()).isCloseTo(order.getRequestedAt(), within(1, ChronoUnit.SECONDS));
+    }
+
+    /**
+     * #559: {@code findWaitingOrdersWithinBoundingBox} 는 네이티브 쿼리라 {@code SELECT} 절의
+     * {@code AS} 별칭을 {@link com.turkey.quick.order.dto.WaitingDeliverySummary} 의 게터 이름과
+     * 손으로 맞춰야 한다 — 오탈자가 나도 컴파일은 통과하고 해당 필드만 null이 되므로 실제 DB로
+     * 검증한다.
+     */
+    @Test
+    @DisplayName("좌표를 주고 조회해도(bounding box 경로) 네이티브 프로젝션이 모든 필드를 채운다(#559)")
+    void shouldPopulateAllSummaryFieldsViaBoundingBoxProjection() {
+        BigDecimal riderLat = new BigDecimal("37.5000000");
+        BigDecimal riderLng = new BigDecimal("127.0000000");
+        DeliveryOrder order = saveWaitingOrder(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"));
+
+        List<RiderDeliveryRequestSummaryResponse> result = callDefault(
+                authenticatedRider(OperatingStatus.AVAILABLE), riderLat, riderLng, 3000, "DISTANCE");
+
+        RiderDeliveryRequestSummaryResponse summary = result.stream()
+                .filter(r -> r.deliveryId().equals(order.getId())).findFirst().orElseThrow();
+        assertThat(summary.itemType()).isEqualTo(ItemType.SMALL_PARCEL);
+        assertThat(summary.pickupRoadAddress()).isEqualTo("픽업지 도로명");
+        assertThat(summary.destinationRoadAddress()).isEqualTo("도착지 도로명");
+        assertThat(summary.straightDistanceMeters()).isEqualTo(1000);
+        // MySQL DATETIME 컬럼의 소수 자릿수(밀리초)가 자바 LocalDateTime.now()의 마이크로초
+        // 정밀도보다 낮아, 저장 전 메모리 값과 라운드트립한 값이 마지막 자릿수에서 갈린다 —
+        // 프로젝션과 무관하게 어떤 LocalDateTime 컬럼이든 겪는 문제라 근사 비교로 검증한다.
+        assertThat(summary.requestedAt()).isCloseTo(order.getRequestedAt(), within(1, ChronoUnit.SECONDS));
+        assertThat(summary.distanceToPickupMeters()).isNotNull();
     }
 
     @Test

@@ -1,7 +1,7 @@
 package com.turkey.quick.common.auth;
 
 import java.time.Duration;
-import java.util.Map;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -11,21 +11,22 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class InMemorySessionStore implements SessionStore {
 
-    private final ConcurrentHashMap<String, Map<String, String>> sessions = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, SessionInfo> sessions = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Integer> extendCounts = new ConcurrentHashMap<>();
 
     @Override
     public void create(String sessionId, Long memberId, Duration ttl) {
-        sessions.put(sessionId, Map.of("memberId", String.valueOf(memberId)));
+        sessions.put(sessionId, new SessionInfo(memberId, Instant.now()));
+    }
+
+    /** 절대 수명 상한(#{@link SessionStore#ABSOLUTE_TTL}) 검증용 — 생성 시각을 과거로 못박아 넣는다. */
+    public void createAt(String sessionId, Long memberId, Instant createdAt) {
+        sessions.put(sessionId, new SessionInfo(memberId, createdAt));
     }
 
     @Override
-    public Optional<Long> findMemberId(String sessionId) {
-        Map<String, String> session = sessions.get(sessionId);
-        if (session == null) {
-            return Optional.empty();
-        }
-        return Optional.of(Long.valueOf(session.get("memberId")));
+    public Optional<SessionInfo> find(String sessionId) {
+        return Optional.ofNullable(sessions.get(sessionId));
     }
 
     /**
@@ -46,9 +47,5 @@ public class InMemorySessionStore implements SessionStore {
     @Override
     public void delete(String sessionId) {
         sessions.remove(sessionId);
-    }
-
-    public Map<String, String> get(String sessionId) {
-        return sessions.get(sessionId);
     }
 }

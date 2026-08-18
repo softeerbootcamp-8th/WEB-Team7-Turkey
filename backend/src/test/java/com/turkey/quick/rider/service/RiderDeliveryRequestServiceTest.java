@@ -21,6 +21,7 @@ import com.turkey.quick.order.domain.FareType;
 import com.turkey.quick.order.domain.ItemType;
 import com.turkey.quick.order.domain.OrderFareSnapshot;
 import com.turkey.quick.order.domain.OrderStatus;
+import com.turkey.quick.order.dto.WaitingDeliverySummary;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
 import com.turkey.quick.order.service.DeliveryService;
@@ -93,6 +94,65 @@ class RiderDeliveryRequestServiceTest {
         return OrderFareSnapshot.create(order, policy, FareType.ESTIMATE, "v1", 1000, totalFare, 0L, 0L);
     }
 
+    /**
+     * 리포지토리가 {@code DeliveryOrder} 엔터티 대신 {@link WaitingDeliverySummary} 투영을
+     * 반환하도록 바뀌었으므로(#559), 엔터티 픽스처({@link #order}·{@code orderWithDistance} 등)를
+     * 그대로 투영 모양으로 감싸 스텁 리턴값을 만든다.
+     */
+    private WaitingDeliverySummary summaryOf(DeliveryOrder order) {
+        return new WaitingDeliverySummaryFixture(
+                order.getId(), order.getItemType(), order.getPickup().getRoadAddress(),
+                order.getPickup().getLatitude(), order.getPickup().getLongitude(),
+                order.getDestination().getRoadAddress(), order.getStraightDistanceMeters(),
+                order.getRequestedAt());
+    }
+
+    private record WaitingDeliverySummaryFixture(
+            Long id, ItemType itemType, String pickupRoadAddress, BigDecimal pickupLatitude,
+            BigDecimal pickupLongitude, String destinationRoadAddress, Integer straightDistanceMeters,
+            LocalDateTime requestedAt) implements WaitingDeliverySummary {
+
+        @Override
+        public Long getId() {
+            return id;
+        }
+
+        @Override
+        public ItemType getItemType() {
+            return itemType;
+        }
+
+        @Override
+        public String getPickupRoadAddress() {
+            return pickupRoadAddress;
+        }
+
+        @Override
+        public BigDecimal getPickupLatitude() {
+            return pickupLatitude;
+        }
+
+        @Override
+        public BigDecimal getPickupLongitude() {
+            return pickupLongitude;
+        }
+
+        @Override
+        public String getDestinationRoadAddress() {
+            return destinationRoadAddress;
+        }
+
+        @Override
+        public Integer getStraightDistanceMeters() {
+            return straightDistanceMeters;
+        }
+
+        @Override
+        public LocalDateTime getRequestedAt() {
+            return requestedAt;
+        }
+    }
+
     private static final RiderDeliveryRequestFilter NO_FILTER =
             new RiderDeliveryRequestFilter(null, null, null, null, null);
     private static final RiderDeliveryRequestCursor FIRST_PAGE =
@@ -147,7 +207,7 @@ class RiderDeliveryRequestServiceTest {
         @DisplayName("WAITING 주문에 예상 운임 스냅샷이 없으면 데이터 정합성 오류로 취급한다")
         void shouldRejectWhenEstimateSnapshotMissing() {
             DeliveryOrder near = order(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"), LocalDateTime.now());
-            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(near));
+            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(summaryOf(near)));
             given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(List.of(near.getId()), FareType.ESTIMATE))
                     .willReturn(List.of());
 
@@ -172,7 +232,7 @@ class RiderDeliveryRequestServiceTest {
             DeliveryOrder o1 = order(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"), LocalDateTime.now());
             DeliveryOrder o2 = order(new BigDecimal("37.9000000"), new BigDecimal("127.9000000"), LocalDateTime.now());
 
-            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(o1, o2));
+            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(summaryOf(o1), summaryOf(o2)));
             given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(
                     List.of(o1.getId(), o2.getId()), FareType.ESTIMATE))
                     .willReturn(List.of(estimateSnapshot(o1, 4000L), estimateSnapshot(o2, 4000L)));
@@ -192,7 +252,7 @@ class RiderDeliveryRequestServiceTest {
             DeliveryOrder newerOrder = order(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"), newer);
             DeliveryOrder olderOrder = order(new BigDecimal("37.5020000"), new BigDecimal("127.0020000"), older);
 
-            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(newerOrder, olderOrder));
+            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(summaryOf(newerOrder), summaryOf(olderOrder)));
             given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(
                     List.of(newerOrder.getId(), olderOrder.getId()), FareType.ESTIMATE))
                     .willReturn(List.of(estimateSnapshot(newerOrder, 4000L), estimateSnapshot(olderOrder, 4000L)));
@@ -210,7 +270,7 @@ class RiderDeliveryRequestServiceTest {
             DeliveryOrder cheap = order(new BigDecimal("37.5001000"), new BigDecimal("127.0001000"), LocalDateTime.now());
             DeliveryOrder expensive = order(new BigDecimal("37.5002000"), new BigDecimal("127.0002000"), LocalDateTime.now());
 
-            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(cheap, expensive));
+            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(summaryOf(cheap), summaryOf(expensive)));
             given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(
                     List.of(cheap.getId(), expensive.getId()), FareType.ESTIMATE))
                     .willReturn(List.of(estimateSnapshot(cheap, 4000L), estimateSnapshot(expensive, 9000L)));
@@ -255,7 +315,7 @@ class RiderDeliveryRequestServiceTest {
             given(deliveryService.boundingBox(RIDER_LAT, RIDER_LNG, 1000)).willReturn(box);
             given(deliveryOrderRepository.findWaitingOrdersWithinBoundingBox(
                     box.latMin(), box.latMax(), box.lngMin(), box.lngMax()))
-                    .willReturn(List.of(near));
+                    .willReturn(List.of(summaryOf(near)));
             given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(List.of(near.getId()), FareType.ESTIMATE))
                     .willReturn(List.of(estimateSnapshot(near, 4000L)));
             given(deliveryService.distance(RIDER_LAT_VIA_POINT, RIDER_LNG_VIA_POINT,
@@ -279,7 +339,7 @@ class RiderDeliveryRequestServiceTest {
             given(deliveryService.boundingBox(RIDER_LAT, RIDER_LNG, 1000)).willReturn(box);
             given(deliveryOrderRepository.findWaitingOrdersWithinBoundingBox(
                     box.latMin(), box.latMax(), box.lngMin(), box.lngMax()))
-                    .willReturn(List.of(near, corner));
+                    .willReturn(List.of(summaryOf(near), summaryOf(corner)));
             given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(
                     List.of(near.getId(), corner.getId()), FareType.ESTIMATE))
                     .willReturn(List.of(estimateSnapshot(near, 4000L), estimateSnapshot(corner, 4000L)));
@@ -301,7 +361,7 @@ class RiderDeliveryRequestServiceTest {
         @DisplayName("좌표 중 하나만 있으면(경도 없음) 여전히 위치 없음으로 degrade한다")
         void shouldDegradeWhenOnlyOneCoordinateGiven() {
             DeliveryOrder order = order(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"), LocalDateTime.now());
-            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(order));
+            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(summaryOf(order)));
             given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(List.of(order.getId()), FareType.ESTIMATE))
                     .willReturn(List.of(estimateSnapshot(order, 4000L)));
 
@@ -354,7 +414,7 @@ class RiderDeliveryRequestServiceTest {
         void shouldExcludeOrdersOutsideFareRange() {
             DeliveryOrder cheap = orderWithDistance(1000, LocalDateTime.now());
             DeliveryOrder expensive = orderWithDistance(2000, LocalDateTime.now());
-            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(cheap, expensive));
+            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(summaryOf(cheap), summaryOf(expensive)));
             given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(
                     List.of(cheap.getId(), expensive.getId()), FareType.ESTIMATE))
                     .willReturn(List.of(estimateSnapshot(cheap, 3000L), estimateSnapshot(expensive, 9000L)));
@@ -372,7 +432,7 @@ class RiderDeliveryRequestServiceTest {
         void shouldExcludeOrdersOutsideDistanceRange() {
             DeliveryOrder near = orderWithDistance(1000, LocalDateTime.now());
             DeliveryOrder far = orderWithDistance(5000, LocalDateTime.now());
-            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(near, far));
+            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(summaryOf(near), summaryOf(far)));
             given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(
                     List.of(near.getId(), far.getId()), FareType.ESTIMATE))
                     .willReturn(List.of(estimateSnapshot(near, 4000L), estimateSnapshot(far, 4000L)));
@@ -390,7 +450,7 @@ class RiderDeliveryRequestServiceTest {
         void shouldExcludeOrdersOfOtherItemType() {
             DeliveryOrder small = orderWithDistance(1000, LocalDateTime.now());
             DeliveryOrder food = orderWithItemType(ItemType.FOOD, 2000, LocalDateTime.now());
-            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(small, food));
+            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(summaryOf(small), summaryOf(food)));
             given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(
                     List.of(small.getId(), food.getId()), FareType.ESTIMATE))
                     .willReturn(List.of(estimateSnapshot(small, 4000L), estimateSnapshot(food, 4000L)));
@@ -411,7 +471,7 @@ class RiderDeliveryRequestServiceTest {
             DeliveryOrder middle = orderWithDistance(2000, LocalDateTime.now());
             DeliveryOrder priciest = orderWithDistance(3000, LocalDateTime.now());
             given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING))
-                    .willReturn(List.of(cheapest, middle, priciest));
+                    .willReturn(List.of(summaryOf(cheapest), summaryOf(middle), summaryOf(priciest)));
             given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(
                     List.of(cheapest.getId(), middle.getId(), priciest.getId()), FareType.ESTIMATE))
                     .willReturn(List.of(estimateSnapshot(cheapest, 3000L), estimateSnapshot(middle, 6000L),
@@ -439,7 +499,7 @@ class RiderDeliveryRequestServiceTest {
         void shouldPaginateDeliveryDistanceAscendingWithCursor() {
             DeliveryOrder near = orderWithDistance(1000, LocalDateTime.now());
             DeliveryOrder far = orderWithDistance(5000, LocalDateTime.now());
-            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(far, near));
+            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(summaryOf(far), summaryOf(near)));
             given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(
                     List.of(far.getId(), near.getId()), FareType.ESTIMATE))
                     .willReturn(List.of(estimateSnapshot(far, 4000L), estimateSnapshot(near, 4000L)));
@@ -461,7 +521,7 @@ class RiderDeliveryRequestServiceTest {
             DeliveryOrder o1 = orderWithDistance(1000, LocalDateTime.now().minusMinutes(3));
             DeliveryOrder o2 = orderWithDistance(2000, LocalDateTime.now().minusMinutes(2));
             DeliveryOrder o3 = orderWithDistance(3000, LocalDateTime.now().minusMinutes(1));
-            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(o1, o2, o3));
+            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(summaryOf(o1), summaryOf(o2), summaryOf(o3)));
             given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(
                     List.of(o1.getId(), o2.getId(), o3.getId()), FareType.ESTIMATE))
                     .willReturn(List.of(estimateSnapshot(o1, 4000L), estimateSnapshot(o2, 4000L),
@@ -482,7 +542,7 @@ class RiderDeliveryRequestServiceTest {
             DeliveryOrder o1 = orderWithDistance(1000, LocalDateTime.now().minusMinutes(3));
             DeliveryOrder o2 = orderWithDistance(2000, LocalDateTime.now().minusMinutes(2));
             DeliveryOrder o3 = orderWithDistance(3000, LocalDateTime.now().minusMinutes(1));
-            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(o1, o2, o3));
+            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(summaryOf(o1), summaryOf(o2), summaryOf(o3)));
             given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(
                     List.of(o1.getId(), o2.getId(), o3.getId()), FareType.ESTIMATE))
                     .willReturn(List.of(estimateSnapshot(o1, 4000L), estimateSnapshot(o2, 4000L),
@@ -539,7 +599,7 @@ class RiderDeliveryRequestServiceTest {
         @DisplayName("커서 값이 현재 정렬 기준과 안 맞으면 거부한다(#522, DELIVERY_DISTANCE)")
         void shouldRejectCursorNotMatchingSort() {
             DeliveryOrder order = orderWithDistance(1000, LocalDateTime.now());
-            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(order));
+            given(deliveryOrderRepository.findByStatus(OrderStatus.WAITING)).willReturn(List.of(summaryOf(order)));
             given(orderFareSnapshotRepository.findByOrder_IdInAndFareType(List.of(order.getId()), FareType.ESTIMATE))
                     .willReturn(List.of(estimateSnapshot(order, 4000L)));
             // sort=DELIVERY_DISTANCE 인데 afterDeliveryDistanceMeters가 아니라 afterDistanceMeters(픽업거리)만 채운 커서.

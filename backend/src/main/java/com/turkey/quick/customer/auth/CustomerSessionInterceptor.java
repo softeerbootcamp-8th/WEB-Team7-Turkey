@@ -2,12 +2,15 @@ package com.turkey.quick.customer.auth;
 
 import com.turkey.quick.common.auth.SessionCookie;
 import com.turkey.quick.common.auth.SessionStore;
+import com.turkey.quick.common.auth.SessionStore.SessionInfo;
 import com.turkey.quick.common.exception.BusinessException;
 import com.turkey.quick.member.domain.Member;
 import com.turkey.quick.member.domain.MemberRole;
 import com.turkey.quick.member.repository.MemberRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.time.Duration;
+import java.time.Instant;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -23,9 +26,9 @@ import org.springframework.web.servlet.HandlerInterceptor;
  * (@RestControllerAdvice)가 그대로 잡아 기존 ApiResponse 에러 포맷으로 응답한다.
  * (반대로 Filter에서 던지면 DispatcherServlet 바깥이라 GlobalExceptionHandler가 못 잡는다.)
  *
- * 실패 사유(쿠키 없음/세션 없음(=만료 포함, Redis TTL로 자동 삭제됨)/회원 없음/역할 불일치/
- * 비활성 계정)를 구분하지 않고 전부 동일한 401 메시지로 응답한다 — #26 로그인과 같은 이유
- * (계정·세션 상태를 구체적으로 노출하지 않는다). 어떤 사유든 인증에 실패하면 응답에 만료
+ * 실패 사유(쿠키 없음/세션 없음(=만료 포함, Redis TTL로 자동 삭제됨)/절대 수명 상한 초과/회원
+ * 없음/역할 불일치/비활성 계정)를 구분하지 않고 전부 동일한 401 메시지로 응답한다 — #26 로그인과
+ * 같은 이유(계정·세션 상태를 구체적으로 노출하지 않는다). 어떤 사유든 인증에 실패하면 응답에 만료
  * 쿠키(SESSION_ID; Max-Age=0)를 함께 실어 보내 클라이언트가 더 이상 쓸모없는 쿠키를 계속
  * 들고 있지 않게 한다(#29).
  */
@@ -51,12 +54,17 @@ public class CustomerSessionInterceptor implements HandlerInterceptor {
             throw authFailure(response);
         }
 
-        Long memberId = sessionStore.findMemberId(sessionId).orElse(null);
-        if (memberId == null) {
+        SessionInfo session = sessionStore.find(sessionId).orElse(null);
+        if (session == null) {
             throw authFailure(response);
         }
 
-        Member member = memberRepository.findById(memberId).orElse(null);
+        if (Duration.between(session.createdAt(), Instant.now()).compareTo(SessionStore.ABSOLUTE_TTL) > 0) {
+            sessionStore.delete(sessionId);
+            throw authFailure(response);
+        }
+
+        Member member = memberRepository.findById(session.memberId()).orElse(null);
         if (member == null) {
             throw authFailure(response);
         }

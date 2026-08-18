@@ -9,6 +9,7 @@ import com.turkey.quick.order.domain.OrderFareSnapshot;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.AddressResponse;
 import com.turkey.quick.order.dto.FareBreakdownResponse;
+import com.turkey.quick.order.dto.WaitingDeliverySummary;
 import com.turkey.quick.order.repository.DeliveryOrderRepository;
 import com.turkey.quick.order.repository.OrderFareSnapshotRepository;
 import com.turkey.quick.order.service.DeliveryService;
@@ -112,7 +113,7 @@ public class RiderDeliveryRequestService {
 
         boolean hasPosition = latitude != null && longitude != null;
 
-        List<DeliveryOrder> waitingOrders = hasPosition
+        List<WaitingDeliverySummary> waitingOrders = hasPosition
                 ? findWithinBoundingBox(latitude, longitude, radiusMeters)
                 : deliveryOrderRepository.findByStatus(OrderStatus.WAITING);
         if (waitingOrders.isEmpty()) {
@@ -148,7 +149,7 @@ public class RiderDeliveryRequestService {
         return new RiderDeliveryRequestPageResponse(List.copyOf(page), hasNext);
     }
 
-    private List<DeliveryOrder> findWithinBoundingBox(BigDecimal latitude, BigDecimal longitude, int radiusMeters) {
+    private List<WaitingDeliverySummary> findWithinBoundingBox(BigDecimal latitude, BigDecimal longitude, int radiusMeters) {
         DeliveryService.BoundingBox box = deliveryService.boundingBox(latitude, longitude, radiusMeters);
         return deliveryOrderRepository.findWaitingOrdersWithinBoundingBox(
                 box.latMin(), box.latMax(), box.lngMin(), box.lngMax());
@@ -386,14 +387,14 @@ public class RiderDeliveryRequestService {
 
     /** 주문마다 스냅샷을 따로 조회하면 N+1(주문 조회 1번 + 주문당 조회 N번)이 되므로,
      * 전체 orderId를 한 번의 IN 절로 조회해 Map으로 올려두고 이후엔 DB 없이 꺼내 쓴다. */
-    private Map<Long, OrderFareSnapshot> loadEstimateSnapshots(List<DeliveryOrder> orders) {
-        List<Long> orderIds = orders.stream().map(DeliveryOrder::getId).toList();
+    private Map<Long, OrderFareSnapshot> loadEstimateSnapshots(List<WaitingDeliverySummary> orders) {
+        List<Long> orderIds = orders.stream().map(WaitingDeliverySummary::getId).toList();
         return orderFareSnapshotRepository.findByOrder_IdInAndFareType(orderIds, FareType.ESTIMATE).stream()
                 .collect(Collectors.toMap(snapshot -> snapshot.getOrder().getId(), Function.identity()));
     }
 
     /** 주문 생성 시 ESTIMATE 스냅샷이 항상 함께 만들어져야 하므로(도메인 불변식), 없으면 데이터 정합성 오류다. */
-    private OrderFareSnapshot estimateSnapshotOf(DeliveryOrder order, Map<Long, OrderFareSnapshot> byOrderId) {
+    private OrderFareSnapshot estimateSnapshotOf(WaitingDeliverySummary order, Map<Long, OrderFareSnapshot> byOrderId) {
         OrderFareSnapshot snapshot = byOrderId.get(order.getId());
         if (snapshot == null) {
             throw new IllegalStateException("배송요청에 예상 운임 스냅샷이 없습니다. orderId=" + order.getId());
@@ -401,19 +402,19 @@ public class RiderDeliveryRequestService {
         return snapshot;
     }
 
-    private RiderDeliveryRequestSummaryResponse toSummary(DeliveryOrder order, OrderFareSnapshot estimate,
+    private RiderDeliveryRequestSummaryResponse toSummary(WaitingDeliverySummary order, OrderFareSnapshot estimate,
                                                           Optional<Point> riderPosition) {
         Integer distanceToPickupMeters = riderPosition
                 .map(point -> toMeters(deliveryService.distance(
                         BigDecimal.valueOf(point.getY()), BigDecimal.valueOf(point.getX()),
-                        order.getPickup().getLatitude(), order.getPickup().getLongitude())))
+                        order.getPickupLatitude(), order.getPickupLongitude())))
                 .orElse(null);
 
         return new RiderDeliveryRequestSummaryResponse(
                 order.getId(),
                 order.getItemType(),
-                order.getPickup().getRoadAddress(),
-                order.getDestination().getRoadAddress(),
+                order.getPickupRoadAddress(),
+                order.getDestinationRoadAddress(),
                 order.getStraightDistanceMeters(),
                 distanceToPickupMeters,
                 estimate.getTotalFare(),

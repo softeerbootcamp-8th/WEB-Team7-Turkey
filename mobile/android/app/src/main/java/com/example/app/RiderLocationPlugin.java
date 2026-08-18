@@ -41,6 +41,29 @@ public class RiderLocationPlugin extends Plugin {
         startService(call);
     }
 
+    /**
+     * 위치 권한만 확인/요청한다 — 서비스는 시작하지 않는다(#557). 온라인(AVAILABLE) 전환 시
+     * 프론트가 미리 호출해 권한을 받아두고, 실제 전송(start)은 BUSY에서 따로 부른다. 이 메서드에는
+     * 운행상태(BUSY) 검증이 없으므로, reject 되는 경우는 오직 "위치 권한 거부"뿐이다.
+     */
+    @PluginMethod
+    public void ensurePermission(PluginCall call) {
+        if (getPermissionState(LOCATION_PERMISSION) != PermissionState.GRANTED) {
+            requestPermissionForAlias(LOCATION_PERMISSION, call, "ensurePermissionCallback");
+            return;
+        }
+        call.resolve();
+    }
+
+    @PermissionCallback
+    private void ensurePermissionCallback(PluginCall call) {
+        if (getPermissionState(LOCATION_PERMISSION) != PermissionState.GRANTED) {
+            call.reject("위치 권한이 필요합니다.");
+            return;
+        }
+        call.resolve();
+    }
+
     @PluginMethod
     public void stop(PluginCall call) {
         Intent intent = new Intent(getContext(), RiderLocationService.class)
