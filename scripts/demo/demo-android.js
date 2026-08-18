@@ -29,6 +29,9 @@
 //   CDP_PORT     WebView CDP 포워딩 포트 (기본 9222)
 //   SLOWMO       각 UI 액션 사이 지연(ms) (기본 650 — 회원가입·입력·화면 전환을 천천히)
 //   KEEP_OPEN    true/false (기본 true — 끝나고도 고객 창을 열어 둔다. Ctrl+C 종료)
+//   SIGNUP       true/false (기본 true — 회원가입부터 시연. false면 기존 계정 로그인만).
+//                주의: 회원가입은 백엔드가 인증번호(debugCode)를 응답에 주는 환경에서만 자동 완료된다.
+//   SHOW_PERMISSION true/false (기본 true — 온라인 전환 시 위치 권한 팝업을 띄우고 자동 허용).
 //   STEP_METERS  GPS 한 스텝 이동 거리(m) (기본 90 — 한 번에 크게 이동)
 //   STEP_MS      GPS 스텝 간격(ms) (기본 2000). 속도 = STEP_METERS/STEP_MS*1000 = 45 m/s. 서버 상한 50 m/s.
 //   STAGE_PAUSE_MS  상태 전이 후 새 화면 유지 시간(ms) (기본 1500)
@@ -51,15 +54,14 @@ const APP_ID = process.env.APP_ID || 'com.example.app'
 const CDP_PORT = Number(process.env.CDP_PORT ?? 9222)
 // 배포(CloudFront) 대상으로 돌린다. 로컬로 되돌리려면 BASE_URL=http://localhost:5173 로 실행.
 const BASE_URL = process.env.BASE_URL || 'https://dw1nqa61d1no6.cloudfront.net'
-// 배포 환경에선 인증번호(debugCode)를 응답에 주지 않아 자동 회원가입이 불가하다 → 로그인 전용.
-// 미리 만들어 둔 배포 계정으로 로그인한다(회원가입 코드는 아래 runCustomer/runRiderOnDevice 에서 주석 처리).
-// c1~c4 는 이미 진행 중 배송이 있어(고객당 진행 중 1건 제한) 새 요청 생성이 409로 막힌다.
-// c5 는 진행 중 배송이 없어 사용 가능(확인함). 다른 계정을 쓰려면 CUSTOMER_LOGIN_ID 로 지정.
+// SIGNUP=true(기본)면 매 실행 새 계정으로 회원가입부터 시연한다 — 단, 백엔드가 인증번호(debugCode)를
+// 응답에 줘야 자동 완료된다(안 주면 회원가입 단계에서 멈춘다). SIGNUP=false면 아래 고정 계정 로그인만.
+// c1~c4 는 진행 중 배송이 있어 새 요청이 409로 막힌다. c5 는 없어 사용 가능(확인함, SIGNUP=false일 때).
 const CUSTOMER_LOGIN_ID = process.env.CUSTOMER_LOGIN_ID || 'c5'
 const CUSTOMER_PASSWORD = process.env.CUSTOMER_PASSWORD || 'aa'
 const RIDER_LOGIN_ID = process.env.RIDER_LOGIN_ID || 'roffline1'
 const RIDER_PASSWORD = process.env.RIDER_PASSWORD || 'aa'
-const SLOWMO = Number(process.env.SLOWMO ?? 650)
+const SLOWMO = Number(process.env.SLOWMO ?? 600)
 const KEEP_OPEN = process.env.KEEP_OPEN !== 'false'
 // 라이더 이동: 한 스텝에 크게 이동(기본 90m), 속도 = 90/2000*1000 = 45 m/s (서버 상한 50 m/s 아래).
 const STEP_METERS = Number(process.env.STEP_METERS ?? 90)
@@ -72,6 +74,11 @@ const PROOF_PHOTO = process.env.PROOF_PHOTO || ''
 const POINTS_PAUSE_MS = Number(process.env.POINTS_PAUSE_MS ?? 2500)
 const SHOWCASE_PAUSE_MS = Number(process.env.SHOWCASE_PAUSE_MS ?? 5000)
 const SKIP_UI = process.env.SKIP_UI === 'true'
+// 기본(!=='false'): 데모에서 위치 권한 허용 과정을 실제로 보여준다 — 권한을 해제하고 앱을 재실행해
+// 온라인 전환 시 OS 팝업을 띄우고, 스크립트가 그 "허용"을 자동으로 눌러 준다. false면 조용히 사전 부여.
+const SHOW_PERMISSION = process.env.SHOW_PERMISSION !== 'false'
+// 기본(!=='false'): 회원가입부터 시연(매 실행 새 계정). 백엔드가 debugCode를 줘야 자동 완료.
+const DO_SIGNUP = process.env.SIGNUP !== 'false'
 // RECORD=true 면 고객 화면(뷰포트만, 브라우저 크롬 없이)을 영상으로 저장한다. 라이더는 scrcpy로 따로 녹화 후 합성.
 // 영상은 컨텍스트가 닫힐 때 저장되므로 녹화 모드에선 KEEP_OPEN(무한 대기)을 끄고 끝에 창을 닫는다.
 const RECORD = process.env.RECORD === 'true'
@@ -117,6 +124,84 @@ function log(actor, message) {
 
 function adb(args) {
   return execFileSync(ADB, args, { encoding: 'utf8' }).trim()
+}
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+function isLocationGranted() {
+  try {
+    return /ACCESS_FINE_LOCATION: granted=true/.test(adb(['shell', 'dumpsys', 'package', APP_ID]))
+  } catch {
+    return false
+  }
+}
+
+// 네이티브 위치 권한 팝업(GrantPermissionsActivity)의 "허용" 버튼 중심 좌표를 uiautomator 덤프에서
+// 찾는다. resource-id 로 버튼 노드를 집어 bounds 중심을 계산한다. 팝업/버튼이 없으면 null.
+function findLocationAllowButtonCenter() {
+  let xml = ''
+  try {
+    adb(['shell', 'uiautomator', 'dump', '/sdcard/uidump.xml'])
+    xml = adb(['shell', 'cat', '/sdcard/uidump.xml'])
+  } catch {
+    return null
+  }
+  const ids = [
+    'permission_allow_foreground_only_button', // "앱 사용 중에만 허용" — 포그라운드 위치 앱에 적합
+    'permission_allow_button', // 구버전 단일 허용
+    'permission_allow_one_time_button', // "이번만 허용" — 최후 폴백
+  ]
+  for (const id of ids) {
+    for (const frag of xml.split('<node')) {
+      if (!frag.includes(id)) continue
+      const b = frag.match(/bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/)
+      if (b) {
+        return {
+          cx: Math.round((Number(b[1]) + Number(b[3])) / 2),
+          cy: Math.round((Number(b[2]) + Number(b[4])) / 2),
+          id,
+        }
+      }
+    }
+  }
+  return null
+}
+
+// 위치 권한 팝업이 뜨면 "허용"을 자동으로 눌러 권한 부여 과정을 (관객에게) 보여준다.
+// timeoutMs 안에 못 잡으면: fallbackGrant면 직접 부여해 흐름을 잇고, 아니면 조용히 반환.
+async function allowLocationPermission(timeoutMs, { fallbackGrant = false } = {}) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const center = findLocationAllowButtonCenter()
+    if (center) {
+      log('라이더', `위치 권한 팝업 "허용" 자동 탭 (${center.id})`)
+      adb(['shell', 'input', 'tap', String(center.cx), String(center.cy)])
+      await delay(700)
+      return true
+    }
+    if (isLocationGranted()) {
+      return true
+    }
+    await delay(300)
+  }
+  if (fallbackGrant && !isLocationGranted()) {
+    adb(['shell', 'pm', 'grant', APP_ID, 'android.permission.ACCESS_FINE_LOCATION'])
+    adb(['shell', 'pm', 'grant', APP_ID, 'android.permission.ACCESS_COARSE_LOCATION'])
+    log('라이더', '위치 팝업을 못 잡아 권한을 직접 부여함(폴백)')
+  }
+  return false
+}
+
+// 위치 권한 게이트("위치 권한이 필요해요")가 잘못 떠 있으면 "권한 다시 확인하기"를 눌러 해제한다.
+// 온라인 시 세션 리페치로 네이티브 ensurePermission 이 중복 호출돼 한쪽이 reject 되면, 권한은 이미
+// 허용됐는데도 게이트가 뜨는 경우가 있다(#557). 권한이 granted 라 재확인이 즉시 통과해 게이트가 풀린다.
+async function dismissLocationGateIfPresent(page) {
+  const retry = page.getByRole('button', { name: '권한 다시 확인하기' })
+  for (let i = 0; i < 6 && (await retry.count()) > 0; i++) {
+    log('라이더', '위치 권한 게이트 감지 → "권한 다시 확인하기" 자동 클릭(권한 이미 허용)')
+    await retry.click().catch(() => {})
+    await page.waitForTimeout(1000)
+  }
 }
 
 function uniqueSuffix() {
@@ -229,18 +314,26 @@ async function signup(page, actor, { loginId, password, name, phoneNumber }) {
   await page.getByText('사용할 수 있는 아이디입니다.').waitFor({ timeout: 10_000 })
 
   await fillById(page, 'password', password)
-  await fillById(page, 'passwordConfirm', password)
   await fillById(page, 'userName', name)
   await fillById(page, 'userPhone', phoneNumber)
 
   await page.getByRole('button', { name: '인증번호 전송' }).click()
-  const debugCodeText = await page.locator('#signup-debug-code').innerText({ timeout: 10_000 })
-  const code = debugCodeText.match(/(\d{6})/)?.[1]
+  // 비밀번호 확인 입력칸은 없어졌고(회원가입 UX 개선), 인증번호도 더 이상 #signup-debug-code
+  // 요소로 노출되지 않는다. 대신 토스트(PhoneVerificationToast)로 뜨면서 화면이 그 값을 인증번호
+  // 입력칸(#verificationCode)에 자동으로 채운다 — 자동 채움 값을 그대로 읽어 확인만 하면 된다.
+  // 혹시 비어 있으면 토스트 문구("인증번호는 000000입니다")에서 6자리를 뽑아 채운다.
+  const codeInput = page.locator('#verificationCode')
+  await codeInput.waitFor({ timeout: 10_000 })
+  let code = (await codeInput.inputValue()).match(/(\d{6})/)?.[1]
   if (!code) {
-    throw new Error(`${actor}: 로컬 테스트 인증번호를 읽지 못했습니다: ${debugCodeText}`)
+    const toastText = await page.getByRole('status').filter({ hasText: '인증번호' }).innerText({ timeout: 10_000 })
+    code = toastText.match(/(\d{6})/)?.[1]
+    if (!code) {
+      throw new Error(`${actor}: 로컬 테스트 인증번호를 읽지 못했습니다: ${toastText}`)
+    }
+    await fillById(page, 'verificationCode', code)
   }
   log(actor, `인증번호 확인 (${code})`)
-  await fillById(page, 'verificationCode', code)
   await page.getByRole('button', { name: '인증 확인' }).click()
   await page.getByText('휴대전화 인증이 완료되었습니다.').waitFor({ timeout: 10_000 })
 
@@ -284,9 +377,10 @@ async function runCustomer(context, credentials) {
   page.on('dialog', (dialog) => dialog.accept())
   await page.addInitScript(daumPostcodeStub, { pickup: PICKUP_ADDRESS, destination: DESTINATION_ADDRESS })
 
-  // 배포 환경: 자동 회원가입 불가(인증번호 미노출) → 기존 계정 로그인. 로컬로 되돌릴 때 아래 2줄 주석 해제.
-  // await page.goto(`${BASE_URL}/customer/signup`)
-  // await signup(page, '고객', credentials)
+  if (DO_SIGNUP) {
+    await page.goto(`${BASE_URL}/customer/signup`)
+    await signup(page, '고객', credentials)
+  }
   await page.goto(`${BASE_URL}/customer/login`)
   await login(page, '고객', credentials)
 
@@ -344,7 +438,15 @@ async function runCustomer(context, credentials) {
 // ── 라이더 (안드로이드 에뮬레이터 WebView, CDP 접속) ──────────────────────────
 
 function riderAppPid() {
-  const pid = adb(['shell', 'pidof', APP_ID])
+  // pidof 는 일치하는 프로세스가 없으면 exit code 1 + 빈 출력으로 끝난다. adb() 의 execFileSync 는
+  // 그 비정상 종료에 throw 하므로(앱이 아직 안 켜진 정상 상황인데 스택트레이스로 죽는다) 여기서
+  // 삼켜 null 로 돌린다 — preflight 가 이 null 을 받아 "앱을 먼저 켜세요" 안내로 바꾼다.
+  let pid = ''
+  try {
+    pid = adb(['shell', 'pidof', APP_ID])
+  } catch {
+    return null
+  }
   return pid ? pid.split(/\s+/)[0] : null
 }
 
@@ -394,10 +496,29 @@ function restoreImes(state) {
   }
 }
 
+// WebView 원격 디버깅 소켓이 열렸는지 확인한다. 앱을 막 재실행하면 pid는 있어도 이 소켓은 아직
+// 안 열려 있어, 바로 connectOverCDP 하면 'socket hang up' 이 난다.
+function riderWebViewSocketReady(pid) {
+  try {
+    return adb(['shell', 'cat', '/proc/net/unix']).includes(`webview_devtools_remote_${pid}`)
+  } catch {
+    return false
+  }
+}
+
 async function connectRiderWebView() {
-  const pid = riderAppPid()
+  // 재실행 직후엔 pid가 아직 없을 수 있으니 잠깐 기다린다.
+  let pid = riderAppPid()
+  for (let i = 0; i < 30 && !pid; i++) {
+    await delay(500)
+    pid = riderAppPid()
+  }
   if (!pid) {
     throw new Error(`에뮬레이터에서 ${APP_ID} 앱이 실행 중이 아닙니다. 앱을 먼저 켜세요.`)
+  }
+  // WebView 원격 디버깅 소켓이 열릴 때까지 기다린다(최대 ~20초).
+  for (let i = 0; i < 40 && !riderWebViewSocketReady(pid); i++) {
+    await delay(500)
   }
   try {
     adb(['forward', '--remove', `tcp:${CDP_PORT}`])
@@ -405,8 +526,31 @@ async function connectRiderWebView() {
     /* 포워딩이 없으면 무시 */
   }
   adb(['forward', `tcp:${CDP_PORT}`, `localabstract:webview_devtools_remote_${pid}`])
+  // 초기 연결은 'socket hang up' 으로 실패할 수 있어 재시도한다. pid가 바뀌었으면 포워딩을 다시 건다.
+  let browser
+  for (let attempt = 1; attempt <= 10; attempt++) {
+    try {
+      browser = await chromium.connectOverCDP(`http://127.0.0.1:${CDP_PORT}`, { slowMo: SLOWMO })
+      break
+    } catch (e) {
+      if (attempt === 10) {
+        throw e
+      }
+      log('라이더', `WebView CDP 접속 재시도 (${attempt}/10): ${e.message}`)
+      await delay(1000)
+      const p2 = riderAppPid()
+      if (p2 && p2 !== pid) {
+        pid = p2
+        try {
+          adb(['forward', '--remove', `tcp:${CDP_PORT}`])
+        } catch {
+          /* 무시 */
+        }
+        adb(['forward', `tcp:${CDP_PORT}`, `localabstract:webview_devtools_remote_${pid}`])
+      }
+    }
+  }
   log('라이더', `WebView CDP 접속 (pid=${pid}, port=${CDP_PORT})`)
-  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${CDP_PORT}`, { slowMo: SLOWMO })
   const context = browser.contexts()[0]
   const page = context.pages()[0] || (await context.waitForEvent('page'))
   page.on('dialog', (dialog) => dialog.accept())
@@ -434,11 +578,25 @@ async function resetRiderSession(page) {
 // 번들 SPA 로 서빙되므로 goto 로 라우트를 직접 연다.
 async function runRiderOnDevice(page, credentials) {
   await resetRiderSession(page)
-  // 배포 환경: 자동 회원가입 불가(인증번호 미노출) → 기존 계정 로그인. 로컬로 되돌릴 때 아래 2줄 주석 해제.
-  // await page.goto('https://localhost/rider/signup')
-  // await signup(page, '라이더', credentials)
+
+  // pm clear 로 앱이 로그아웃(역할 선택) 화면으로 열리므로 진입 시 위치 팝업이 없다 — 회원가입·로그인
+  // 은 가림 없이 그대로 진행한다. (예전엔 이 구간에 팝업 감시자를 돌렸으나, uiautomator dump 를 매
+  // 0.4초 폴링해 화면이 버벅여서 제거했다. 온라인 전환 시 뜨는 팝업은 아래 allowLocationPermission 이 처리.)
+  if (DO_SIGNUP) {
+    await page.goto('https://localhost/rider/signup')
+    await signup(page, '라이더', credentials)
+  }
   await page.goto('https://localhost/rider/login')
   await login(page, '라이더', credentials)
+
+  // 콜 목록 화면은 navigator.geolocation(getCurrentPosition, timeout 5s, maximumAge 60s)으로 라이더
+  // 위치를 조회한다. main 시작 때의 위치 fix는 회원가입·로그인·고객 흐름을 거치며 오래돼(60s 초과)
+  // 타임아웃 → "위치를 확인하는 데 시간이 오래 걸리고 있어요" 배너가 뜬다. 콜 목록이 뜨기 직전에
+  // 위치를 새로 주입해, getCurrentPosition 이 캐시된 최신 위치를 즉시 받게 한다.
+  setGeo(RIDER_START)
+
+  // (pm clear 로 라이더가 항상 UNAVAILABLE 로 시작하므로 로그인 직후 홈 팝업은 없다. 온라인 전환 시
+  //  뜨는 팝업만 아래 "퀵 시작하기" 클릭 후 allowLocationPermission 으로 처리한다.)
 
   // 로그인 후 홈(/rider) 렌더 대기. 라이더가 이미 AVAILABLE 이면 "퀵 시작하기"가 없고 "콜 목록 보기"만 있다.
   const startButton = page.getByRole('button', { name: '퀵 시작하기' })
@@ -450,13 +608,30 @@ async function runRiderOnDevice(page, credentials) {
 
   if ((await startButton.count()) > 0) {
     log('라이더', '운행 시작 ("퀵 시작하기")')
+    await page.waitForTimeout(2000) // "콜 받기(퀵 시작하기)"는 천천히 — 클릭 전 잠깐 머문다
     await startButton.click()
+    // 온라인(AVAILABLE) 전환 시 위치 권한 팝업 → 자동 "허용"(못 잡으면 직접 부여해 흐름 유지).
+    if (SHOW_PERMISSION) {
+      await allowLocationPermission(8000, { fallbackGrant: true })
+    }
     await page.waitForURL(/\/rider\/requests$/, { timeout: 10_000 })
   } else {
     // 이미 AVAILABLE — 홈의 "콜 목록 보기"로 콜 목록 화면에 진입한다(실제 사용처럼 목록에서 콜을 누르기 위해).
     log('라이더', '이미 운행 중(AVAILABLE) — "콜 목록 보기"로 이동')
     await callListButton.click()
     await page.waitForURL(/\/rider\/requests$/, { timeout: 10_000 })
+  }
+
+  // 안전망: 어느 경로로든 콜 수락(BUSY) 전에 위치 권한이 보장돼야 한다(BUSY start 가 권한 없으면
+  // 게이트가 뜬다). 팝업 처리가 어긋났으면 여기서 직접 부여한다.
+  if (SHOW_PERMISSION && !isLocationGranted()) {
+    adb(['shell', 'pm', 'grant', APP_ID, 'android.permission.ACCESS_FINE_LOCATION'])
+    adb(['shell', 'pm', 'grant', APP_ID, 'android.permission.ACCESS_COARSE_LOCATION'])
+    log('라이더', '위치 권한 최종 확인: 미부여 상태라 직접 부여(안전망)')
+  }
+  // 권한은 허용됐지만 게이트가 잘못 떠 있을 수 있어(#557) 여기서 한 번 해제 시도.
+  if (SHOW_PERMISSION) {
+    await dismissLocationGateIfPresent(page)
   }
 }
 
@@ -473,10 +648,29 @@ async function acceptByDeliveryId(riderPage, deliveryId) {
   )
   log('라이더', `콜 목록에서 콜 대기 중 (deliveryId=${deliveryId})`)
 
+  // 콜 목록의 위치 측정(navigator.geolocation)이 온라인 전환 순간(권한 막 부여된 시점)에 타임아웃나
+  // "위치를 확인하는 데 시간이 오래 걸리고 있어요" 배너가 떠 있을 수 있다. 신선한 위치를 주입하고
+  // 배너의 "다시 시도"(위치 재측정)를 눌러 복구한다 — 이 시점엔 권한이 이미 부여돼 있어 성공한다.
+  setGeo(RIDER_START)
+  for (let i = 0; i < 3; i++) {
+    const retry = riderPage.getByRole('button', { name: '다시 시도' })
+    if ((await retry.count()) === 0) {
+      break
+    }
+    log('라이더', '위치 확인 지연 배너 감지 → 위치 재주입 후 "다시 시도" 클릭')
+    setGeo(RIDER_START)
+    await retry.first().click().catch(() => {})
+    await riderPage.waitForTimeout(1500)
+  }
+
   for (let attempt = 0; attempt < 20; attempt++) {
     // 콜 목록 화면 보장(수락 실패로 되돌아온 경우 포함).
     if (!/\/rider\/requests$/.test(riderPage.url())) {
       await riderPage.goto('https://localhost/rider/requests').catch(() => {})
+    }
+    // 위치 권한 게이트가 잘못 떠 있으면(권한은 허용됨) 해제해 콜 목록이 보이게 한다.
+    if (SHOW_PERMISSION) {
+      await dismissLocationGateIfPresent(riderPage)
     }
     const card = riderPage.getByRole('button', { name: cardName }).first()
     if ((await card.count()) === 0) {
@@ -499,7 +693,7 @@ async function acceptByDeliveryId(riderPage, deliveryId) {
 
     const acceptButton = riderPage.getByRole('button', { name: '수락하기' })
     await acceptButton.waitFor({ state: 'visible', timeout: 5000 })
-    await riderPage.waitForTimeout(2000) // 콜 상세를 잠깐 보여준 뒤 수락(조금 천천히)
+    await riderPage.waitForTimeout(4000) // 콜 상세를 보여준 뒤 수락(수락 전 텀)
     log('라이더', '콜 수락')
     await acceptButton.click()
     try {
@@ -617,12 +811,10 @@ async function showcaseAfterDelivery(customerPage, riderPage, deliveryId) {
   log('시연', '배송 내역 상세 — 홈 → 목록 → 방금 그 배송')
   await Promise.all([
     (async () => {
-      // 고객: 포인트 뒤로 → 홈 → 설정 → 배송 내역 → 상세 보기
+      // 고객: 포인트 뒤로 → 홈 → (홈의 배송내역 버튼 #534) → 상세 보기. 설정 경유하지 않는다.
       await customerPage.getByRole('button', { name: '고객 홈으로 돌아가기' }).click()
       await customerPage.waitForURL((url) => url.pathname === '/customer', { timeout: 10_000 })
-      await customerPage.getByRole('link', { name: '설정' }).click()
-      await customerPage.waitForURL(/\/account\/settings$/, { timeout: 10_000 })
-      await customerPage.getByRole('link', { name: '배송 내역' }).click()
+      await customerPage.getByRole('link', { name: /배송내역/ }).click()
       await customerPage.waitForURL(/\/customer\/deliveries$/, { timeout: 10_000 })
       await customerPage.getByRole('link', { name: '상세 보기' }).first().click()
       await customerPage.waitForURL(/\/customer\/deliveries\/\d+$/, { timeout: 10_000 })
@@ -654,6 +846,59 @@ async function preflight() {
   }
   if (!SKIP_UI && !riderAppPid()) {
     throw new Error(`${APP_ID} 앱이 실행 중이 아닙니다. 에뮬레이터에서 앱을 먼저 켜세요.`)
+  }
+  // 위치 포그라운드 서비스(BUSY)의 알림 권한(POST_NOTIFICATIONS)이 없으면 안드로이드가 알림 권한
+  // 팝업을 반복해 띄워 화면을 가린다(위치와 무관). 이 팝업은 데모에서 보여줄 필요가 없으니 미리 부여한다.
+  if (!SKIP_UI) {
+    try {
+      adb(['shell', 'pm', 'grant', APP_ID, 'android.permission.POST_NOTIFICATIONS'])
+    } catch (e) {
+      log('시스템', `⚠️ 알림 권한 사전 부여 실패(무시): ${e.message}`)
+    }
+  }
+  // 위치 권한 준비. 기본(SHOW_PERMISSION)에서는 데모에서 "권한 허용" 과정을 실제로 보여준다:
+  // 권한을 해제하고 앱을 재실행해, 나중에 온라인 전환 시 OS 위치 권한 팝업이 뜨게 한다(런타임 권한
+  // revoke 는 실행 중 앱을 강제 종료하므로 반드시 재실행하고 기동을 기다린다). 온라인 시점에
+  // allowLocationPermission 이 그 팝업을 자동으로 눌러 준다. SHOW_PERMISSION=false 면 조용히 사전 부여.
+  if (!SKIP_UI && SHOW_PERMISSION) {
+    // 앱 데이터를 초기화한다. 이전 실행의 라이더 세션이 남아 있으면 앱이 그 AVAILABLE 홈으로 열려
+    // 진입 즉시 위치 팝업이 떠 회원가입·로그인을 가린다(useLocationSender가 마운트 시 AVAILABLE을
+    // 보고 요청하기 때문). pm clear 로 세션을 지우면 앱이 로그아웃(역할 선택) 화면으로 열려, 새
+    // 라이더는 UNAVAILABLE 로 시작하고 위치 팝업은 온라인 전환("퀵 시작하기") 시에만 뜬다(설계대로).
+    // pm clear 는 런타임 권한도 ask 로 리셋하므로 팝업 시연 조건도 함께 갖춰진다.
+    adb(['shell', 'pm', 'clear', APP_ID])
+    adb(['shell', 'monkey', '-p', APP_ID, '-c', 'android.intent.category.LAUNCHER', '1'])
+    // 재실행 대기(넉넉히 ~20초). 중간에 안 뜨면 monkey 를 한 번 더 시도한다.
+    let relaunched = false
+    for (let i = 0; i < 40; i++) {
+      if (riderAppPid()) {
+        relaunched = true
+        break
+      }
+      if (i === 16) {
+        adb(['shell', 'monkey', '-p', APP_ID, '-c', 'android.intent.category.LAUNCHER', '1'])
+      }
+      await delay(500)
+    }
+    if (!relaunched) {
+      throw new Error('앱 데이터 초기화 후 재실행을 확인하지 못했습니다.')
+    }
+    // pm clear 로 지워진 알림 권한을 다시 부여한다(BUSY 포그라운드 서비스의 알림 권한 팝업 방지).
+    // 위치 권한은 ask 로 남겨 둬 온라인 전환 시 시연 팝업이 뜨게 한다.
+    try {
+      adb(['shell', 'pm', 'grant', APP_ID, 'android.permission.POST_NOTIFICATIONS'])
+    } catch (e) {
+      log('시스템', `⚠️ 알림 권한 재부여 실패(무시): ${e.message}`)
+    }
+    log('시스템', '위치 권한 데모: 앱 데이터 초기화 후 재실행 — 로그아웃 상태로 열려 팝업은 온라인 전환 시 뜬다')
+  } else if (!SKIP_UI) {
+    try {
+      adb(['shell', 'pm', 'grant', APP_ID, 'android.permission.ACCESS_FINE_LOCATION'])
+      adb(['shell', 'pm', 'grant', APP_ID, 'android.permission.ACCESS_COARSE_LOCATION'])
+      log('시스템', '위치 권한 사전 부여 완료(SHOW_PERMISSION=false)')
+    } catch (e) {
+      log('시스템', `⚠️ 위치 권한 사전 부여 실패(무시하고 진행): ${e.message}`)
+    }
   }
   // 백엔드 헬스체크(대상 = BASE_URL 오리진의 /api/health). 실패해도 치명적이지 않으니 경고만.
   try {
@@ -702,19 +947,15 @@ async function main() {
   }
   const customerContext = await customerBrowser.newContext(contextOptions)
 
-  // 배포 계정으로 로그인만 한다(회원가입 주석 처리). name/phoneNumber 는 로그인 경로에선 쓰이지 않는다.
-  const customerCredentials = {
-    loginId: CUSTOMER_LOGIN_ID,
-    password: CUSTOMER_PASSWORD,
-    name: '데모고객',
-    phoneNumber: randomPhoneNumber(),
-  }
-  const riderCredentials = {
-    loginId: RIDER_LOGIN_ID,
-    password: RIDER_PASSWORD,
-    name: '데모라이더',
-    phoneNumber: randomPhoneNumber(),
-  }
+  // DO_SIGNUP(기본)이면 매 실행 새 계정으로 회원가입부터, 아니면 고정 배포 계정 로그인.
+  const suffix = uniqueSuffix()
+  const SIGNUP_PW = 'demo1234!' // #537: 비밀번호 8자 이상
+  const customerCredentials = DO_SIGNUP
+    ? { loginId: `democ${suffix}`, password: SIGNUP_PW, name: '데모고객', phoneNumber: randomPhoneNumber() }
+    : { loginId: CUSTOMER_LOGIN_ID, password: CUSTOMER_PASSWORD, name: '데모고객', phoneNumber: randomPhoneNumber() }
+  const riderCredentials = DO_SIGNUP
+    ? { loginId: `demor${suffix}`, password: SIGNUP_PW, name: '데모라이더', phoneNumber: randomPhoneNumber() }
+    : { loginId: RIDER_LOGIN_ID, password: RIDER_PASSWORD, name: '데모라이더', phoneNumber: randomPhoneNumber() }
 
   let riderBrowser
   let customerPage // finally 에서 녹화 영상을 저장하려면 스코프 밖에서 접근해야 한다.
@@ -740,7 +981,7 @@ async function main() {
     log('고객', `배차 완료 확인 (deliveryId=${deliveryId})`)
 
     // 1) ASSIGNED → (살짝 텀) → 픽업 출발 → 픽업지까지 이동
-    await riderPage.waitForTimeout(1500) // "픽업 출발하기"를 조금 천천히 누르게
+    await riderPage.waitForTimeout(3500) // "픽업 출발하기" 전 더 천천히
     await tapDeliveryAction(riderPage, '픽업 출발하기', '픽업 완료하기')
     await playRoute(ROUTE_TO_PICKUP, '픽업지')
 
