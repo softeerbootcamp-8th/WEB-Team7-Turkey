@@ -1,6 +1,7 @@
 package com.turkey.quick.common.auth;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 import org.springframework.data.redis.RedisSystemException;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -27,7 +28,7 @@ public class RedisSessionStore implements SessionStore {
      */
     @Override
     public void create(String sessionId, Long memberId, Duration ttl) {
-        String value = objectMapper.writeValueAsString(new SessionValue(memberId));
+        String value = objectMapper.writeValueAsString(new SessionValue(memberId, Instant.now()));
         redisTemplate.opsForValue().set(key(sessionId), value, ttl);
     }
 
@@ -39,7 +40,7 @@ public class RedisSessionStore implements SessionStore {
      * 원인 불명의 500 이 아니다.
      */
     @Override
-    public Optional<Long> findMemberId(String sessionId) {
+    public Optional<SessionInfo> find(String sessionId) {
         String value;
         try {
             value = redisTemplate.opsForValue().get(key(sessionId));
@@ -49,7 +50,8 @@ public class RedisSessionStore implements SessionStore {
         if (value == null) {
             return Optional.empty();
         }
-        return Optional.of(objectMapper.readValue(value, SessionValue.class).memberId());
+        SessionValue sessionValue = objectMapper.readValue(value, SessionValue.class);
+        return Optional.of(new SessionInfo(sessionValue.memberId(), sessionValue.createdAt()));
     }
 
     /**
@@ -73,5 +75,5 @@ public class RedisSessionStore implements SessionStore {
     }
 
     /** 세션 값의 JSON 형태(#511). 필드가 늘어도 SET ... EX 한 번으로 쓰는 구조 자체는 안 바뀐다. */
-    private record SessionValue(Long memberId) {}
+    private record SessionValue(Long memberId, Instant createdAt) {}
 }

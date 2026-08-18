@@ -14,6 +14,7 @@ import com.turkey.quick.member.domain.MemberRole;
 import com.turkey.quick.member.repository.MemberRepository;
 import jakarta.servlet.http.Cookie;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -145,6 +146,33 @@ class CustomerSessionInterceptorTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getStatus())
                 .isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    @DisplayName("절대 수명 상한(24h)을 넘긴 세션은 슬라이딩 여부와 무관하게 401을 던지고 세션을 지운다")
+    void shouldThrowUnauthorizedAndDeleteSessionPastAbsoluteTtl() {
+        String sessionId = "stale-session";
+        sessionStore.createAt(sessionId, MEMBER_ID, Instant.now().minus(SessionStore.ABSOLUTE_TTL).minusSeconds(1));
+        MockHttpServletRequest request = requestWithCookie(sessionId);
+
+        assertThatThrownBy(() -> interceptor.preHandle(request, new MockHttpServletResponse(), new Object()))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getStatus())
+                .isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(sessionStore.find(sessionId)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("절대 수명 상한에 아직 못 미친 세션은 정상 통과한다")
+    void shouldAuthenticateWhenSessionIsJustUnderAbsoluteTtl() {
+        String sessionId = "near-cap-session";
+        sessionStore.createAt(sessionId, MEMBER_ID, Instant.now().minus(SessionStore.ABSOLUTE_TTL).plusSeconds(5));
+        when(memberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(customer()));
+        MockHttpServletRequest request = requestWithCookie(sessionId);
+
+        boolean result = interceptor.preHandle(request, new MockHttpServletResponse(), new Object());
+
+        assertThat(result).isTrue();
     }
 
     @Test

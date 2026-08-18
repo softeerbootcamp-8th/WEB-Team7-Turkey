@@ -59,7 +59,7 @@ class RiderLoginServiceTest {
 
         assertThat(result.sessionId()).isNotBlank();
         assertThat(result.operatingStatus()).isEqualTo(OperatingStatus.UNAVAILABLE);
-        assertThat(sessionStore.get(result.sessionId())).containsKey("memberId");
+        assertThat(sessionStore.find(result.sessionId())).isPresent();
     }
 
     @Test

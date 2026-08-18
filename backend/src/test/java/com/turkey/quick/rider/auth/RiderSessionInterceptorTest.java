@@ -16,6 +16,7 @@ import com.turkey.quick.rider.domain.RiderProfile;
 import com.turkey.quick.rider.repository.RiderProfileRepository;
 import jakarta.servlet.http.Cookie;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -150,5 +151,19 @@ class RiderSessionInterceptorTest {
         String setCookie = response.getHeader("Set-Cookie");
         assertThat(setCookie).contains("SESSION_ID=");
         assertThat(setCookie).containsIgnoringCase("Max-Age=0");
+    }
+
+    @Test
+    @DisplayName("절대 수명 상한(24h)을 넘긴 세션은 BUSY 라이더의 슬라이딩 갱신 여부와 무관하게 401을 던지고 세션을 지운다")
+    void shouldThrowUnauthorizedAndDeleteSessionPastAbsoluteTtl() {
+        String sessionId = "stale-rider-session";
+        sessionStore.createAt(sessionId, MEMBER_ID, Instant.now().minus(SessionStore.ABSOLUTE_TTL).minusSeconds(1));
+        MockHttpServletRequest request = requestWithCookie(sessionId);
+
+        assertThatThrownBy(() -> interceptor.preHandle(request, new MockHttpServletResponse(), new Object()))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getStatus())
+                .isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(sessionStore.find(sessionId)).isEmpty();
     }
 }
