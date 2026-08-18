@@ -241,7 +241,7 @@ public class AcceptLoadSeeder implements ApplicationRunner {
         profile.goOnline(); // UNAVAILABLE → AVAILABLE (accept 조건부 UPDATE 대상)
         riderProfileRepository.save(profile);
         String sessionId = generateSessionId();
-        sessionStore.create(sessionId, member.getId(), MemberRole.RIDER.name(), SESSION_TTL);
+        sessionStore.create(sessionId, member.getId(), SESSION_TTL);
         return sessionId;
     }
 
