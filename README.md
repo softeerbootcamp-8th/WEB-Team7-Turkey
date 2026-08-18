@@ -14,7 +14,7 @@ Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실�
 
 - 🔗 [배포 링크](https://dw1nqa61d1no6.cloudfront.net/)
 
-- 📱 [모바일 앱 설치 링크](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/actions/runs/32091579745/artifacts/9308508377) — 라이더의 실시간 위치 전송을 위해 앱 설치가 필요합니다.
+- 📱 [모바일 앱 설치 링크](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/actions/workflows/build-mobile-apk.yml) — 라이더의 실시간 위치 전송을 위해 앱 설치가 필요합니다.(최신 액션에서 아티팩트 다운로드)
 
 - 📑 [API 문서 (Swagger)](https://dw1nqa61d1no6.cloudfront.net/swagger-ui/index.html#/)
 
