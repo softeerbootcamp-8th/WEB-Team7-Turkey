@@ -23,7 +23,7 @@ Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실�
 ## 🎬 시연 영상
 
 <div align="center">
-  <video src="https://github.com/user-attachments/assets/f5b42518-73b6-4d11-9ab6-8b4ec31e0d78" controls width="600"></video>
+  <video src="https://github.com/user-attachments/assets/59b183db-5e93-4dbc-9864-fdf12caac17d" controls width="600"></video>
 </div>
 
 <br>
