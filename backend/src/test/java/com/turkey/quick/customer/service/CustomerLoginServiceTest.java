@@ -60,7 +60,7 @@ class CustomerLoginServiceTest {
 
         CustomerLoginResult result = customerLoginService.login(LOGIN_ID, RAW_PASSWORD);
 
-        assertThat(sessionStore.get(result.sessionId())).containsKey("memberId");
+        assertThat(sessionStore.find(result.sessionId())).isPresent();
     }
 
     @Test

@@ -14,7 +14,7 @@ const ITEM_LABELS: Record<RiderDeliveryRequestDetailResponseItemType, string> = 
   FOOD: '음식',
 }
 
-export type AcceptFailureKind = 'competition' | 'uncertain' | 'failure'
+export type AcceptFailureKind = 'declined' | 'uncertain' | 'failure'
 
 export function formatItemType(itemType: RiderDeliveryRequestDetailResponseItemType | undefined): string {
   return itemType ? ITEM_LABELS[itemType] : '물품 정보 없음'
@@ -65,7 +65,9 @@ export function classifyAcceptFailure(error: unknown): AcceptFailureKind {
     return 'uncertain'
   }
   if (error.response?.status === 409) {
-    return 'competition'
+    // 409에는 취소·이미 배차·라이더 상태 등 여러 사유가 섞여 온다(#520). 프론트가 문자열로
+    // 사유를 추측하지 않고, 화면에서 서버 message(getAcceptErrorMessage)를 그대로 보여준다.
+    return 'declined'
   }
   if (!error.response || error.response.status >= 500) {
     return 'uncertain'

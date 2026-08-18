@@ -55,8 +55,16 @@ describe('상세 조회 오류', () => {
 })
 
 describe('콜 수락 오류', () => {
-  it('409를 배차 경쟁 실패로 분류한다', () => {
-    expect(classifyAcceptFailure(httpError(409))).toBe('competition')
+  it('사유와 무관하게 409는 declined로 분류한다(#520)', () => {
+    expect(classifyAcceptFailure(httpError(409))).toBe('declined')
+    expect(classifyAcceptFailure(httpError(409, '이미 다른 라이더가 배차를 확정했습니다.'))).toBe('declined')
+    expect(classifyAcceptFailure(httpError(409, '배송요청이 취소되어 배차를 확정할 수 없습니다.'))).toBe('declined')
+  })
+
+  it('409 사유는 서버 message를 그대로 화면에 쓴다(#520)', () => {
+    expect(getAcceptErrorMessage(httpError(409, '배송요청이 취소되어 배차를 확정할 수 없습니다.'))).toBe(
+      '배송요청이 취소되어 배차를 확정할 수 없습니다.',
+    )
   })
 
   it('네트워크 오류와 5xx를 결과 불명으로 분류한다', () => {

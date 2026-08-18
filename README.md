@@ -14,6 +14,8 @@ Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실�
 
 - 🔗 [배포 링크](https://dw1nqa61d1no6.cloudfront.net/)
 
+- 📱 [모바일 앱 설치 링크](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/actions/workflows/build-mobile-apk.yml) — 라이더의 실시간 위치 전송을 위해 앱 설치가 필요합니다.(최신 액션에서 아티팩트 다운로드)
+
 - 📑 [API 문서 (Swagger)](https://dw1nqa61d1no6.cloudfront.net/swagger-ui/index.html#/)
 
 <br>
@@ -21,7 +23,7 @@ Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실�
 ## 🎬 시연 영상
 
 <div align="center">
-  <video src="https://github.com/user-attachments/assets/f5b42518-73b6-4d11-9ab6-8b4ec31e0d78" controls width="600"></video>
+  <video src="https://github.com/user-attachments/assets/59b183db-5e93-4dbc-9864-fdf12caac17d" controls width="600"></video>
 </div>
 
 <br>
@@ -55,10 +57,10 @@ flowchart TB
     click C2 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-쿠키-세션-인증방식" "CORE 쿠키-세션 인증방식"
     click R2 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-쿠키-세션-인증방식" "CORE 쿠키-세션 인증방식"
     click C3 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-결제-정합성" "CORE 결제 정합성"
-    click C8 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-결제-정합성" "CORE 결제 정합성 · 취소=환급"
+    click C8 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-주문-취소" "CORE 주문 취소"
     click C5 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-실시간-위치-추적" "CORE 실시간 위치 추적"
-    click R3 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-배차-위치-검색" "CORE 배차 위치 검색"
-    click R4 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-콜받기" "CORE 콜받기"
+    click R3 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-콜-목록-조회" "CORE 콜 목록 조회"
+    click R4 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-배차-수락" "CORE 배차 수락"
     click R5 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-배송-상태-전이" "CORE 배송 상태 전이"
 
     classDef cus fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
@@ -87,7 +89,7 @@ flowchart TB
 
 ## 🏗️ 인프라 아키텍처
 
-![architecture_img](./imgs/architecture.png)
+![architecture_img](./imgs/다이어그램.drawio.png)
 
 <br>
 

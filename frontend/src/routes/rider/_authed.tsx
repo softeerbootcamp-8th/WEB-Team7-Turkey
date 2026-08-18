@@ -6,7 +6,11 @@ import { getGetRiderSessionQueryKey } from '@/api/generated/rider-session/rider-
 import { resolveRiderGuard } from '@/shared/auth/guard'
 import { ensureSessionInfo } from '@/shared/auth/session'
 import { SessionErrorScreen } from '@/shared/auth/SessionErrorScreen'
-import { startRiderLocationSender, useLocationSender } from '@/shared/hooks/useLocationSender'
+import {
+  ensureRiderLocationPermission,
+  startRiderLocationSender,
+  useLocationSender,
+} from '@/shared/hooks/useLocationSender'
 
 /**
  * 라이더 전용 화면의 인증 가드. 홈은 모든 운행 상태에서 열고, 콜 목록·진행 배송 화면은
@@ -55,10 +59,15 @@ function RiderAuthedLayout() {
     }
     setRetrying(true)
     try {
-      await startRiderLocationSender(operatingStatus)
+      // 상태에 맞는 재시도(#557): BUSY면 실제 위치 전송 시작, 그 전(AVAILABLE)이면 권한만 확보.
+      if (operatingStatus === 'BUSY') {
+        await startRiderLocationSender()
+      } else {
+        await ensureRiderLocationPermission()
+      }
       setLocationBlocked(false)
     } catch (error) {
-      console.error('Android 위치 서비스를 시작하지 못했습니다.', error)
+      console.error('위치 권한을 확보하지 못했습니다.', error)
     } finally {
       setRetrying(false)
     }

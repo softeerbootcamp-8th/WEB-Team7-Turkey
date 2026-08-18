@@ -9,6 +9,7 @@ import com.turkey.quick.order.service.ActiveDeliveryQueryService;
 import com.turkey.quick.order.service.DeliveryDetailQueryService;
 import com.turkey.quick.order.service.DeliveryEtaQueryService;
 import com.turkey.quick.order.service.DeliveryListQueryService;
+import com.turkey.quick.order.service.DeliveryOrderCreator;
 import com.turkey.quick.order.service.DeliveryService;
 import com.turkey.quick.order.service.DeliveryTimeoutService;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +34,9 @@ import org.springframework.web.bind.annotation.RestController;
 public class CustomerDeliveryController implements CustomerDeliveryApi {
 
     private final DeliveryService deliveryService;
+
+    /** 생성은 이 파사드를 거친다 — 동시 재전송 복구가 여기 있다({@code DeliveryService} 는 안쪽 구간). */
+    private final DeliveryOrderCreator deliveryOrderCreator;
     private final DeliveryTimeoutService deliveryTimeoutService;
     private final DeliveryListQueryService deliveryListQueryService;
     private final DeliveryDetailQueryService deliveryDetailQueryService;
@@ -62,7 +66,7 @@ public class CustomerDeliveryController implements CustomerDeliveryApi {
             AuthenticatedCustomer customer,
             @RequestBody DeliveryCreateRequest request) {
         deliveryTimeoutService.expireIfStale(customer.memberId());
-        return ApiResponse.ok(deliveryService.createDelivery(request, customer.memberId()));
+        return ApiResponse.ok(deliveryOrderCreator.create(request, customer.memberId()));
     }
 
     @Override

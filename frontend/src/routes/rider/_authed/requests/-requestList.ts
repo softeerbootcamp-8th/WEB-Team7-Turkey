@@ -15,6 +15,53 @@ export const RADIUS_OPTIONS = [
   { value: 10000, label: '10km' },
 ] as const
 
+export type SortOption = 'DISTANCE' | 'FARE' | 'DELIVERY_DISTANCE'
+
+/**
+ * 정렬 기준 3개 프리셋(#510). 방향은 기준별로 고정이라(#522) 별도 방향 토글이 없다 —
+ * DISTANCE·DELIVERY_DISTANCE는 오름차순, FARE는 내림차순으로 백엔드가 항상 그렇게 처리한다.
+ * 라벨은 "픽업"·"배송 거리"처럼 카드(RequestCard)가 이미 쓰는 용어를 그대로 가져왔다 —
+ * "가까운 순"·"짧은 순"만으로는 라이더가 픽업거리·배송거리 중 뭘 말하는지 구분할 수 없다.
+ */
+export const SORT_OPTIONS: ReadonlyArray<{ value: SortOption; label: string }> = [
+  { value: 'DISTANCE', label: '픽업 가까운 순' },
+  { value: 'FARE', label: '요금 높은 순' },
+  { value: 'DELIVERY_DISTANCE', label: '배송 거리 짧은 순' },
+]
+
+export type FareMinFilter = 'ALL' | number
+
+/**
+ * 최소 요금 프리셋(#510). 최대 요금(fareMax) UI는 일부러 안 만든다 — 라이더가 "너무 비싼 콜"을
+ * 피할 이유가 없어서다(계약 확정 논의).
+ *
+ * **이 프리셋 값(10,000/30,000/50,000)은 확정된 요금 정책에 근거한 게 아니다.** `fare_policy`
+ * 테이블은 스키마만 Flyway(V8)로 관리되고 실제 값을 넣는 시드는 로컬 개발용(`reset-and-seed-
+ * local.sql`, 기본요금 5,000 + km당 1,000 + 할증 0~2,000)뿐이라, 배포 환경에 어떤 요금 정책이
+ * 적용될지 이 코드베이스만으로는 알 수 없다. 실제 카카오T퀵 등 유사 서비스 감각(사람 확인)으로
+ * 잡은 잠정값이다 — 요금 정책이 확정되면 다시 조정해야 한다(CLAUDE.md 확인이 필요한 항목 참고).
+ */
+export const FARE_MIN_OPTIONS: ReadonlyArray<{ value: FareMinFilter; label: string }> = [
+  { value: 'ALL', label: '전체' },
+  { value: 10000, label: '10,000P 이상' },
+  { value: 30000, label: '30,000P 이상' },
+  { value: 50000, label: '50,000P 이상' },
+]
+
+export type DistanceMaxFilter = 'ALL' | number
+
+/**
+ * 최대 배송거리(픽업→도착지) 프리셋(#510). 최소 배송거리(distanceMin) UI는 안 만든다 — 짧은
+ * 배송을 피할 이유가 없어서다(요금과 같은 논리). 정책상 배송거리 상한(`FarePolicy.
+ * maxDeliveryDistanceMeters`, 로컬 시드 30km)을 넘는 프리셋은 의미가 없어 그 안으로 잡았다.
+ */
+export const DISTANCE_MAX_OPTIONS: ReadonlyArray<{ value: DistanceMaxFilter; label: string }> = [
+  { value: 'ALL', label: '전체' },
+  { value: 5000, label: '5km 이내' },
+  { value: 10000, label: '10km 이내' },
+  { value: 20000, label: '20km 이내' },
+]
+
 export type ItemFilter = 'ALL' | RiderDeliveryRequestSummaryResponseItemType
 
 export const ITEM_FILTER_OPTIONS: ReadonlyArray<{ value: ItemFilter; label: string }> = [
@@ -32,16 +79,6 @@ const ITEM_TYPE_LABELS: Record<RiderDeliveryRequestSummaryResponseItemType, stri
   MEDIUM_PARCEL: '중형',
   LARGE_PARCEL: '대형',
   FOOD: '음식',
-}
-
-export function filterRequestsByItem(
-  requests: RiderDeliveryRequestSummaryResponse[],
-  itemFilter: ItemFilter,
-): RiderDeliveryRequestSummaryResponse[] {
-  if (itemFilter === 'ALL') {
-    return requests
-  }
-  return requests.filter((request) => request.itemType === itemFilter)
 }
 
 export function formatItemType(itemType: RiderDeliveryRequestSummaryResponseItemType | undefined): string {
@@ -70,38 +107,54 @@ export interface RequestCursor {
   afterDistanceMeters?: number
   afterFare?: number
   afterRequestedAt?: string
+  afterDeliveryDistanceMeters?: number
   afterId?: number
 }
 
 /**
  * 지금까지 받은 마지막 항목(lastItem) 기준으로 "이 다음부터 보여달라"는 커서를 만든다.
- * 정렬값 + deliveryId 쌍을 담고, 어느 정렬값을 담을지는 hasPosition으로 갈린다:
+ * 정렬값 + deliveryId 쌍을 담고, 어느 정렬값을 담을지는 실제 적용되는 정렬 기준
+ * (effectiveSort)으로 갈린다 — "화면이 요청한 sort"가 아니다:
  *
- *  - 좌표가 있으면 → 픽업거리(afterDistanceMeters). 화면이 sort=DISTANCE로 요청하므로.
- *  - 좌표가 없으면 → 요청시각(afterRequestedAt). 백엔드가 좌표 없는 DISTANCE 요청을 조용히
- *    REQUESTED_AT으로 바꿔 처리하기 때문(#55 계약) — 이때 afterDistanceMeters를 보내면
- *    백엔드가 "정렬 기준과 커서가 안 맞는다"며 요청 자체를 거부한다(requireCursorMatchesSort).
+ *  - sort=DISTANCE인데 좌표가 없으면 → 백엔드가 조용히 REQUESTED_AT으로 대체하므로(#55 계약)
+ *    afterRequestedAt을 채운다. 좌표가 있으면 픽업거리(afterDistanceMeters).
+ *  - sort=FARE → 예상 정산액(afterFare). 항상 좌표와 무관.
+ *  - sort=DELIVERY_DISTANCE → 배송거리(afterDeliveryDistanceMeters, #522). 항상 좌표와 무관.
  *
- * lastItem에 필요한 값이 없으면(방어적) undefined를 반환한다 — 호출자는 이 경우 다음 페이지를
- * 요청하지 말아야 한다.
+ * 여기서 맞는 필드를 안 채우면 백엔드가 "정렬 기준과 커서가 안 맞는다"며 요청 자체를
+ * 거부한다(requireCursorMatchesSort). lastItem에 필요한 값이 없으면(방어적) undefined를
+ * 반환한다 — 호출자는 이 경우 다음 페이지를 요청하지 말아야 한다.
  */
 export function buildNextRequestCursor(
+  sort: SortOption,
   hasPosition: boolean,
   lastItem: RiderDeliveryRequestSummaryResponse | undefined,
 ): RequestCursor | undefined {
   if (!lastItem || lastItem.deliveryId == null) {
     return undefined
   }
-  if (hasPosition) {
-    if (lastItem.distanceToPickupMeters == null) {
+  if (sort === 'DISTANCE' && !hasPosition) {
+    if (lastItem.requestedAt == null) {
       return undefined
     }
-    return { afterDistanceMeters: lastItem.distanceToPickupMeters, afterId: lastItem.deliveryId }
+    return { afterRequestedAt: lastItem.requestedAt, afterId: lastItem.deliveryId }
   }
-  if (lastItem.requestedAt == null) {
+  if (sort === 'FARE') {
+    if (lastItem.expectedSettlementAmount == null) {
+      return undefined
+    }
+    return { afterFare: lastItem.expectedSettlementAmount, afterId: lastItem.deliveryId }
+  }
+  if (sort === 'DELIVERY_DISTANCE') {
+    if (lastItem.straightDistanceMeters == null) {
+      return undefined
+    }
+    return { afterDeliveryDistanceMeters: lastItem.straightDistanceMeters, afterId: lastItem.deliveryId }
+  }
+  if (lastItem.distanceToPickupMeters == null) {
     return undefined
   }
-  return { afterRequestedAt: lastItem.requestedAt, afterId: lastItem.deliveryId }
+  return { afterDistanceMeters: lastItem.distanceToPickupMeters, afterId: lastItem.deliveryId }
 }
 
 export function getRequestListErrorMessage(error: unknown): string {

@@ -146,18 +146,26 @@ async function signup(page, actor, { loginId, password, name, phoneNumber }) {
   await page.getByText('사용할 수 있는 아이디입니다.').waitFor({ timeout: 10_000 })
 
   await fillById(page, 'password', password)
-  await fillById(page, 'passwordConfirm', password)
   await fillById(page, 'userName', name)
   await fillById(page, 'userPhone', phoneNumber)
 
   await page.getByRole('button', { name: '인증번호 전송' }).click()
-  const debugCodeText = await page.locator('#signup-debug-code').innerText({ timeout: 10_000 })
-  const code = debugCodeText.match(/(\d{6})/)?.[1]
+  // 비밀번호 확인 입력칸은 없어졌고(회원가입 UX 개선), 인증번호도 더 이상 #signup-debug-code
+  // 요소로 노출되지 않는다. 대신 토스트(PhoneVerificationToast)로 뜨면서 화면이 그 값을 인증번호
+  // 입력칸(#verificationCode)에 자동으로 채운다 — 자동 채움 값을 그대로 읽어 확인만 하면 된다.
+  // 혹시 비어 있으면 토스트 문구("인증번호는 000000입니다")에서 6자리를 뽑아 채운다.
+  const codeInput = page.locator('#verificationCode')
+  await codeInput.waitFor({ timeout: 10_000 })
+  let code = (await codeInput.inputValue()).match(/(\d{6})/)?.[1]
   if (!code) {
-    throw new Error(`${actor}: 로컬 테스트 인증번호를 읽지 못했습니다: ${debugCodeText}`)
+    const toastText = await page.getByRole('status').filter({ hasText: '인증번호' }).innerText({ timeout: 10_000 })
+    code = toastText.match(/(\d{6})/)?.[1]
+    if (!code) {
+      throw new Error(`${actor}: 로컬 테스트 인증번호를 읽지 못했습니다: ${toastText}`)
+    }
+    await fillById(page, 'verificationCode', code)
   }
   log(actor, `인증번호 확인 (${code})`)
-  await fillById(page, 'verificationCode', code)
   await page.getByRole('button', { name: '인증 확인' }).click()
   await page.getByText('휴대전화 인증이 완료되었습니다.').waitFor({ timeout: 10_000 })
 

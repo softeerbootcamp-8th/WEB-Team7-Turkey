@@ -39,16 +39,6 @@
     --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
 
-/* Dark Mode Overrides (Optional) */
-@media (prefers-color-scheme: dark) {
-    :root {
-        --color-surface: #121212;
-        --color-on-surface: #e6e1e5;
-        --color-surface-container: #1e1e1e;
-        /* Add further dark mode mappings as needed */
-    }
-}
-
 /* Base Utility Classes */
 .bg-primary { background-color: var(--color-primary); }
 .text-primary { color: var(--color-primary); }

@@ -242,17 +242,14 @@ class CustomerSignupServiceTest {
     }
 
     @Test
-    @DisplayName("필수 약관에 동의하지 않으면 거부한다")
-    void shouldRejectMissingRequiredTermAgreement() {
+    @DisplayName("필수 약관에 동의하지 않아도 가입할 수 있다(#546, 백엔드 필수 약관 검증 제거)")
+    void shouldAllowSignupWithoutAgreeingToRequiredTerm() {
         issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
         when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of(term(1L, true)));
 
-        assertThatThrownBy(() -> customerSignupService.signup(request(List.of())))
-                .isInstanceOf(BusinessException.class)
-                .extracting(e -> ((BusinessException) e).getStatus())
-                .isEqualTo(HttpStatus.BAD_REQUEST);
+        CustomerSignupResult result = customerSignupService.signup(request(List.of()));
 
-        verify(memberRepository, never()).save(any());
+        assertThat(result.loginId()).isEqualTo(LOGIN_ID);
     }
 
     @Test
@@ -286,7 +283,7 @@ class CustomerSignupServiceTest {
         issueVerifiedToken(VerificationPurpose.SIGNUP, PHONE_NUMBER);
         when(termRepository.findByActiveTrueAndTargetRoleIn(any())).thenReturn(List.of(term(1L, true)));
 
-        assertThatThrownBy(() -> customerSignupService.signup(request(List.of())))
+        assertThatThrownBy(() -> customerSignupService.signup(request(List.of(1L, 999L))))
                 .isInstanceOf(BusinessException.class);
 
         // 토큰이 아직 살아 있어야 사용자가 약관만 고쳐서 재시도할 수 있다.

@@ -117,13 +117,6 @@ public class RiderSignupService {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "유효하지 않은 약관입니다.");
         }
 
-        boolean missingRequired = activeTerms.stream()
-                .filter(Term::isRequired)
-                .anyMatch(term -> !agreedIds.contains(term.getId()));
-        if (missingRequired) {
-            throw new BusinessException(HttpStatus.BAD_REQUEST, "필수 약관에 모두 동의해야 합니다.");
-        }
-
         return activeTerms.stream().filter(term -> agreedIds.contains(term.getId())).collect(Collectors.toList());
     }
 }

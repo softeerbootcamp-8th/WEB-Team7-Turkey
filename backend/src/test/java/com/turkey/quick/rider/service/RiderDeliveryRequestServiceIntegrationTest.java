@@ -2,6 +2,7 @@ package com.turkey.quick.rider.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 
 import com.turkey.quick.common.exception.BusinessException;
 import com.turkey.quick.member.domain.Member;
@@ -31,6 +32,7 @@ import com.turkey.quick.rider.repository.RiderProfileRepository;
 import com.turkey.quick.support.IntegrationTestSupport;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -100,16 +102,16 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
     }
 
     private static final RiderDeliveryRequestFilter NO_FILTER =
-            new RiderDeliveryRequestFilter(null, null, null, null);
+            new RiderDeliveryRequestFilter(null, null, null, null, null);
     private static final RiderDeliveryRequestCursor FIRST_PAGE =
-            new RiderDeliveryRequestCursor(null, null, null, null);
+            new RiderDeliveryRequestCursor(null, null, null, null, null);
     private static final int DEFAULT_SIZE = 20;
 
     /** #60 이전(필터·정렬 방향·페이지네이션 없음) 동작을 검증하던 기존 테스트가 쓰는 기본 호출. */
     private List<RiderDeliveryRequestSummaryResponse> callDefault(
             AuthenticatedRider rider, BigDecimal latitude, BigDecimal longitude, int radiusMeters, String sort) {
         return riderDeliveryRequestService.getDeliveryRequests(rider, latitude, longitude, radiusMeters, sort,
-                null, NO_FILTER, DEFAULT_SIZE, FIRST_PAGE).items();
+                NO_FILTER, DEFAULT_SIZE, FIRST_PAGE).items();
     }
 
     /**
@@ -245,6 +247,63 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         assertThat(summary.expectedSettlementAmount()).isEqualTo(3130L);
     }
 
+    /**
+     * #559: {@code DeliveryOrderRepository.findByStatus} 가 엔터티 대신 {@code
+     * WaitingDeliverySummary} 투영을 반환하도록 바뀌었다. 이 메서드는 파생 쿼리라 컬럼 별칭을
+     * 직접 쓰지 않으므로, {@code pickup}/{@code destination}(둘 다 {@code @Embeddable Address})
+     * 평탄화 getter({@code getPickupRoadAddress()} 등)를 스프링 데이터가 실제로 매핑해주는지가
+     * 이 이슈의 핵심 리스크였다 — 불일치하면 해당 필드가 예외 없이 조용히 null이 된다. 목(mock)이
+     * 아니라 실제 MySQL로 확인해야 하는 이유가 이것이다.
+     */
+    @Test
+    @DisplayName("좌표 없이 조회해도(findByStatus 경로) 프로젝션이 모든 필드를 채운다 — 임베더블 평탄화 검증(#559)")
+    void shouldPopulateAllSummaryFieldsViaFindByStatusProjection() {
+        DeliveryOrder order = saveWaitingOrder(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"));
+
+        List<RiderDeliveryRequestSummaryResponse> result = callDefault(
+                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "REQUESTED_AT");
+
+        RiderDeliveryRequestSummaryResponse summary = result.stream()
+                .filter(r -> r.deliveryId().equals(order.getId())).findFirst().orElseThrow();
+        assertThat(summary.itemType()).isEqualTo(ItemType.SMALL_PARCEL);
+        assertThat(summary.pickupRoadAddress()).isEqualTo("픽업지 도로명");
+        assertThat(summary.destinationRoadAddress()).isEqualTo("도착지 도로명");
+        assertThat(summary.straightDistanceMeters()).isEqualTo(1000);
+        // MySQL DATETIME 컬럼의 소수 자릿수(밀리초)가 자바 LocalDateTime.now()의 마이크로초
+        // 정밀도보다 낮아, 저장 전 메모리 값과 라운드트립한 값이 마지막 자릿수에서 갈린다 —
+        // 프로젝션과 무관하게 어떤 LocalDateTime 컬럼이든 겪는 문제라 근사 비교로 검증한다.
+        assertThat(summary.requestedAt()).isCloseTo(order.getRequestedAt(), within(1, ChronoUnit.SECONDS));
+    }
+
+    /**
+     * #559: {@code findWaitingOrdersWithinBoundingBox} 는 네이티브 쿼리라 {@code SELECT} 절의
+     * {@code AS} 별칭을 {@link com.turkey.quick.order.dto.WaitingDeliverySummary} 의 게터 이름과
+     * 손으로 맞춰야 한다 — 오탈자가 나도 컴파일은 통과하고 해당 필드만 null이 되므로 실제 DB로
+     * 검증한다.
+     */
+    @Test
+    @DisplayName("좌표를 주고 조회해도(bounding box 경로) 네이티브 프로젝션이 모든 필드를 채운다(#559)")
+    void shouldPopulateAllSummaryFieldsViaBoundingBoxProjection() {
+        BigDecimal riderLat = new BigDecimal("37.5000000");
+        BigDecimal riderLng = new BigDecimal("127.0000000");
+        DeliveryOrder order = saveWaitingOrder(new BigDecimal("37.5010000"), new BigDecimal("127.0010000"));
+
+        List<RiderDeliveryRequestSummaryResponse> result = callDefault(
+                authenticatedRider(OperatingStatus.AVAILABLE), riderLat, riderLng, 3000, "DISTANCE");
+
+        RiderDeliveryRequestSummaryResponse summary = result.stream()
+                .filter(r -> r.deliveryId().equals(order.getId())).findFirst().orElseThrow();
+        assertThat(summary.itemType()).isEqualTo(ItemType.SMALL_PARCEL);
+        assertThat(summary.pickupRoadAddress()).isEqualTo("픽업지 도로명");
+        assertThat(summary.destinationRoadAddress()).isEqualTo("도착지 도로명");
+        assertThat(summary.straightDistanceMeters()).isEqualTo(1000);
+        // MySQL DATETIME 컬럼의 소수 자릿수(밀리초)가 자바 LocalDateTime.now()의 마이크로초
+        // 정밀도보다 낮아, 저장 전 메모리 값과 라운드트립한 값이 마지막 자릿수에서 갈린다 —
+        // 프로젝션과 무관하게 어떤 LocalDateTime 컬럼이든 겪는 문제라 근사 비교로 검증한다.
+        assertThat(summary.requestedAt()).isCloseTo(order.getRequestedAt(), within(1, ChronoUnit.SECONDS));
+        assertThat(summary.distanceToPickupMeters()).isNotNull();
+    }
+
     @Test
     @DisplayName("운임 범위 필터로 실제 DB에서도 범위 밖 주문을 제외한다(#60)")
     void shouldExcludeOrdersOutsideFareRangeInRealDb() {
@@ -252,8 +311,8 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         DeliveryOrder expensive = saveWaitingOrderWithFareAndDistance(9000L, 1000);
 
         RiderDeliveryRequestPageResponse result = riderDeliveryRequestService.getDeliveryRequests(
-                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "REQUESTED_AT", null,
-                new RiderDeliveryRequestFilter(5000L, null, null, null), DEFAULT_SIZE, FIRST_PAGE);
+                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "REQUESTED_AT",
+                new RiderDeliveryRequestFilter(5000L, null, null, null, null), DEFAULT_SIZE, FIRST_PAGE);
 
         assertThat(result.items()).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
                 .contains(expensive.getId())
@@ -267,8 +326,8 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
         DeliveryOrder far = saveWaitingOrderWithFareAndDistance(4000L, 5000);
 
         RiderDeliveryRequestPageResponse result = riderDeliveryRequestService.getDeliveryRequests(
-                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "REQUESTED_AT", null,
-                new RiderDeliveryRequestFilter(null, null, null, 2000), DEFAULT_SIZE, FIRST_PAGE);
+                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "REQUESTED_AT",
+                new RiderDeliveryRequestFilter(null, null, null, 2000, null), DEFAULT_SIZE, FIRST_PAGE);
 
         assertThat(result.items()).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
                 .contains(near.getId())
@@ -277,39 +336,41 @@ class RiderDeliveryRequestServiceIntegrationTest extends IntegrationTestSupport 
 
     /**
      * keyset 페이지네이션이 offset과 다르게 목록 변경에 안전한지 실제 DB로 검증한다(#60).
+     * sort=FARE는 방향을 요청하지 않아도 항상 내림차순(#522)이라, 이 테스트도 내림차순 기준으로
+     * 검증한다 — o3(9000)·o2(5000)·o1(3000) 순.
      *
-     * <p>1페이지(size=2, 운임 오름차순)를 받은 뒤, 두 페이지 사이에 1페이지에서 이미 봤던 항목과
-     * 그다음 항목(o2) "사이" 값(운임 4000)을 가진 새 주문을 끼워 넣는다. offset 방식이었다면 이
-     * 삽입으로 모든 뒤 항목이 한 칸씩 밀려, 2페이지(OFFSET 2)가 이미 1페이지에서 보여준 o2를
-     * 다시 보여주는 중복이 생긴다. keyset은 "커서(o2의 운임+id) 다음 값"만 비교하므로 새로 끼어든
-     * 항목(4000 — 커서 값 5000보다 작음)이 있어도 o2를 중복해서 보여주지 않고, o3만 정확히 반환한다.
+     * <p>1페이지(size=2)를 받은 뒤, 두 페이지 사이에 1페이지에서 이미 보여준 두 항목(o3=9000,
+     * o2=5000) "사이" 값(운임 7000)을 가진 새 주문을 끼워 넣는다. offset 방식이었다면 이 삽입으로
+     * 뒤 항목이 한 칸씩 밀려 2페이지가 이미 1페이지에서 보여준 o2를 다시 보여주는 중복이 생긴다.
+     * keyset은 "커서(o2의 운임+id)보다 작은 값"만 비교하므로 새로 끼어든 항목(7000 — 커서 값
+     * 5000보다 큼)이 있어도 o2를 중복해서 보여주지 않고, o1만 정확히 반환한다.
      */
     @Test
-    @DisplayName("페이지 사이에 새 주문이 끼어들어도 keyset은 중복 없이 다음 항목만 반환한다(#60)")
+    @DisplayName("페이지 사이에 새 주문이 끼어들어도 keyset은 중복 없이 다음 항목만 반환한다(#60/#522, FARE 내림차순)")
     void keysetPaginationSurvivesConcurrentInsertBetweenPages() {
         DeliveryOrder o1 = saveWaitingOrderWithFareAndDistance(3000L, 1000);
         DeliveryOrder o2 = saveWaitingOrderWithFareAndDistance(5000L, 1000);
         DeliveryOrder o3 = saveWaitingOrderWithFareAndDistance(9000L, 1000);
 
         RiderDeliveryRequestPageResponse firstPage = riderDeliveryRequestService.getDeliveryRequests(
-                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "FARE", "ASC",
+                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "FARE",
                 NO_FILTER, 2, FIRST_PAGE);
         assertThat(firstPage.items()).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
-                .containsExactly(o1.getId(), o2.getId());
+                .containsExactly(o3.getId(), o2.getId());
 
-        // 1페이지와 2페이지 사이에 o1·o2 사이 값(4000)을 가진 새 주문이 생긴다.
-        saveWaitingOrderWithFareAndDistance(4000L, 1000);
+        // 1페이지와 2페이지 사이에 o3·o2 사이 값(7000)을 가진 새 주문이 생긴다.
+        saveWaitingOrderWithFareAndDistance(7000L, 1000);
 
         RiderDeliveryRequestSummaryResponse lastOfFirstPage = firstPage.items().get(1);
         RiderDeliveryRequestCursor afterO2 = new RiderDeliveryRequestCursor(
-                null, lastOfFirstPage.expectedSettlementAmount(), null, lastOfFirstPage.deliveryId());
+                null, lastOfFirstPage.expectedSettlementAmount(), null, null, lastOfFirstPage.deliveryId());
 
         RiderDeliveryRequestPageResponse secondPage = riderDeliveryRequestService.getDeliveryRequests(
-                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "FARE", "ASC",
+                authenticatedRider(OperatingStatus.AVAILABLE), null, null, 100_000, "FARE",
                 NO_FILTER, 2, afterO2);
 
         assertThat(secondPage.items()).extracting(RiderDeliveryRequestSummaryResponse::deliveryId)
-                .containsExactly(o3.getId());
+                .containsExactly(o1.getId());
         assertThat(secondPage.hasNext()).isFalse();
     }
 

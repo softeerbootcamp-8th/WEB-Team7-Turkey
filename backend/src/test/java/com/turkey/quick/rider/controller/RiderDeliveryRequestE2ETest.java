@@ -174,6 +174,43 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
         return saved;
     }
 
+    /** #522 sort=DELIVERY_DISTANCE 검증용 — 배송거리(픽업→도착지)를 지정해 WAITING 주문을 만든다. */
+    private DeliveryOrder saveWaitingOrderWithDistance(int distanceMeters) {
+        String uniqueSuffix = String.valueOf(System.nanoTime() % 100_000_000L);
+        FarePolicy policy = farePolicyRepository.save(
+                FarePolicy.create("v1-" + uniqueSuffix, 3000L, 100, 130L, 30000, LocalDateTime.now().minusDays(1)));
+        Member customer = memberRepository.save(
+                Member.create("e2e_rider_requests_customer_" + uniqueSuffix, "hash", "고객", "010" + uniqueSuffix,
+                        MemberRole.CUSTOMER));
+        DeliveryOrder order = DeliveryOrder.request(customer, "req-e2e-" + System.nanoTime(), ItemType.SMALL_PARCEL,
+                distanceMeters,
+                Address.of("픽업지 도로명", "상세", "12345", new BigDecimal("37.5010000"), new BigDecimal("127.0010000")),
+                Address.of("도착지 도로명", "상세", "54321", new BigDecimal("37.6000000"), new BigDecimal("127.1000000")),
+                Contact.of("보내는사람", "01011112222"), Contact.of("받는사람", "01033334444"));
+        DeliveryOrder saved = deliveryOrderRepository.save(order);
+        orderFareSnapshotRepository.save(OrderFareSnapshot.create(
+                saved, policy, FareType.ESTIMATE, policy.getPolicyVersion(), distanceMeters, 4000L, 130L, 0L));
+        return saved;
+    }
+
+    /** #522 물품 종류 필터 검증용 — item type을 지정해 WAITING 주문을 만든다. */
+    private DeliveryOrder saveWaitingOrderWithItemType(ItemType itemType) {
+        String uniqueSuffix = String.valueOf(System.nanoTime() % 100_000_000L);
+        FarePolicy policy = farePolicyRepository.save(
+                FarePolicy.create("v1-" + uniqueSuffix, 3000L, 100, 130L, 30000, LocalDateTime.now().minusDays(1)));
+        Member customer = memberRepository.save(
+                Member.create("e2e_rider_requests_customer_" + uniqueSuffix, "hash", "고객", "010" + uniqueSuffix,
+                        MemberRole.CUSTOMER));
+        DeliveryOrder order = DeliveryOrder.request(customer, "req-e2e-" + System.nanoTime(), itemType, 1000,
+                Address.of("픽업지 도로명", "상세", "12345", new BigDecimal("37.5010000"), new BigDecimal("127.0010000")),
+                Address.of("도착지 도로명", "상세", "54321", new BigDecimal("37.6000000"), new BigDecimal("127.1000000")),
+                Contact.of("보내는사람", "01011112222"), Contact.of("받는사람", "01033334444"));
+        DeliveryOrder saved = deliveryOrderRepository.save(order);
+        orderFareSnapshotRepository.save(
+                OrderFareSnapshot.create(saved, policy, FareType.ESTIMATE, policy.getPolicyVersion(), 1000, 3000L, 130L, 0L));
+        return saved;
+    }
+
     /** OrderFareSnapshot 합(3000+130) — 아래 픽스처가 "이미 낸 요금"으로 미리 차감해 두는 금액. */
     private static final long WALLET_FIXTURE_FARE = 3_130L;
 
@@ -293,6 +330,44 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
         Map<?, ?> page = (Map<?, ?>) response.getBody().data();
         assertThat((List<?>) page.get("items")).hasSize(2);
         assertThat(page.get("hasNext")).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName("itemType 필터를 보내면 해당 물품 종류만 반환한다(#522)")
+    void shouldReturnOnlyRequestsMatchingItemType() {
+        saveRider("e2e_rider_requests18", "p@ssw0rd", "01099998881", true);
+        DeliveryOrder parcel = saveWaitingOrderWithItemType(ItemType.SMALL_PARCEL);
+        DeliveryOrder food = saveWaitingOrderWithItemType(ItemType.FOOD);
+        String cookie = loginAndGetSessionCookie("e2e_rider_requests18", "p@ssw0rd");
+
+        var response = rest.exchange(ENDPOINT + "?itemType=FOOD",
+                HttpMethod.GET, withCookie(cookie), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<?, ?> page = (Map<?, ?>) response.getBody().data();
+        List<Integer> deliveryIds = ((List<?>) page.get("items")).stream()
+                .map(o -> (Integer) ((Map<?, ?>) o).get("deliveryId"))
+                .toList();
+        assertThat(deliveryIds).contains(food.getId().intValue()).doesNotContain(parcel.getId().intValue());
+    }
+
+    @Test
+    @DisplayName("sort=DELIVERY_DISTANCE를 보내면 배송거리(픽업→도착지) 오름차순으로 반환한다(#522)")
+    void shouldSortByDeliveryDistanceAscending() {
+        saveRider("e2e_rider_requests19", "p@ssw0rd", "01099998880", true);
+        DeliveryOrder far = saveWaitingOrderWithDistance(5000);
+        DeliveryOrder near = saveWaitingOrderWithDistance(1000);
+        String cookie = loginAndGetSessionCookie("e2e_rider_requests19", "p@ssw0rd");
+
+        var response = rest.exchange(ENDPOINT + "?sort=DELIVERY_DISTANCE",
+                HttpMethod.GET, withCookie(cookie), ApiResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<?, ?> page = (Map<?, ?>) response.getBody().data();
+        List<Integer> deliveryIds = ((List<?>) page.get("items")).stream()
+                .map(o -> (Integer) ((Map<?, ?>) o).get("deliveryId"))
+                .toList();
+        assertThat(deliveryIds).containsExactly(near.getId().intValue(), far.getId().intValue());
     }
 
     @Test
