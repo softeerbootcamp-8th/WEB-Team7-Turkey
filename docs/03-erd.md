@@ -97,7 +97,7 @@ MySQL 일반 제약조건만으로 다음 정책을 직접 표현하기 어려�
 ```text
 Session
 key: session:{sessionId}
-value: JSON string, {"memberId": ...} (#511, String + SET ... EX — 이전엔 Hash + HSET/EXPIRE 별도 호출)
+value: JSON string, {"memberId": ..., "createdAt": ...} (#511, String + SET ... EX — 이전엔 Hash + HSET/EXPIRE 별도 호출. createdAt은 절대 수명 상한(24h, #562) 판정 전용이고 슬라이딩(EXPIRE)으로는 갱신되지 않는다)
 
 Rider Current Location
 key: rider:location:{riderId}

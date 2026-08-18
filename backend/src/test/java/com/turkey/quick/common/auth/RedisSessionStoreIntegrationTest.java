@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.turkey.quick.support.IntegrationTestSupport;
 import java.time.Duration;
+import java.time.Instant;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -73,5 +74,16 @@ class RedisSessionStoreIntegrationTest extends IntegrationTestSupport {
 
         assertThat(redisTemplate.type(KEY)).isEqualTo(DataType.HASH);
         assertThat(sessionStore.findMemberId(SESSION_ID)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("세션 생성 시각을 저장하고, 슬라이딩(extend)이 그 값을 건드리지 않는다(절대 수명 상한 판정용)")
+    void shouldPreserveCreatedAtAcrossSliding() {
+        sessionStore.create(SESSION_ID, 42L, Duration.ofHours(2));
+        Instant createdAt = sessionStore.find(SESSION_ID).orElseThrow().createdAt();
+
+        sessionStore.extend(SESSION_ID, Duration.ofHours(2));
+
+        assertThat(sessionStore.find(SESSION_ID).orElseThrow().createdAt()).isEqualTo(createdAt);
     }
 }
