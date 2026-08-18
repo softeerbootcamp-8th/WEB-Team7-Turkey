@@ -57,10 +57,10 @@ flowchart TB
     click C2 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-쿠키-세션-인증방식" "CORE 쿠키-세션 인증방식"
     click R2 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-쿠키-세션-인증방식" "CORE 쿠키-세션 인증방식"
     click C3 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-결제-정합성" "CORE 결제 정합성"
-    click C8 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-결제-정합성" "CORE 결제 정합성 · 취소=환급"
+    click C8 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-주문-취소" "CORE 주문 취소"
     click C5 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-실시간-위치-추적" "CORE 실시간 위치 추적"
-    click R3 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-배차-위치-검색" "CORE 배차 위치 검색"
-    click R4 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-콜받기" "CORE 콜받기"
+    click R3 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-콜-목록-조회" "CORE 콜 목록 조회"
+    click R4 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-배차-수락" "CORE 배차 수락"
     click R5 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-배송-상태-전이" "CORE 배송 상태 전이"
 
     classDef cus fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
