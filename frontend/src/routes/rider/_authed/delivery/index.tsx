@@ -12,6 +12,7 @@ import type {
   RiderDeliveryTransitionRequestAction,
 } from '@/api/generated/turkeyQuickDeliveryAPI.schemas'
 import { RequestRouteMap } from '../requests/$deliveryId/-components/RequestRouteMap'
+import { LocationSimulationControl } from './-components/LocationSimulationControl'
 import {
   formatAddress,
   formatDeliveryAmount,
@@ -82,6 +83,10 @@ function RiderDelivery() {
 
   const navigationAddress = stage.navigationTarget === 'pickup' ? delivery.pickup : delivery.destination
   const navigationUrl = getKakaoNavigationUrl(navigationAddress)
+  const simulationTarget = typeof navigationAddress?.latitude === 'number'
+    && typeof navigationAddress.longitude === 'number'
+    ? { latitude: navigationAddress.latitude, longitude: navigationAddress.longitude }
+    : null
   const transitionAction = delivery.nextAction === 'COMPLETE' ? null : delivery.nextAction
   const needsCompletionProof = delivery.nextAction === 'COMPLETE'
 
@@ -96,6 +101,8 @@ function RiderDelivery() {
           {stage.statusLabel}
         </span>
       </header>
+
+      <LocationSimulationControl target={simulationTarget} />
 
       <section aria-label="배송 경로 지도" className="h-64 shrink-0 bg-surface-container-high">
         <RequestRouteMap pickup={delivery.pickup} destination={delivery.destination} />
