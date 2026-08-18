@@ -4,6 +4,7 @@ import com.turkey.quick.order.domain.DeliveryOrder;
 import com.turkey.quick.order.domain.OrderStatus;
 import com.turkey.quick.order.dto.InProgressDelivery;
 import com.turkey.quick.order.dto.TrackableDelivery;
+import com.turkey.quick.order.dto.WaitingDeliverySummary;
 import jakarta.persistence.LockModeType;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -228,7 +229,13 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
            nativeQuery = true)
     Optional<InProgressDelivery> findInProgressByActiveRiderId(@Param("riderId") Long riderId);
 
-    List<DeliveryOrder> findByStatus(OrderStatus status);
+    /**
+     * 라이더 콜 목록 전수 조회(#55, 좌표 미전송 시). 응답이 실제로 쓰는 8개 필드만 담은
+     * {@link WaitingDeliverySummary} 로 받는다(discussion #549, #559) — 리턴 타입만 바꿨고
+     * 쿼리 문자열은 없다(파생 메서드). 인터페이스 기반 닫힌 투영이라 스프링 데이터가 내부적으로
+     * 생성하는 JPQL의 SELECT 절도 이 8개로 좁혀진다.
+     */
+    List<WaitingDeliverySummary> findByStatus(OrderStatus status);
 
     /**
      * 라이더 콜 목록 위치 검색(#367)의 bounding box 쿼리. status·픽업 위경도가 사각형 범위 안에
@@ -247,13 +254,25 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
      * <p>사각형은 실제 반경(원)보다 넓다(4/π ≈ 1.27배) — 모서리에 걸리는 후보는 이 쿼리로
      * 걸러지지 않는다. 호출자({@code RiderDeliveryRequestService})가 하버사인 거리로 다시
      * 걸러 원 밖을 제외한다.
+     *
+     * <p><b>{@code SELECT *} 대신 8개 컬럼만 별칭 지정해 SELECT하는 이유</b>(discussion #549,
+     * #559): 나머지 컬럼(연락처, 단계별 타임스탬프 등)은 콜 목록 응답이 안 쓰는데도 엔터티로
+     * 받으면 매번 추출·매핑되고 영속성 컨텍스트에도 등록됐다. 리턴 타입을 {@link
+     * WaitingDeliverySummary} 로 바꿔 그 비용을 없앤다 — 네이티브 투영이라 컬럼 별칭이 그
+     * 인터페이스의 게터 이름과 정확히 일치해야 한다({@link InProgressDelivery} 와 같은 규약).
      */
-    @Query(value = "SELECT * FROM delivery_order FORCE INDEX (idx_delivery_waiting_location) "
+    @Query(value = "SELECT order_id AS id, item_type AS itemType, "
+            + "pickup_road_address AS pickupRoadAddress, "
+            + "pickup_latitude AS pickupLatitude, pickup_longitude AS pickupLongitude, "
+            + "destination_road_address AS destinationRoadAddress, "
+            + "straight_distance_meters AS straightDistanceMeters, "
+            + "requested_at AS requestedAt "
+            + "FROM delivery_order FORCE INDEX (idx_delivery_waiting_location) "
             + "WHERE status = 'WAITING' "
             + "AND pickup_latitude BETWEEN :latMin AND :latMax "
             + "AND pickup_longitude BETWEEN :lngMin AND :lngMax",
             nativeQuery = true)
-    List<DeliveryOrder> findWaitingOrdersWithinBoundingBox(
+    List<WaitingDeliverySummary> findWaitingOrdersWithinBoundingBox(
             @Param("latMin") BigDecimal latMin, @Param("latMax") BigDecimal latMax,
             @Param("lngMin") BigDecimal lngMin, @Param("lngMax") BigDecimal lngMax);
 
