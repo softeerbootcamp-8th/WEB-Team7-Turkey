@@ -1,10 +1,13 @@
 package com.turkey.quick.location.sse;
 
-import lombok.RequiredArgsConstructor;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import java.io.IOException;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-import java.io.IOException;
 
 /**
  * 이 인스턴스가 들고 있는 SSE 연결로만 위치를 내보낸다.
@@ -16,15 +19,41 @@ import java.io.IOException;
  * <p>페이로드는 이미 직렬화된 JSON 문자열이다 — 발행 지점에서 만든 것을 그대로 흘린다.
  * 이벤트 이름을 붙이지 않으므로 브라우저 쪽에서는 기본 {@code message} 이벤트로 도착한다
  * (프론트 {@code useTrackingStream.onmessage} 계약).
+ *
+ * <p><b>개별 {@code SseEmitter} 당 동시 전송을 1개로 제한한다</b>(#566, 2026-08-18). 배송
+ * (deliveryId) 하나에 물린 느린 연결이 초당 수백 건씩 받으면, 그 메시지마다 새 가상 스레드가
+ * {@code RedisMessageListenerConfig} 의 전역 {@code Semaphore(1000)} permit 을 쥔 채 그 연결의
+ * 소켓 쓰기에서 멈춘다 — 정체된 연결 몇 개가 이 예산을 계속 재소모해 전혀 무관한 다른 배송까지
+ * permit 을 못 구해 굶는 문제가 실측으로 확인됐다(느린 클라이언트 5개, 60초 동안 무관한 배송
+ * 이벤트 0건 수신, `docs/loadtest/2026-08-18-sse-fanout-virtual-thread-verification.md`).
+ * 같은 연결에 대한 이전 전송이 아직 안 끝났으면 새 메시지는 permit 을 오래 붙잡지 않고 즉시
+ * 버린다 — 위치 데이터는 최신 값만 의미 있다는 기존 철학(#297/#391)과 같다.
+ *
+ * <p><b>배송(deliveryId) 단위가 아니라 개별 연결({@code SseEmitter}) 단위로 막는다.</b> 같은
+ * 배송에 연결이 여러 개일 수 있어서다({@link SseRegistry} 는 {@code orderId} 당
+ * {@code Set<SseEmitter>} 를 들고 있다 — 같은 고객이 탭을 여러 개 열면 그럴 수 있다). deliveryId
+ * 단위로 막으면 한 탭이 느리다는 이유로 같은 배송의 멀쩡한 다른 탭까지 같이 굶는다.
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class SseRelay {
     private final SseRegistry registry;
+    private final Counter coalesced;
+    private final Set<SseEmitter> inFlight = ConcurrentHashMap.newKeySet();
+
+    public SseRelay(SseRegistry registry, MeterRegistry meterRegistry) {
+        this.registry = registry;
+        this.coalesced = Counter.builder("sse.fanout.coalesced")
+                .description("같은 연결에 대한 이전 전송이 아직 끝나지 않아 건너뛴 이벤트")
+                .register(meterRegistry);
+    }
 
     public void publish(Long deliveryId, String locationJson) {
         for (SseEmitter emitter : registry.connectionOf(deliveryId)) {
+            if (!inFlight.add(emitter)) {
+                coalesced.increment();
+                continue;
+            }
             try {
                 emitter.send(locationJson);
             } catch (IOException | IllegalStateException e) {
@@ -33,6 +62,8 @@ public class SseRelay {
                 log.warn("event=SSE_SEND_FAILED orderId={} reason={}",
                         deliveryId, "CLIENT_DISCONNECTED");
                 registry.remove(deliveryId, emitter);
+            } finally {
+                inFlight.remove(emitter);
             }
         }
     }
