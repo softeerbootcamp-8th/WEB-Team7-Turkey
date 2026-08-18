@@ -89,7 +89,7 @@ flowchart TB
 
 ## 🏗️ 인프라 아키텍처
 
-![architecture_img](./imgs/아키텍처.drawio-2.png)
+![architecture_img](./imgs/다이어그램.drawio.png)
 
 <br>
 
