@@ -261,16 +261,20 @@ public interface DeliveryOrderRepository extends JpaRepository<DeliveryOrder, Lo
      * WaitingDeliverySummary} 로 바꿔 그 비용을 없앤다 — 네이티브 투영이라 컬럼 별칭이 그
      * 인터페이스의 게터 이름과 정확히 일치해야 한다({@link InProgressDelivery} 와 같은 규약).
      */
-    @Query(value = "SELECT order_id AS id, item_type AS itemType, "
-            + "pickup_road_address AS pickupRoadAddress, "
-            + "pickup_latitude AS pickupLatitude, pickup_longitude AS pickupLongitude, "
-            + "destination_road_address AS destinationRoadAddress, "
-            + "straight_distance_meters AS straightDistanceMeters, "
-            + "requested_at AS requestedAt "
-            + "FROM delivery_order FORCE INDEX (idx_delivery_waiting_location) "
-            + "WHERE status = 'WAITING' "
-            + "AND pickup_latitude BETWEEN :latMin AND :latMax "
-            + "AND pickup_longitude BETWEEN :lngMin AND :lngMax",
+    @Query(value = """
+            SELECT order_id AS id,
+                   item_type AS itemType,
+                   pickup_road_address AS pickupRoadAddress,
+                   pickup_latitude AS pickupLatitude,
+                   pickup_longitude AS pickupLongitude,
+                   destination_road_address AS destinationRoadAddress,
+                   straight_distance_meters AS straightDistanceMeters,
+                   requested_at AS requestedAt
+            FROM delivery_order FORCE INDEX (idx_delivery_waiting_location)
+            WHERE status = 'WAITING'
+              AND pickup_latitude BETWEEN :latMin AND :latMax
+              AND pickup_longitude BETWEEN :lngMin AND :lngMax
+            """,
             nativeQuery = true)
     List<WaitingDeliverySummary> findWaitingOrdersWithinBoundingBox(
             @Param("latMin") BigDecimal latMin, @Param("latMax") BigDecimal latMax,
