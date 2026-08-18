@@ -1,11 +1,14 @@
 package com.turkey.quick.order.service;
 
 import com.turkey.quick.common.exception.BusinessException;
+import com.turkey.quick.common.retry.MySqlDeadlockRetryPredicate;
 import com.turkey.quick.order.dto.DeliveryCreateRequest;
 import com.turkey.quick.order.dto.DeliveryCreateResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.resilience.annotation.Retryable;
 import org.springframework.stereotype.Component;
 
 /**
@@ -42,6 +45,14 @@ public class DeliveryOrderCreator {
      *
      * @throws BusinessException 409 진행 중 배송요청 존재 / 409 요금 변경 / 402 포인트 부족
      */
+    @Retryable(
+            includes = CannotAcquireLockException.class,
+            predicate = MySqlDeadlockRetryPredicate.class,
+            maxRetries = 2,
+            delay = 20,
+            jitter = 30,
+            multiplier = 2,
+            maxDelay = 100)
     public DeliveryCreateResponse create(DeliveryCreateRequest request, Long customerId) {
         try {
             return deliveryService.createDelivery(request, customerId);
