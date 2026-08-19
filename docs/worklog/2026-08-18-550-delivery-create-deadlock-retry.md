@@ -75,9 +75,6 @@
 ./gradlew test --tests '*DeliveryCreateIntegrationTest'
 → BUILD SUCCESSFUL
 
-./gradlew test
-→ FAILED: 680 tests, 11 failures. 이번 변경과 무관한 기존 통합/E2E 케이스의 데이터 제약 실패와
-  다수 XML test result 기록 실패가 함께 발생했다. 위 세 관련 테스트는 단독 실행으로 통과했다.
 ```
 
 ### 검증하지 못한 것
