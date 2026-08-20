@@ -27,9 +27,10 @@ const ITEM_OPTIONS: Array<{
   label: string
   description: string
 }> = [
-  { value: 'DOCUMENT', label: '초소형', description: '문서 · 휴대폰 등 2kg 이하' },
+  { value: 'DOCUMENT', label: '문서', description: '문서 · 휴대폰 등 2kg 이하' },
   { value: 'SMALL_PARCEL', label: '소형', description: 'A4 박스 등 5kg 이하' },
   { value: 'MEDIUM_PARCEL', label: '중형', description: '라면 박스 등 20kg 이하' },
+  { value: 'LARGE_PARCEL', label: '대형', description: '가전 상자 등 20kg 초과' },
   { value: 'FOOD', label: '음식', description: '포장된 음식' },
 ]
 
@@ -271,14 +272,18 @@ export function DeliveryForm({ defaultSenderName }: { defaultSenderName?: string
         <section className="border-b-8 border-surface px-4 py-6">
           <h2 className="mb-4 text-xl font-bold">물품 정보</h2>
           <div className="grid grid-cols-2 gap-3">
-            {ITEM_OPTIONS.map((option) => {
+            {ITEM_OPTIONS.map((option, index) => {
               const selected = values.itemType === option.value
+              const isLastOdd = index === ITEM_OPTIONS.length - 1 && ITEM_OPTIONS.length % 2 === 1
               return (
                 <label
                   key={option.value}
-                  className={selected
-                    ? 'cursor-pointer rounded-xl border border-blue-500 bg-blue-50 p-4'
-                    : 'cursor-pointer rounded-xl border border-gray-200 p-4 hover:bg-gray-50'}
+                  className={[
+                    selected
+                      ? 'cursor-pointer rounded-xl border border-blue-500 bg-blue-50 p-4'
+                      : 'cursor-pointer rounded-xl border border-gray-200 p-4 hover:bg-gray-50',
+                    isLastOdd ? 'col-span-2' : '',
+                  ].join(' ')}
                 >
                   <input
                     type="radio"
