@@ -3,12 +3,17 @@ package com.turkey.quick.location.sse;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -25,7 +30,8 @@ class SseRelayTest {
             + "\"accuracyMeters\":null}";
 
     private final SseRegistry registry = new SseRegistry();
-    private final SseRelay relay = new SseRelay(registry);
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+    private final SseRelay relay = new SseRelay(registry, meterRegistry);
 
     @Test
     @DisplayName("구독 중인 연결에 위치를 전송한다")
@@ -137,5 +143,65 @@ class SseRelayTest {
         // 팬아웃이라 모든 인스턴스가 종료 신호를 받지만, 그 배송의 연결을 가진 인스턴스는 보통
         // 하나뿐이다. 나머지는 여기로 들어와 아무 일도 하지 않아야 한다.
         assertThatCode(() -> relay.closeAll(999L)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("같은 연결의 이전 전송이 아직 안 끝났으면 새 메시지는 permit 을 오래 붙잡지 않고 버린다")
+    void coalescesMessagesForSameInFlightEmitter() throws InterruptedException, IOException {
+        // #566 재검증에서 드러난 문제(전역 세마포어가 연결을 구분하지 않아, 정체된 연결 하나가
+        // permit 을 계속 새로 소모해 무관한 배송까지 굶김)의 회귀 테스트. send() 를 붙잡아
+        // "아직 전송 중"인 상태를 흉내 낸 뒤, 같은 연결로 온 두 번째 메시지가 send() 를 또
+        // 부르지 않고 즉시 버려지는지 확인한다.
+        SseEmitter slow = mock(SseEmitter.class);
+        registry.add(9L, slow);
+        CountDownLatch firstSendStarted = new CountDownLatch(1);
+        CountDownLatch releaseFirstSend = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            firstSendStarted.countDown();
+            releaseFirstSend.await();
+            return null;
+        }).when(slow).send(anyString());
+
+        Thread first = new Thread(() -> relay.publish(9L, LOCATION_JSON));
+        first.start();
+        assertThat(firstSendStarted.await(1, TimeUnit.SECONDS)).isTrue();
+
+        relay.publish(9L, LOCATION_JSON);
+
+        verify(slow, times(1)).send(LOCATION_JSON);
+        assertThat(meterRegistry.get("sse.fanout.coalesced").counter().count()).isEqualTo(1.0);
+
+        releaseFirstSend.countDown();
+        first.join(1000);
+    }
+
+    @Test
+    @DisplayName("같은 배송의 다른 연결은 한쪽이 정체돼도 굶지 않는다 — 멀티탭 격리")
+    void doesNotStarveOtherEmitterOfSameDeliveryWhileOneIsInFlight() throws InterruptedException, IOException {
+        // deliveryId 단위로 막으면 이 테스트가 실패한다 — 같은 배송을 보는 다른 탭(healthy)이
+        // 느린 탭(slow) 하나 때문에 같이 굶는 것이 바로 되돌린 첫 구현의 버그였다.
+        SseEmitter slow = mock(SseEmitter.class);
+        SseEmitter healthy = mock(SseEmitter.class);
+        registry.add(1L, slow);
+        registry.add(1L, healthy);
+        CountDownLatch slowSendStarted = new CountDownLatch(1);
+        CountDownLatch releaseSlowSend = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            slowSendStarted.countDown();
+            releaseSlowSend.await();
+            return null;
+        }).when(slow).send(anyString());
+
+        Thread first = new Thread(() -> relay.publish(1L, LOCATION_JSON));
+        first.start();
+        assertThat(slowSendStarted.await(1, TimeUnit.SECONDS)).isTrue();
+
+        // slow 가 막혀 있는 채로 같은 배송에 두 번째 메시지가 온다. deliveryId 단위로 막았던
+        // 이전 구현이었다면 이 publish() 가 즉시 버려져 healthy 도 같이 못 받았을 것이다.
+        relay.publish(1L, LOCATION_JSON);
+        verify(healthy, times(1)).send(LOCATION_JSON);
+
+        releaseSlowSend.countDown();
+        first.join(1000);
     }
 }

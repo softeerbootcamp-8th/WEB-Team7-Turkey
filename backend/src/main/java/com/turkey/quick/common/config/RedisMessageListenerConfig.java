@@ -3,13 +3,19 @@ package com.turkey.quick.common.config;
 import com.turkey.quick.location.sse.TrackingChannel;
 import com.turkey.quick.location.sse.TrackingCloseSubscriber;
 import com.turkey.quick.location.sse.TrackingSubscriber;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.listener.PatternTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 /**
  * Redis Pub/Sub 구독 배선(#317). <b>이 저장소의 유일한 Redis {@code @Configuration} 이다</b> —
@@ -29,6 +35,9 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 @Configuration
 public class RedisMessageListenerConfig {
 
+    /** 동시 디스패치 상한(#566, 사람 확인 2026-08-18). 근거는 클래스 아래 필드 옆 주석 참고. */
+    private static final int MAX_CONCURRENT_DISPATCH = 1_000;
+
     /**
      * 메시지 디스패치 전용 실행기. <b>반드시 지정해야 한다.</b>
      *
@@ -39,24 +48,48 @@ public class RedisMessageListenerConfig {
      * 100명이면 초당 20개, 500명이면 초당 100개의 스레드 생성·파괴다 — 동시 구독 고객 수보다
      * 이쪽이 먼저 무너진다.
      *
-     * <p><b>풀 크기를 1이 아니라 4로 둔 이유</b>(트레이드오프): {@code SseEmitter.send} 는
-     * 블로킹이라, 단일 스레드면 소켓 버퍼가 가득 찬 클라이언트 하나가
-     * <b>모든 배송의 위치 전달을 멈춘다.</b> 여러 스레드면 그 격리는 얻지만 같은 채널 메시지의
-     * 처리 순서가 뒤집힐 수 있다. 순서 역전은 프론트가 {@code measuredAt} 이 뒤로 가는 이벤트를
-     * 버리는 것으로 복구되고, 멈춘 디스패처는 <b>모든 고객의 지도가 조용히 얼어붙는</b> 것이라
-     * 복구할 방법이 없다. 그래서 격리를 골랐다.
+     * <p><b>고정 풀(4) → 가상 스레드 + Semaphore({@value #MAX_CONCURRENT_DISPATCH})로 바꾼 이유
+     * (#566)</b>: 예전엔 {@code SseEmitter.send} 가 블로킹이라 플랫폼 스레드를 4개로 고정해
+     * 격리를 얻었는데, 그 대가로 <b>느린 클라이언트가 풀 크기(4)만큼만 있어도 이 인스턴스의
+     * 모든 배송이 막혔다</b> — 실측(느린 클라이언트 5개 재현)으로 최대 60초 동안 무관한 위치
+     * 갱신 73,956건이 큐 포화로 유실됨을 확인했다. 가상 스레드는 메시지마다 별도 스레드를 배정해
+     * 이 격리 문제를 근본적으로 없앤다.
+     *
+     * <p><b>{@code Semaphore} 를 쓰는 이유</b>: 상한이 없으면 극단적인 메시지 폭주 시 파킹된
+     * 가상 스레드가 무제한으로 쌓일 수 있다(이 앱은 힙이 512m 로 고정돼 있다, #502). permit이
+     * 없으면 {@code sse.fanout.dropped} 카운터를 올리고 그 자리에서 스킵한다 — 위치 데이터는 최신 값만
+     * 의미 있고(#297) 다음 위치 갱신이 곧 다시 오므로(#391) at-most-once 로 감내한다.
+     *
+     * <p><b>{@code tryAcquire()} (넌블로킹) 이어야 한다.</b> {@code RedisMessageListenerContainer}
+     * 는 이 실행기를 자기 구독 스레드(Lettuce 이벤트루프)에서 직접 호출한다. 여기서 블로킹하면
+     * Redis 구독 처리 자체가 멈춘다 — {@code acquire()} 로 바꾸지 말 것.
      */
     @Bean
-    public ThreadPoolTaskExecutor trackingEventExecutor() {
-        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(4);
-        executor.setMaxPoolSize(4);
-        executor.setQueueCapacity(1_000);
-        executor.setThreadNamePrefix("sse-fanout-");
-        // 종료 시 남은 메시지를 기다리지 않는다. at-most-once 라 유실은 감내하기로 정했고,
-        // 기다리면 배포만 느려진다.
-        executor.setWaitForTasksToCompleteOnShutdown(false);
-        return executor;
+    public Executor trackingEventExecutor(MeterRegistry registry) {
+        ExecutorService virtualThreads = Executors.newVirtualThreadPerTaskExecutor();
+        Semaphore limiter = new Semaphore(MAX_CONCURRENT_DISPATCH);
+        Counter dropped = Counter.builder("sse.fanout.dropped")
+                .description("동시 디스패치 상한 초과로 유실된 팬아웃 이벤트(at-most-once)")
+                .register(registry);
+        Gauge.builder("sse.fanout.in_flight", limiter,
+                        l -> MAX_CONCURRENT_DISPATCH - l.availablePermits())
+                .description("현재 동시에 처리 중인 팬아웃 디스패치 수")
+                .register(registry);
+
+        return command -> {
+            if (!limiter.tryAcquire()) {
+                dropped.increment();
+                log.warn("event=SSE_FANOUT_BACKPRESSURE_DROP");
+                return;
+            }
+            virtualThreads.execute(() -> {
+                try {
+                    command.run();
+                } finally {
+                    limiter.release();
+                }
+            });
+        };
     }
 
     /**
@@ -72,7 +105,7 @@ public class RedisMessageListenerConfig {
             RedisConnectionFactory connectionFactory,
             TrackingSubscriber subscriber,
             TrackingCloseSubscriber closeSubscriber,
-            ThreadPoolTaskExecutor trackingEventExecutor) {
+            Executor trackingEventExecutor) {
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
         container.setConnectionFactory(connectionFactory);
         container.setTaskExecutor(trackingEventExecutor);

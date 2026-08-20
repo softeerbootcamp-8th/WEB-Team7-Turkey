@@ -14,7 +14,7 @@ Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실�
 
 - 🔗 [배포 링크](https://dw1nqa61d1no6.cloudfront.net/)
 
-- 📱 [모바일 앱 설치 링크](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/actions/workflows/build-mobile-apk.yml) — 라이더의 실시간 위치 전송을 위해 앱 설치가 필요합니다.(최신 액션에서 아티팩트 다운로드)
+- 📱 [모바일 앱 설치 링크](https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/actions/runs/32125405536/artifacts/9320159978) — 라이더의 실시간 위치 전송을 위해 앱 설치가 필요합니다.
 
 - 📑 [API 문서 (Swagger)](https://dw1nqa61d1no6.cloudfront.net/swagger-ui/index.html#/)
 
@@ -36,23 +36,23 @@ Turkey는 물품을 빠르게 배송하려는 고객과 주변 라이더를 실�
 | 🟨 노란 노드 | 라이더 · 안드로이드 앱 |
 | 🔴 빨간 화살표 | 두 액터가 서버를 통해 서로를 움직이는 지점 |
 | 🟠 주황 화살표 | 고객이 흐름에서 빠져나가는 분기(취소) |
-| 굵은 테두리 | **클릭하면 그 주제의 CORE 위키로 이동** |
+| 굵은 테두리 + 🔗 | **클릭하면 그 주제의 CORE 위키로 이동** |
 
 ```mermaid
+%%{init: {'flowchart': {'nodeSpacing': 30}}}%%
 flowchart TB
-    C1["🧑 ① 회원가입"] --> C2["🧑 ② 로그인"] --> C3["🧑 ③ 포인트 충전"] --> C4["🧑 ④ 배송요청 생성"] --> C5["🧑 ⑤ 실시간 위치 추적"]
-    C4 -->|"배차 전(WAITING)에만 취소"| C8["🧑 ⑧ 취소 · 포인트 환급"]
+    C1["🧑 ① 회원가입"] --> C2["🧑 ② 로그인 🔗"] --> C3["🧑 ③ 포인트 충전 🔗"] --> C4["🧑 ④ 배송요청 생성"] --> C5["🧑 ⑤ 실시간 위치 추적 🔗"]
+    C4 -->|"배차 전(WAITING)에만 취소"| C8["🧑 ⑧ 취소 · 포인트 환급 🔗"]
     C5 --> C6["🧑 ⑥ 포인트 내역"]
-    C5 --> C7["🧑 ⑦ 배송 내역"]
+    C5 --> C7["🧑 ⑦ 배송 내역<br/>(라이더 완료 시 갱신)"]
 
-    R1["🛵 ① 회원가입"] --> R2["🛵 ② 로그인"] --> R3["🛵 ③ 콜 목록"] --> R4["🛵 ④ 콜 받기"] --> R5["🛵 ⑤ 진행 배송"] --> R6["🛵 ⑥ 완료 인증"]
+    R1["🛵 ① 회원가입"] --> R2["🛵 ② 로그인 🔗"] --> R3["🛵 ③ 콜 목록 🔗"] --> R4["🛵 ④ 콜 받기 🔗"] --> R5["🛵 ⑤ 진행 배송 🔗"] --> R6["🛵 ⑥ 완료 인증"]
     R6 --> R7["🛵 ⑦ 포인트 · 정산"]
     R6 --> R8["🛵 ⑧ 운행 기록"]
 
     C4 -->|"WAITING 주문 노출"| R3
     R4 -->|"배차 확정"| C5
     R5 -->|"위치 → SSE"| C5
-    R6 -->|"COMPLETED · 정산"| C7
 
     click C2 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-쿠키-세션-인증방식" "CORE 쿠키-세션 인증방식"
     click R2 href "https://github.com/softeerbootcamp-8th/WEB-Team7-Turkey/wiki/CORE-쿠키-세션-인증방식" "CORE 쿠키-세션 인증방식"
@@ -69,7 +69,7 @@ flowchart TB
     class C1,C2,C3,C4,C5,C6,C7,C8 cus
     class R1,R2,R3,R4,R5,R6,R7,R8 rid
     class C2,C3,C5,C8,R2,R3,R4,R5 core
-    linkStyle 14,15,16,17 stroke:#dc2626,stroke-width:3px
+    linkStyle 14,15,16 stroke:#dc2626,stroke-width:3px
     linkStyle 4 stroke:#ea580c,stroke-width:3px
 ```
 <br>
@@ -89,7 +89,7 @@ flowchart TB
 
 ## 🏗️ 인프라 아키텍처
 
-![architecture_img](./imgs/다이어그램.drawio.png)
+![architecture_img](./imgs/diagram.drawio.png)
 
 <br>
 

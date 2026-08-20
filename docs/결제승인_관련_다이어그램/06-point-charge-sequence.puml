@@ -11,6 +11,7 @@ title 1. 정상 흐름 — 준비(#32) → 모의 결제 → 승인(#33)
 actor 고객 as C
 participant "브라우저" as B
 participant "CustomerPaymentService\n(파사드 · 트랜잭션 없음)" as S
+participant "PointChargePreparer\n(@Transactional)" as P
 participant "PointChargeApprover\n(@Transactional)" as A
 database "MySQL" as DB
 participant "PaymentGateway\n(MockPaymentGateway)" as PG
@@ -20,17 +21,26 @@ C -> B: 30,000원 선택 후 [충전하기]
 B -> B: chargeRequestKey(UUID) 생성\n재시도 시 같은 값을 유지해야 한다
 B -> S: POST /charges
 activate S
-group 트랜잭션 [chargePointRequest]
-  S -> DB: 멱등키로 기존 요청 조회 → 없음
-  S -> DB: INSERT point_charge (PENDING)
+S -> P: createPending(request, customerId)
+activate P
+group 트랜잭션 [createPending]
+  P -> DB: 멱등키로 기존 요청 조회 → 없음
+  P -> DB: INSERT point_charge (PENDING)
 end
 note right of DB
   <b>이 행이 이후 모든 복구의 근거다.</b>
   주문 식별자와 금액이 여기서 확정되고,
   승인 요청이 실패해도 이 행은 남는다.
 end note
+P --> S: PointChargeResponse
+deactivate P
 S --> B: 201 {pointChargeId, PENDING}
 deactivate S
+note over S, P
+  준비 단계도 승인 단계와 같은 구조다 — S 는 트랜잭션이 없고,
+  DB 구간은 별도 빈(P)이 진다. 이유는 다이어그램 7 참고
+  (동시 재전송 시 rollback-only 트랜잭션에서 재조회할 수 없어서다).
+end note
 
 == 모의 결제 화면 ==
 B -> C: 결제 성공 / 실패 선택
@@ -42,6 +52,7 @@ note over B
 end note
 
 == 승인 (#33) ==
+== 성공 케이스 1 · PG 승인과 포인트 반영 성공 ==
 B -> S: POST /charges/{id}/confirm\n{amount, authToken}
 activate S
 S -> DB: 충전 조회 (<b>잠금 없음</b>)
@@ -101,6 +112,7 @@ participant "PointChargeApprover" as A
 database "MySQL" as DB
 participant "PG" as PG
 
+== 실패 케이스 1 · PG 승인 성공 후 DB 최종 반영 실패 ==
 B -> S: POST /confirm
 activate S
 S -> PG: confirm(...)
@@ -161,6 +173,7 @@ participant "PointChargeApprover" as A
 database "MySQL" as DB
 participant "PG" as PG
 
+== 실패 케이스 2 · PG 응답 유실 또는 타임아웃 ==
 B -> S: POST /confirm
 activate S
 S -> PG: confirm(...)
@@ -214,6 +227,7 @@ participant "PointChargeApprover" as A
 database "MySQL" as DB
 participant "PG" as PG
 
+== 성공 케이스 2 · 동시 요청을 PG 멱등성으로 차단 ==
 T1 -> S: POST /confirm {authToken=X}
 T2 -> S: POST /confirm {authToken=X}
 note over S: 사전 검증은 <b>잠금 없는 읽기</b>\n둘 다 통과한다
@@ -260,6 +274,7 @@ participant "PointChargeApprover" as A
 database "MySQL" as DB
 participant "PG" as PG
 
+== 실패 케이스 3 · PG 비멱등으로 이중 승인 발생 ==
 T1 -> S: POST /confirm {authToken=X}
 T2 -> S: POST /confirm {authToken=X}
 note over S: 사전 검증은 잠금 없는 읽기 — 둘 다 통과
@@ -320,6 +335,7 @@ participant "CustomerPaymentService" as S
 database "MySQL" as DB
 participant "PG" as PG
 
+== 실패 후 재시도 차단 · 승인 식별자가 남은 PENDING ==
 note over DB
   앞선 승인이 반영 도중 끊긴 상태 (다이어그램 2의 결과)
   status = PENDING, provider_payment_key = A1
@@ -360,50 +376,68 @@ end note
 
 
 @startuml 07-동시-준비요청
-title 7. 충전 준비의 동시 재전송 (#32) — 유니크 제약이 최종 방어선
+title 7. 충전 준비의 동시 재전송 (#32) — 유니크 위반 후 재조회로 복구
 
 participant "요청 1" as T1
 participant "요청 2" as T2
-participant "CustomerPaymentService" as S
+participant "CustomerPaymentService\n(파사드 · 트랜잭션 없음)" as S
+participant "PointChargePreparer" as P
 database "MySQL" as DB
 
+== 준비 단계 성공 케이스 · 동시 재전송을 멱등하게 복구 ==
 note over S: 두 요청 모두 같은 chargeRequestKey 를 보낸다
 
-group 트랜잭션 [요청 1]
+group 트랜잭션 [요청 1 · createPending]
   T1 -> S: POST /charges
-  S -> DB: 멱등키 조회 → <b>없음</b>
+  S -> P: createPending
+  P -> DB: 멱등키 조회 → <b>없음</b>
+  P -> DB: INSERT → 커밋
 end
-group 트랜잭션 [요청 2]
+S --> T1: 201 PENDING
+
+group 트랜잭션 [요청 2 · createPending]
   T2 -> S: POST /charges
-  S -> DB: 멱등키 조회 → <b>없음</b>
+  S -> P: createPending
+  P -> DB: 멱등키 조회 → <b>없음</b>
   note right of DB
     REPEATABLE READ 의 스냅샷 읽기라
     상대의 미커밋 행을 볼 수 없다.
     <b>선조회는 이 경쟁을 막지 못한다.</b>
   end note
+  P -> DB: INSERT
+  DB --> P: <b>uk_point_charge_customer_request 위반</b>
 end
-
-S -> DB: INSERT (요청 1) → 커밋
-S -> DB: INSERT (요청 2)
-DB --> S: <b>uk_point_charge_customer_request 위반</b>
-S -> S: DataIntegrityViolationException → 409
-
-note over S
-  catch 안에서 기존 건을 재조회하지 <b>않는다</b>.
-  제약 위반 트랜잭션은 rollback-only 라
-  같은 트랜잭션의 추가 조회가 커밋 때 다시 터진다.
+note over P #FFCCCC
+  이 트랜잭션은 여기서 rollback-only 로 끝났다.
+  <b>같은 트랜잭션에서 재조회하면 커밋 때 다시 터진다.</b>
 end note
+P --> S: DataIntegrityViolationException
+
+S -> P: findByRequestKey(customerId, key)
+activate P
+group 트랜잭션 [findByRequestKey · 새 트랜잭션]
+  P -> DB: 멱등키 조회 → <b>있음(요청 1이 이미 커밋함)</b>
+end
+P --> S: 요청 1의 PointChargeResponse
+deactivate P
+S --> T2: 201 PENDING\n(요청 1과 같은 pointChargeId)
 
 note over DB #CCFFCC
-  결과: 행 1건 (부분 성공 없음)
-  실측(8스레드 동시): 성공/실패 비율은 실행마다 크게 흔들리지만
-  <b>남은 행은 항상 1</b>
+  결과: 행 1건, 응답은 둘 다 200번대 · <b>같은 pointChargeId</b>
+  실측(8스레드 동시): 실패 0, 전원 같은 충전 건 반환
 end note
 
 note over S #FFFFCC
-  <b>역할 분담</b>
-  · 선조회 = <b>순차</b> 재전송에 같은 결과를 돌려주는 것 (DB 제약은 못 하는 일)
-  · 유니크 제약 = <b>동시</b> 요청에 한 건만 남기는 것 (앱 코드는 못 하는 일)
-  두 장치는 같은 일을 두 번 하는 것이 아니다.
+  <b>재조회가 새 트랜잭션이어야 하는 이유</b>
+  createPending 과 findByRequestKey 를 같은 빈(P)의 서로 다른
+  @Transactional 메서드로 나눴다 — self-invocation 이 아니라 프록시를
+  타므로 각자 독립 트랜잭션이 된다. 한 트랜잭션 안에서 재조회했다면
+  위 rollback-only 상태 때문에 커밋 시점에 다시 예외가 났을 것이다.
+end note
+
+note over P #FFFFCC
+  재조회로도 못 찾았다면 멱등키 충돌이 아닌 다른 제약 위반이다
+  (준비 단계 point_charge 는 그 외 유니크 컬럼이 전부 NULL).
+  409 로 포장하지 않고 원래 예외를 그대로 던진다.
 end note
 @enduml
