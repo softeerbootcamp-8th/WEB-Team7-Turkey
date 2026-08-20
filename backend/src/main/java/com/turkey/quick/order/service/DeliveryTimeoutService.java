@@ -41,7 +41,7 @@ public class DeliveryTimeoutService {
     private static final Logger log = LoggerFactory.getLogger(DeliveryTimeoutService.class);
 
     /** 배차 대기 타임아웃(사람 확인, 2026-08-04). */
-    static final Duration WAITING_TIMEOUT = Duration.ofMinutes(5);
+    static final Duration WAITING_TIMEOUT = Duration.ofMinutes(100);
 
     private final DeliveryOrderRepository deliveryOrderRepository;
     private final OrderFareSnapshotRepository orderFareSnapshotRepository;

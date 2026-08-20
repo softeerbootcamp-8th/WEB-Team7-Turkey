@@ -7,7 +7,7 @@ import {
 import { parseServerDate } from '@/shared/lib/datetime'
 
 /** 배차 대기 타임아웃(백엔드 DeliveryTimeoutService.WAITING_TIMEOUT과 반드시 맞춘다). */
-export const WAITING_TIMEOUT_MS = 5 * 60 * 1000
+export const WAITING_TIMEOUT_MS = 100 * 60 * 1000
 
 const AUTO_CANCEL_REASON = '배차 대기 시간을 초과해 자동 취소되었습니다.'
 

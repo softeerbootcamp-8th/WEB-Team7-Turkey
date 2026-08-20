@@ -362,7 +362,7 @@ class CustomerDeliveryCreateE2ETest extends IntegrationTestSupport {
         long fare = quotedFare();
 
         long staleOrderId = createOrder(cookie, UUID.randomUUID().toString(), fare);
-        backdateRequestedAt(staleOrderId, LocalDateTime.now(ZoneOffset.UTC).minusMinutes(10));
+        backdateRequestedAt(staleOrderId, LocalDateTime.now(ZoneOffset.UTC).minusMinutes(110));
 
         // 진행 중 주문이 있는 상태에서 새 요청 — 스캐너를 기다리지 않고 컨트롤러가 먼저 만료 정리한다.
         long newOrderId = createOrder(cookie, UUID.randomUUID().toString(), fare);
