@@ -1,0 +1,18 @@
+-- 콜 목록 시연용 시딩 데이터 정리. FK에 ON DELETE CASCADE가 없어서 자식 → 부모 순서로 지운다
+-- (order_fare_snapshot → delivery_order → point_wallet → member).
+-- @@RUNID@@ 는 실행 스크립트(cleanup-local.sh/cleanup-remote.sh)가 실제 run-id로 치환한다.
+
+DELETE ofs FROM order_fare_snapshot ofs
+  JOIN delivery_order o ON o.order_id = ofs.order_id
+  JOIN member c ON c.member_id = o.customer_id
+  WHERE c.login_id LIKE 'demo\_cust\_@@RUNID@@\_%';
+
+DELETE o FROM delivery_order o
+  JOIN member c ON c.member_id = o.customer_id
+  WHERE c.login_id LIKE 'demo\_cust\_@@RUNID@@\_%';
+
+DELETE w FROM point_wallet w
+  JOIN member c ON c.member_id = w.member_id
+  WHERE c.login_id LIKE 'demo\_cust\_@@RUNID@@\_%';
+
+DELETE FROM member WHERE login_id LIKE 'demo\_cust\_@@RUNID@@\_%';
