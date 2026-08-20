@@ -121,7 +121,7 @@ class DeliveryTimeoutServiceTest {
         @DisplayName("WAITING 이고 타임아웃을 넘겼으면 취소·환급을 수행한다")
         void cancelsAndRefundsWhenWaitingAndExpired() {
             DeliveryOrder stale = mockOrder(OrderStatus.WAITING,
-                    LocalDateTime.now(ZoneOffset.UTC).minusMinutes(10));
+                    LocalDateTime.now(ZoneOffset.UTC).minusMinutes(110));
             given(deliveryOrderRepository.findActiveByCustomerId(CUSTOMER_ID))
                     .willReturn(Optional.of(stale));
             given(deliveryOrderRepository.cancelIfWaiting(eq(ORDER_ID), any(), any())).willReturn(1);
