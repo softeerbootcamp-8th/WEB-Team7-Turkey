@@ -13,7 +13,7 @@ RUN_ID="${2:-$(date +%s)}"
 echo "[seed-local] run_id=${RUN_ID}, 클러스터당 ${COUNT}건 → turkey-mysql-local" >&2
 
 python3 "${SCRIPT_DIR}/generate_call_list_seed.py" --run-id "${RUN_ID}" --count-per-cluster "${COUNT}" \
-  | docker exec -i turkey-mysql-local mysql -uturkey -plocal turkey
+  | docker exec -i turkey-mysql-local mysql --default-character-set=utf8mb4 -uturkey -plocal turkey
 
 echo "[seed-local] 완료. run_id=${RUN_ID}" >&2
 echo "[seed-local] 정리하려면: ./scripts/demo/cleanup-local.sh ${RUN_ID}" >&2

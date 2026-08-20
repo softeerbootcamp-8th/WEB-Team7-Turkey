@@ -73,6 +73,10 @@ def fake_phone_number(seed_text):
 def build_sql(run_id, count_per_cluster):
     lines = []
     lines.append(f"-- 콜 목록 시연용 WAITING 주문 시딩 (run_id={run_id})")
+    # mysql CLI 접속 기본 문자셋이 DB(utf8mb4)와 달리 latin1인 환경이 있다(docker exec로 직접
+    # 확인함) — 이걸 안 맞추면 한글이 latin1로 잘못 해석돼 깨진 채로 저장된다. 클라이언트
+    # 플래그(--default-character-set)로도 방어하지만, 이 SQL 자체에도 박아 둔다.
+    lines.append("SET NAMES utf8mb4;")
     lines.append(f"SET @hash = '{PASSWORD_HASH}';")
     lines.append("")
     lines.append("-- 활성 요금 정책이 없으면 하나 만든다(uk_fare_policy_active라 있으면 건드리지 않는다).")

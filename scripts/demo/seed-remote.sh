@@ -25,7 +25,7 @@ echo "[seed-remote] run_id=${RUN_ID}, 클러스터당 ${COUNT}건 → 배포 DB�
 DB_PW=$(ssh turkey-was "sudo grep DB_PASSWORD /etc/myapp/secrets.env | cut -d= -f2-" | sed "s/^'//; s/'$//")
 DB_PW_B64=$(printf '%s' "$DB_PW" | base64 -w0)
 
-ssh turkey-db "export MYSQL_PWD=\$(echo ${DB_PW_B64} | base64 -d); mysql -h 127.0.0.1 -uturkey_admin turkey" < "$SQL_FILE"
+ssh turkey-db "export MYSQL_PWD=\$(echo ${DB_PW_B64} | base64 -d); mysql --default-character-set=utf8mb4 -h 127.0.0.1 -uturkey_admin turkey" < "$SQL_FILE"
 unset DB_PW DB_PW_B64
 
 echo "[seed-remote] 완료. run_id=${RUN_ID}" >&2

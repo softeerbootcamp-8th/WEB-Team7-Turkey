@@ -1,18 +1,70 @@
--- 콜 목록 시연용 시딩 데이터 정리. FK에 ON DELETE CASCADE가 없어서 자식 → 부모 순서로 지운다
--- (order_fare_snapshot → delivery_order → point_wallet → member).
--- @@RUNID@@ 는 실행 스크립트(cleanup-local.sh/cleanup-remote.sh)가 실제 run-id로 치환한다.
+-- 콜 목록 시연용 시딩 데이터 정리.
+--
+-- delivery_order를 참조하는 테이블 전부(마이그레이션 전수조사, REFERENCES delivery_order 기준)
+-- 를 자식 → 부모 순서로 지운다. ON DELETE CASCADE가 없어서 순서가 틀리면 FK 에러가 난다.
+-- 시딩해 둔 WAITING 주문이 시간이 지나 자동 취소되거나(point_transaction) 실제로 다른
+-- 라이더가 배차·진행·완료하면(order_status_history/rider_location_history/rider_settlement/
+-- delivery_proof) 이 테이블들에도 데이터가 쌓일 수 있다 — 시딩 직후 바로 정리하지 않으면
+-- 그만큼 지워야 할 게 늘어난다.
+--
+-- @@PATTERN@@ 은 실행 스크립트(cleanup-local.sh/cleanup-remote.sh)가 LIKE 패턴으로 치환한다
+-- (특정 run-id만 지우거나, "all"이면 demo_cust_ 전체를 지우는 패턴이 들어온다).
+--
+-- 순서: delivery_order를 참조하는 자식들 전부 →
+--       rider_settlement가 참조하는 order_fare_snapshot(rider_settlement보다 늦게) →
+--       delivery_order(member 참조) → point_wallet(member 참조) → member
+
+DELETE h FROM order_status_history h
+  JOIN delivery_order o ON o.order_id = h.order_id
+  JOIN member c ON c.member_id = o.customer_id
+  WHERE c.login_id LIKE '@@PATTERN@@';
+
+DELETE rl FROM rider_location_history rl
+  JOIN delivery_order o ON o.order_id = rl.order_id
+  JOIN member c ON c.member_id = o.customer_id
+  WHERE c.login_id LIKE '@@PATTERN@@';
+
+DELETE dp FROM delivery_proof dp
+  JOIN delivery_order o ON o.order_id = dp.order_id
+  JOIN member c ON c.member_id = o.customer_id
+  WHERE c.login_id LIKE '@@PATTERN@@';
+
+DELETE pt FROM point_transaction pt
+  JOIN member c ON c.member_id = pt.member_id
+  WHERE c.login_id LIKE '@@PATTERN@@';
+
+-- 라이더 정산 적립금 point_transaction — member_id가 라이더 계정이라 위 조건에 안 걸린다.
+-- rider_settlement_id로 역참조해서 찾아야 하고, rider_settlement보다 먼저 지워야 한다.
+DELETE pt2 FROM point_transaction pt2
+  JOIN rider_settlement rs2 ON rs2.settlement_id = pt2.rider_settlement_id
+  JOIN delivery_order o2 ON o2.order_id = rs2.order_id
+  JOIN member c2 ON c2.member_id = o2.customer_id
+  WHERE c2.login_id LIKE '@@PATTERN@@';
+
+DELETE rs FROM rider_settlement rs
+  JOIN delivery_order o ON o.order_id = rs.order_id
+  JOIN member c ON c.member_id = o.customer_id
+  WHERE c.login_id LIKE '@@PATTERN@@';
 
 DELETE ofs FROM order_fare_snapshot ofs
   JOIN delivery_order o ON o.order_id = ofs.order_id
   JOIN member c ON c.member_id = o.customer_id
-  WHERE c.login_id LIKE 'demo\_cust\_@@RUNID@@\_%';
+  WHERE c.login_id LIKE '@@PATTERN@@';
 
 DELETE o FROM delivery_order o
   JOIN member c ON c.member_id = o.customer_id
-  WHERE c.login_id LIKE 'demo\_cust\_@@RUNID@@\_%';
+  WHERE c.login_id LIKE '@@PATTERN@@';
 
 DELETE w FROM point_wallet w
   JOIN member c ON c.member_id = w.member_id
-  WHERE c.login_id LIKE 'demo\_cust\_@@RUNID@@\_%';
+  WHERE c.login_id LIKE '@@PATTERN@@';
 
-DELETE FROM member WHERE login_id LIKE 'demo\_cust\_@@RUNID@@\_%';
+DELETE pc FROM point_charge pc
+  JOIN member c ON c.member_id = pc.customer_id
+  WHERE c.login_id LIKE '@@PATTERN@@';
+
+DELETE ta FROM member_term_agreement ta
+  JOIN member c ON c.member_id = ta.member_id
+  WHERE c.login_id LIKE '@@PATTERN@@';
+
+DELETE FROM member WHERE login_id LIKE '@@PATTERN@@';
