@@ -270,7 +270,7 @@ function RiderRequests() {
 
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-1.5 text-label-sm font-bold text-secondary">
-              물품 크기
+              물품 종류
               <span className="relative">
                 <select
                   value={itemFilter}
@@ -418,7 +418,7 @@ function RiderRequests() {
             <div>
               <p className="text-body-lg font-bold">현재 수행 가능한 콜이 없습니다.</p>
               <p className="mt-1 text-body-md text-secondary">
-                {itemFilter !== 'ALL' ? '다른 물품 크기를 선택해 보세요.' : '잠시 후 새로 고침해 주세요.'}
+                {itemFilter !== 'ALL' ? '다른 물품 종류를 선택해 보세요.' : '잠시 후 새로 고침해 주세요.'}
               </p>
             </div>
           </div>
