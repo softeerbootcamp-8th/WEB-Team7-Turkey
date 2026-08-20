@@ -243,7 +243,7 @@ class RiderDeliveryRequestE2ETest extends IntegrationTestSupport {
             return saved;
         });
         jdbcTemplate.update("UPDATE delivery_order SET requested_at = ? WHERE order_id = ?",
-                LocalDateTime.now(ZoneOffset.UTC).minusMinutes(10), order.getId());
+                LocalDateTime.now(ZoneOffset.UTC).minusMinutes(110), order.getId());
         return order;
     }
 

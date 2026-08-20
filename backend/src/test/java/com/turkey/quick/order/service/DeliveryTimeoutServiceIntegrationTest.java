@@ -173,7 +173,7 @@ class DeliveryTimeoutServiceIntegrationTest extends IntegrationTestSupport {
         Long customerId = saveCustomerWithBalance(50_000L);
         Long orderId = createWaitingOrder(customerId, fare);
         long balanceAfterCharge = balanceOf(customerId);
-        backdateRequestedAt(orderId, LocalDateTime.now(ZoneOffset.UTC).minusMinutes(10));
+        backdateRequestedAt(orderId, LocalDateTime.now(ZoneOffset.UTC).minusMinutes(110));
 
         boolean result = deliveryTimeoutService.cancelAndRefund(orderId, customerId);
 
@@ -206,7 +206,7 @@ class DeliveryTimeoutServiceIntegrationTest extends IntegrationTestSupport {
         riderDeliveryRequestService.acceptDeliveryRequest(
                 new AuthenticatedRider(rider.getMemberId(), "rider", "라이더", OperatingStatus.AVAILABLE),
                 orderId);
-        backdateRequestedAt(orderId, LocalDateTime.now(ZoneOffset.UTC).minusMinutes(10));
+        backdateRequestedAt(orderId, LocalDateTime.now(ZoneOffset.UTC).minusMinutes(110));
 
         boolean result = deliveryTimeoutService.cancelAndRefund(orderId, customerId);
 
@@ -226,7 +226,7 @@ class DeliveryTimeoutServiceIntegrationTest extends IntegrationTestSupport {
 
         Long expiredCustomerId = saveCustomerWithBalance(50_000L);
         Long expiredOrderId = createWaitingOrder(expiredCustomerId, fare);
-        backdateRequestedAt(expiredOrderId, LocalDateTime.now(ZoneOffset.UTC).minusMinutes(10));
+        backdateRequestedAt(expiredOrderId, LocalDateTime.now(ZoneOffset.UTC).minusMinutes(110));
 
         Long freshCustomerId = saveCustomerWithBalance(50_000L);
         Long freshOrderId = createWaitingOrder(freshCustomerId, fare);
@@ -238,7 +238,7 @@ class DeliveryTimeoutServiceIntegrationTest extends IntegrationTestSupport {
         riderDeliveryRequestService.acceptDeliveryRequest(
                 new AuthenticatedRider(rider.getMemberId(), "rider", "라이더", OperatingStatus.AVAILABLE),
                 assignedOrderId);
-        backdateRequestedAt(assignedOrderId, LocalDateTime.now(ZoneOffset.UTC).minusMinutes(10));
+        backdateRequestedAt(assignedOrderId, LocalDateTime.now(ZoneOffset.UTC).minusMinutes(110));
 
         LocalDateTime cutoff = DeliveryTimeoutService.cutoff(LocalDateTime.now(ZoneOffset.UTC));
         List<DeliveryOrder> found = deliveryOrderRepository
@@ -260,7 +260,7 @@ class DeliveryTimeoutServiceIntegrationTest extends IntegrationTestSupport {
         long fare = serverFare();
         Long customerId = saveCustomerWithBalance(50_000L);
         Long orderId = createWaitingOrder(customerId, fare);
-        backdateRequestedAt(orderId, LocalDateTime.now(ZoneOffset.UTC).minusMinutes(10));
+        backdateRequestedAt(orderId, LocalDateTime.now(ZoneOffset.UTC).minusMinutes(110));
         RiderProfile rider = saveAvailableRider();
 
         var start = new CountDownLatch(1);
